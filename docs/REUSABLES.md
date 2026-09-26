@@ -19,7 +19,10 @@ remove it when you delete one.
 - `<ListingsSkillsField v-model>` — skill search + `{ name, level, isRequired }[]` rows.
 - `<ListingsLanguagesField v-model>` — `{ language, level?, isRequired }[]` rows, one per language.
 - `<ListingsCard listing>` — plain `UCard` for one `ListingListItem`: title, company, location
-  badges, posted/deadline row, "View posting" footer link.
+  `<ListingsLocation>`, `<ListingsDates>`, external "View posting" link.
+- `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
+- `<ListingsDates listing>` — labelled posted and deadline lines, each colored by days ago/left; with
+  no deadline date it shows the deadline type + days since posted, colored like the posted line.
 
 ## Composables (`app/composables/`)
 
@@ -38,8 +41,9 @@ prevPage, refresh }` — cursor-paged `listings` query (20/page) for the listing
 ## Utils (`app/utils/`, auto-imported)
 
 - `gql<T>(query, variables?)` — POST to `/graphql`; throws on GraphQL errors or missing data.
-- `formatDate(iso)` — formats a `YYYY-MM-DD` date string as `en-GB` medium date, parsed at local
+- `formatDate(iso)` — formats a `YYYY-MM-DD` date string as `nb-NO` medium date (`26. sep. 2026`), parsed at local
   midnight (avoids the UTC-parsing off-by-one-day bug for negative-offset zones).
+- `daysFromToday(iso)` — whole days from local today to a `YYYY-MM-DD` date; negative if past.
 
 ## Constants (`app/constants/`, import explicitly)
 
