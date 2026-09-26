@@ -29,16 +29,16 @@ test('adds a listing and returns to the list', async ({ page }) => {
   await page.goto('/listings/add')
 
   await page.getByLabel('Job title').fill('Frontend Developer')
-  await page.getByRole('combobox', { name: 'Company', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Company' }).click()
   await page.getByRole('option', { name: 'Acme', exact: true }).click()
-  await page.getByRole('combobox', { name: 'Role', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Role' }).click()
   await page.getByRole('option', { name: 'Developer', exact: true }).click()
   await page.getByLabel('Job ad URL').fill('https://example.com/job')
   await page.getByRole('button', { name: 'Add listing' }).click()
   await page.getByTestId('confirm-modal-confirm').click()
 
   await expect(page).toHaveURL('/listings')
-  await expect(page.getByText('Listing added')).toBeVisible()
+  await expect(page.getByText('Listing added', { exact: true })).toBeVisible()
   expect(listing).toMatchObject({
     title: 'Frontend Developer',
     companyName: 'Acme',
