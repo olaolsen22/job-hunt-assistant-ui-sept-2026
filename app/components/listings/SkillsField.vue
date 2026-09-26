@@ -32,6 +32,7 @@ const addSkill = (name?: string) => {
     >
       <span class="min-w-0 flex-1 truncate">{{ skill.name }}</span>
       <USelect v-model="skill.level" :items="SKILL_LEVELS" class="w-20" />
+      <UInputNumber v-model="skill.minYears" :min="1" placeholder="Min yrs" class="w-28" />
       <USwitch v-model="skill.isRequired" label="Required" />
       <UButton icon="i-lucide-x" color="neutral" variant="ghost" @click="skills.splice(i, 1)" />
     </div>

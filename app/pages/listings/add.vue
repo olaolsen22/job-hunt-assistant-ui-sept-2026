@@ -43,6 +43,7 @@ const onConfirm = async () => {
       errorMessages.value = createListing.errors.map((e) => e.message)
       return
     }
+    clearNuxtState('name-lookups')
     toast.add({ title: 'Listing added', color: 'success', icon: 'i-lucide-check' })
     await navigateTo('/listings')
   } catch {
@@ -88,6 +89,10 @@ const onConfirm = async () => {
               />
             </UFormField>
 
+            <UFormField label="Job ad URL" name="url" required class="sm:col-span-2">
+              <UInput v-model="state.url" type="url" placeholder="https://" class="w-full" />
+            </UFormField>
+
             <UFormField label="Seniority" name="seniority">
               <USelect
                 v-model="state.seniority"
@@ -129,10 +134,6 @@ const onConfirm = async () => {
           <div class="grid gap-3 sm:grid-cols-2 sm:gap-4">
             <UFormField label="Locations" name="locations" class="sm:col-span-2">
               <ListingsLocationsField v-model="state.locations" />
-            </UFormField>
-
-            <UFormField label="Job ad URL" name="url" class="sm:col-span-2">
-              <UInput v-model="state.url" type="url" placeholder="https://" class="w-full" />
             </UFormField>
 
             <UFormField label="Posted on" name="postedOn">

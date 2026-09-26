@@ -23,6 +23,7 @@ export interface ListingLanguage {
 export interface ListingSkill {
   name: string
   level: number
+  minYears?: number | null
   isRequired: boolean
 }
 
@@ -55,6 +56,9 @@ export const useListingForm = () => {
     if (!s.title.trim()) errors.push({ name: 'title', message: 'Required' })
     if (!s.companyName) errors.push({ name: 'companyName', message: 'Required' })
     if (!s.jobRoleName) errors.push({ name: 'jobRoleName', message: 'Required' })
+    if (!/^https?:\/\/\S+$/i.test(s.url.trim())) {
+      errors.push({ name: 'url', message: 'Enter an http(s) link' })
+    }
     if (s.deadlineType === 'DATE' && !s.deadlineOn) {
       errors.push({ name: 'deadlineOn', message: 'Pick a date' })
     }
@@ -70,7 +74,7 @@ export const useListingForm = () => {
     schedule: state.schedule ?? null,
     workMode: state.workMode ?? null,
     description: orNull(state.description),
-    url: orNull(state.url),
+    url: state.url.trim(),
     postedOn: orNull(state.postedOn),
     deadlineType: state.deadlineType,
     // The API rejects a date unless the type is DATE.
@@ -78,7 +82,7 @@ export const useListingForm = () => {
     postingLanguage: state.postingLanguage ?? null,
     locations: state.locations.map((l) => ({ ...l, city: orNull(l.city) })),
     languages: state.languages.map((l) => ({ ...l, level: l.level ?? null })),
-    skills: state.skills
+    skills: state.skills.map((s) => ({ ...s, minYears: s.minYears ?? null }))
   })
 
   return { state, validate, toInput }
