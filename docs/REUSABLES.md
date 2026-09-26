@@ -18,12 +18,18 @@ remove it when you delete one.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
 - `<ListingsSkillsField v-model>` — skill search + `{ name, level, isRequired }[]` rows.
 - `<ListingsLanguagesField v-model>` — `{ language, level?, isRequired }[]` rows, one per language.
+- `<ListingsCard listing>` — plain `UCard` for one `ListingListItem`: title, company, location
+  badges, posted/deadline row, "View posting" footer link.
 
 ## Composables (`app/composables/`)
 
 - `useListingForm()` → `{ state, validate, toInput }` — listing form state, `UForm` validator, and
   mapping to the API's `ListingInput`. Also exports `ListingLocation`, `ListingLanguage`,
   `ListingSkill` types.
+- `useListingsList()` → `{ listings, totalCount, hasNextPage, hasPrevPage, loading, error, nextPage,
+prevPage, refresh }` — cursor-paged `listings` query (20/page) for the listings list page.
+  Client-only fetch (`server: false`) since it needs the session cookie. Also exports
+  `ListingListItem`.
 
 ## Stores (`app/stores/`)
 
@@ -32,6 +38,8 @@ remove it when you delete one.
 ## Utils (`app/utils/`, auto-imported)
 
 - `gql<T>(query, variables?)` — POST to `/graphql`; throws on GraphQL errors or missing data.
+- `formatDate(iso)` — formats a `YYYY-MM-DD` date string as `en-GB` medium date, parsed at local
+  midnight (avoids the UTC-parsing off-by-one-day bug for negative-offset zones).
 
 ## Constants (`app/constants/`, import explicitly)
 
