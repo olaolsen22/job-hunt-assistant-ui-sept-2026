@@ -18,7 +18,11 @@ Guidelines:
 - Design for the task: scanning many applications quickly, seeing status at a glance, and moving an
   application forward in as few clicks as possible. A simple loading and empty state where data loads is enough.
 - This is a simple hobby project: clean and usable beats polished. No accessibility audits, no
-  pixel-perfect mobile layouts, no elaborate animations. Nuxt UI's defaults cover the basics.
+  elaborate animations. Nuxt UI's defaults cover the basics.
+- The owner uses it on phone, tablet, and desktop, so every screen must work on all three. Design
+  mobile-first with Tailwind breakpoints (base = phone, `sm`/`md` = tablet, `lg`+ = desktop):
+  no horizontal scroll, touch-sized targets, long text truncated or wrapped, and wide tables/lists
+  collapsing to cards or stacked rows on small screens. Usable everywhere beats pixel-perfect.
 - Build with Nuxt UI components and their props/slots first, then Tailwind utilities. Theme only through
   `app.config.ts` colors and `--ui-*` tokens. No hard-coded colors, so light and dark mode keep working.
 - For new visual direction, load the `frontend-design:frontend-design` skill first.
