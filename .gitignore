@@ -28,3 +28,6 @@ coverage
 test-results
 playwright-report
 blob-report
+
+# Claude Code scratch notes, built into commit messages
+.claude/commit-notes.md
