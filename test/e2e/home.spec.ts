@@ -21,14 +21,15 @@ test('dashboard shows Unhealthy when the database is down', async ({ page }) => 
   await expect(page.getByTestId('api-health')).toHaveText('Unhealthy')
 })
 
-test('logs out from the header', async ({ page }) => {
+test('logs out from the user menu', async ({ page }) => {
   await page.route('**/api/auth/logout', (route) => route.fulfill({ status: 204 }))
   await page.goto('/')
 
   await expect(page.getByTestId('current-user')).toHaveText('owner@example.com')
   // The session is gone after logout, so the middleware's /me check must fail like the real API.
   await page.route('**/api/auth/me', (route) => route.fulfill({ status: 401 }))
-  await page.getByRole('button', { name: 'Log out' }).click()
+  await page.getByTestId('current-user').click()
+  await page.getByRole('menuitem', { name: 'Log out' }).click()
 
   await expect(page).toHaveURL('/login')
 })
