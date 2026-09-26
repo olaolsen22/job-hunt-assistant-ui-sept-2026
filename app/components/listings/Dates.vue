@@ -6,6 +6,10 @@ const { listing } = defineProps<{
   listing: Pick<ListingListItem, 'postedOn' | 'deadlineType' | 'deadlineOn'>
 }>()
 
+// Matches the backend's default-order rule: an ASAP listing counts as due 14 days after
+// it was posted. Not exposed on the API, so hardcoded here (see the backend's constant).
+const ASAP_DUE_DAYS = 14
+
 const RED = 'text-red-600/85 dark:text-red-400/85'
 const ORANGE = 'text-orange-600/85 dark:text-orange-400/85'
 const YELLOW = 'text-yellow-600/85 dark:text-yellow-400/85'
@@ -35,16 +39,40 @@ const postedClass = computed(() => postedColor(daysSincePosted.value))
 
 const hasDeadlineDate = computed(() => listing.deadlineType === 'DATE' && !!listing.deadlineOn)
 
+const isAsap = computed(() => listing.deadlineType === 'ASAP')
+
+// An ASAP listing's "deadline" for coloring/expiry purposes: postedOn + ASAP_DUE_DAYS.
+const asapDueDaysLeft = computed(() => ASAP_DUE_DAYS - daysSincePosted.value)
+
+const isExpired = computed(() => {
+  if (hasDeadlineDate.value) return daysFromToday(listing.deadlineOn!) < 0
+  if (isAsap.value) return asapDueDaysLeft.value < 0
+  return false
+})
+
 const deadlineClass = computed(() => {
+  if (isExpired.value) return RED
   if (hasDeadlineDate.value) return deadlineColor(daysFromToday(listing.deadlineOn!))
+  if (isAsap.value) return deadlineColor(asapDueDaysLeft.value)
   // No deadline date, so the posting's age is the only urgency signal left.
   return postedClass.value
 })
 
 const deadlineLabel = computed(() => {
-  if (hasDeadlineDate.value) return formatDate(listing.deadlineOn!)
+  if (hasDeadlineDate.value) {
+    const date = formatDate(listing.deadlineOn!)
+    return isExpired.value ? `${date}, expired` : date
+  }
 
   const type = DEADLINE_TYPE_OPTIONS.find((option) => option.value === listing.deadlineType)!.label
+
+  if (isAsap.value) {
+    if (isExpired.value) return `${type}, likely filled`
+    const due = new Date(`${listing.postedOn}T00:00:00`)
+    due.setDate(due.getDate() + ASAP_DUE_DAYS)
+    return `${type}, due ~${formatDate(due.toLocaleDateString('sv-SE'))}`
+  }
+
   if (daysSincePosted.value === 0) return `${type}, posted today`
   return `${type}, ${daysSincePosted.value} ${daysSincePosted.value === 1 ? 'day' : 'days'} since posted`
 })
