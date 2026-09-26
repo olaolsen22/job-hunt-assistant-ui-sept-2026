@@ -24,7 +24,7 @@ interface CreateListingResult {
   createListing: { listing: { id: number } | null; errors: { message: string }[] | null }
 }
 
-const { state, validate, toInput } = useListingForm()
+const { state, validate, toInput, todayIso } = useListingForm()
 
 const toast = useToast()
 const submitting = ref(false)
@@ -136,8 +136,8 @@ const onConfirm = async () => {
               <ListingsLocationsField v-model="state.locations" />
             </UFormField>
 
-            <UFormField label="Posted on" name="postedOn">
-              <UInput v-model="state.postedOn" type="date" class="w-full" />
+            <UFormField label="Posted on" name="postedOn" required>
+              <UInput v-model="state.postedOn" type="date" :max="todayIso()" class="w-full" />
             </UFormField>
 
             <UFormField

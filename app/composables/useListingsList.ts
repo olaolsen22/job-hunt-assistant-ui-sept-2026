@@ -5,7 +5,7 @@ export interface ListingListItem {
   title: string
   company: { name: string }
   locations: { location: { city: string | null; countryCode: string } }[]
-  postedOn: string | null
+  postedOn: string
   deadlineType: DeadlineType
   deadlineOn: string | null
   url: string

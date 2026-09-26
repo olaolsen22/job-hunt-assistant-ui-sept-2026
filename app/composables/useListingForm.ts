@@ -30,6 +30,9 @@ export interface ListingSkill {
 // The API wants null, not "", for empty optional fields.
 const orNull = (value?: string) => value?.trim() || null
 
+// Local YYYY-MM-DD. toISOString() is UTC, so near midnight it would give yesterday or tomorrow.
+const todayIso = () => new Date().toLocaleDateString('sv-SE')
+
 export const useListingForm = () => {
   const state = reactive({
     title: '',
@@ -41,7 +44,7 @@ export const useListingForm = () => {
     workMode: undefined as WorkMode | undefined,
     description: '',
     url: '',
-    postedOn: '',
+    postedOn: todayIso(),
     deadlineType: 'UNSPECIFIED' as DeadlineType,
     deadlineOn: '',
     postingLanguage: undefined as Language | undefined,
@@ -59,6 +62,12 @@ export const useListingForm = () => {
     if (!/^https?:\/\/\S+$/i.test(s.url.trim())) {
       errors.push({ name: 'url', message: 'Enter an http(s) link' })
     }
+    if (!s.postedOn) {
+      errors.push({ name: 'postedOn', message: 'Required' })
+    } else if (s.postedOn > todayIso()) {
+      // ISO dates compare correctly as strings.
+      errors.push({ name: 'postedOn', message: 'Can’t be in the future' })
+    }
     if (s.deadlineType === 'DATE' && !s.deadlineOn) {
       errors.push({ name: 'deadlineOn', message: 'Pick a date' })
     }
@@ -75,7 +84,7 @@ export const useListingForm = () => {
     workMode: state.workMode ?? null,
     description: orNull(state.description),
     url: state.url.trim(),
-    postedOn: orNull(state.postedOn),
+    postedOn: state.postedOn,
     deadlineType: state.deadlineType,
     // The API rejects a date unless the type is DATE.
     deadlineOn: state.deadlineType === 'DATE' ? state.deadlineOn : null,
@@ -85,5 +94,5 @@ export const useListingForm = () => {
     skills: state.skills.map((s) => ({ ...s, minYears: s.minYears ?? null }))
   })
 
-  return { state, validate, toInput }
+  return { state, validate, toInput, todayIso }
 }

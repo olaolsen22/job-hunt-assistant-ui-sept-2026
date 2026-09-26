@@ -42,7 +42,6 @@ describe('useListingForm', () => {
     expect(toInput()).toMatchObject({
       title: 'Frontend Developer',
       description: null,
-      postedOn: null,
       seniority: null,
       deadlineOn: null,
       locations: [{ countryCode: 'NO', city: null }],
