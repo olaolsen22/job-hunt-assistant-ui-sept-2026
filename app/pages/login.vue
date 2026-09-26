@@ -3,6 +3,7 @@ import type { FetchError } from 'ofetch'
 import type { AuthFormField, FormSubmitEvent } from '@nuxt/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
+definePageMeta({ layout: 'auth' })
 useHead({ title: 'Sign in' })
 
 const auth = useAuthStore()

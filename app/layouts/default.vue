@@ -1,5 +1,35 @@
 <script setup lang="ts">
+import type { DropdownMenuItem, NavigationMenuItem } from '@nuxt/ui'
+
 const auth = useAuthStore()
+const route = useRoute()
+
+const title = computed(() => route.meta.title)
+useHead({ title })
+
+const items: NavigationMenuItem[] = [
+  { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/' }
+]
+
+const colorMode = useColorMode()
+// A nav item, not UColorModeButton, so it matches the links above it.
+const themeItems = computed<NavigationMenuItem[]>(() => {
+  const isDark = colorMode.value === 'dark'
+  return [
+    {
+      label: isDark ? 'Dark mode' : 'Light mode',
+      icon: isDark ? 'i-lucide-moon' : 'i-lucide-sun',
+      onSelect: () => (colorMode.preference = isDark ? 'light' : 'dark')
+    }
+  ]
+})
+
+const displayName = computed(() => (auth.user?.role === 'Guest' ? 'Guest' : auth.user?.email))
+
+const userItems = computed<DropdownMenuItem[][]>(() => [
+  [{ label: displayName.value, type: 'label' }],
+  [{ label: 'Log out', icon: 'i-lucide-log-out', onSelect: logout }]
+])
 
 async function logout() {
   await auth.logout()
@@ -8,32 +38,57 @@ async function logout() {
 </script>
 
 <template>
-  <div class="min-h-screen">
-    <header class="border-b border-default">
-      <UContainer class="flex h-14 items-center justify-between">
-        <NuxtLink to="/" class="font-semibold">Job Hunt Assistant</NuxtLink>
-        <div class="flex items-center gap-2">
-          <template v-if="auth.user">
-            <span
-              class="max-w-40 truncate text-sm text-muted sm:max-w-none"
-              data-testid="current-user"
-            >
-              {{ auth.user.role === 'Guest' ? 'Guest' : auth.user.email }}
-            </span>
-            <UButton
-              icon="i-lucide-log-out"
-              color="neutral"
-              variant="ghost"
-              aria-label="Log out"
-              @click="logout"
-            />
+  <UDashboardGroup>
+    <!-- Nuxt UI only animates the mobile slideover; desktop collapse would snap without this. -->
+    <UDashboardSidebar collapsible class="transition-all duration-200">
+      <template #header="{ collapsed }">
+        <NuxtLink
+          to="/"
+          class="flex items-center gap-2 font-semibold"
+          :class="{ 'mx-auto': collapsed }"
+        >
+          <UIcon name="i-lucide-briefcase" class="size-5 shrink-0 text-primary" />
+          <span v-if="!collapsed" class="truncate">Job Hunt Assistant</span>
+        </NuxtLink>
+      </template>
+
+      <template #default="{ collapsed }">
+        <UNavigationMenu :items="items" :collapsed="collapsed" orientation="vertical" />
+        <UNavigationMenu
+          :items="themeItems"
+          :collapsed="collapsed"
+          orientation="vertical"
+          class="mt-auto"
+        />
+      </template>
+    </UDashboardSidebar>
+
+    <UDashboardPanel class="bg-muted dark:bg-neutral-900/50">
+      <template #header>
+        <UDashboardNavbar :title="title" class="bg-default">
+          <template #leading>
+            <UDashboardSidebarCollapse />
           </template>
-          <UColorModeButton />
-        </div>
-      </UContainer>
-    </header>
-    <UContainer as="main" class="py-8">
-      <slot />
-    </UContainer>
-  </div>
+          <template #right>
+            <UDropdownMenu :items="userItems" :content="{ align: 'end' }">
+              <UButton
+                :avatar="{ icon: 'i-lucide-user' }"
+                trailing-icon="i-lucide-chevron-down"
+                color="neutral"
+                variant="ghost"
+                data-testid="current-user"
+              >
+                <!-- Icon-only on mobile; the menu's first line still shows who's signed in. -->
+                <span class="hidden sm:inline">{{ displayName }}</span>
+              </UButton>
+            </UDropdownMenu>
+          </template>
+        </UDashboardNavbar>
+      </template>
+
+      <template #body>
+        <slot />
+      </template>
+    </UDashboardPanel>
+  </UDashboardGroup>
 </template>
