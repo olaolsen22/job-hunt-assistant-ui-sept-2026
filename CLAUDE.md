@@ -26,6 +26,9 @@ over SSE for LLM parse-job updates.
 - Nuxt UI components (`U*`) first, then Tailwind utilities. SCSS (`assets/scss/`) only for what
   utilities can't express. Theme via `app.config.ts` (colors) and `--ui-*` tokens in `assets/css/main.css`.
   Icons: lucide (`i-lucide-*`).
+- Built-ins only by default: component props/slots, Tailwind's default scale, Nuxt UI token classes
+  (`text-muted`, `bg-elevated`, `border-default`). Arbitrary values (`w-[37px]`), `!`/`!important`,
+  `:ui` overrides, and custom CSS only when no built-in works, with a comment saying why.
 - All backend calls go through the same-origin proxy (`/api/**`, `/graphql`). Never call the API URL
   directly: the proxy is what makes the HttpOnly cookie and SSE work without CORS.
 - Mirror the backend split: REST only for auth and health, GraphQL for all domain data.
