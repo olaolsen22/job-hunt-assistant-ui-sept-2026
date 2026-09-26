@@ -1,9 +1,5 @@
 <script setup lang="ts">
-// Client-only: health is live status, and it keeps SSR from waiting on the API.
-const { data, error, status, refresh } = useFetch<string>('/api/health', {
-  responseType: 'text',
-  server: false
-})
+const { data, error, status, refresh } = useFetch<string>('/api/health', { responseType: 'text' })
 
 const state = computed(() => {
   if (status.value === 'idle' || status.value === 'pending') {
