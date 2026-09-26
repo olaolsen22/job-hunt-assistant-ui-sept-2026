@@ -27,7 +27,7 @@ const providers = computed(() => [
   }
 ])
 
-async function signIn(kind: 'login' | 'guest', action: () => Promise<void>) {
+const signIn = async (kind: 'login' | 'guest', action: () => Promise<void>) => {
   pending.value = kind
   errorMessage.value = ''
   try {
@@ -44,7 +44,7 @@ async function signIn(kind: 'login' | 'guest', action: () => Promise<void>) {
   }
 }
 
-function onSubmit(event: FormSubmitEvent<{ email: string; password: string }>) {
+const onSubmit = (event: FormSubmitEvent<{ email: string; password: string }>) => {
   signIn('login', () => auth.login(event.data.email, event.data.password))
 }
 </script>
