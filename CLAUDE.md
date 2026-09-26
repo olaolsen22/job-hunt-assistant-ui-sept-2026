@@ -7,6 +7,8 @@ over SSE for LLM parse-job updates.
 ## Read first (instead of exploring the codebase)
 
 - `docs/STATUS.md` — what exists right now: pages, components, stores, API operations in use. **Start here.**
+- `docs/REUSABLES.md` — existing components, composables, stores, utils, constants. Check it before
+  writing a new one; update it when you add or remove one.
 - Backend contract: `../job-hunt-assistant-api-sept-2026/schema.graphql` (GraphQL schema) and
   `../job-hunt-assistant-api-sept-2026/docs/STATUS.md` (REST endpoints). These are the only files
   outside this repo you may read. Read them only for API work, and only the parts you need.
@@ -45,6 +47,7 @@ over SSE for LLM parse-job updates.
 - Performance matters: fetch only the fields a view needs, avoid request waterfalls, paginate lists,
   lazy-load heavy components, and don't add heavy packages. Don't micro-optimize without a reason.
 - Write the simplest code that works. Readable beats reusable.
+- Arrow functions everywhere (`const foo = () => {}`), never `function` declarations.
 - No abstractions (composables, wrapper components, base components, generic helpers) until there are
   2+ real uses.
 - No defensive code for impossible cases. Only catch errors you actually handle.

@@ -14,7 +14,7 @@ interface LoginResponse {
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<AuthUser | null>(null)
 
-  async function fetchMe() {
+  const fetchMe = async () => {
     try {
       user.value = await $fetch<AuthUser>('/api/auth/me')
     } catch (e) {
@@ -24,7 +24,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(email: string, password: string) {
+  const login = async (email: string, password: string) => {
     const res = await $fetch<LoginResponse>('/api/auth/login', {
       method: 'POST',
       body: { email, password }
@@ -32,12 +32,12 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = res.user
   }
 
-  async function loginAsGuest() {
+  const loginAsGuest = async () => {
     const res = await $fetch<LoginResponse>('/api/auth/guest', { method: 'POST' })
     user.value = res.user
   }
 
-  async function logout() {
+  const logout = async () => {
     await $fetch('/api/auth/logout', { method: 'POST' })
     user.value = null
   }

@@ -8,7 +8,8 @@ const title = computed(() => route.meta.title)
 useHead({ title })
 
 const items: NavigationMenuItem[] = [
-  { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/' }
+  { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/' },
+  { label: 'Job listings', icon: 'i-lucide-file-text', to: '/listings' }
 ]
 
 const colorMode = useColorMode()
@@ -31,7 +32,7 @@ const userItems = computed<DropdownMenuItem[][]>(() => [
   [{ label: 'Log out', icon: 'i-lucide-log-out', onSelect: logout }]
 ])
 
-async function logout() {
+const logout = async () => {
   await auth.logout()
   await navigateTo('/login')
 }
