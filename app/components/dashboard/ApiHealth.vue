@@ -13,11 +13,7 @@ const state = computed(() => {
 </script>
 
 <template>
-  <UCard>
-    <template #header>
-      <h2 class="font-semibold">API status</h2>
-    </template>
-
+  <AppCard title="API status">
     <div class="flex items-center justify-between gap-4">
       <UBadge :color="state.color" variant="subtle" size="lg" data-testid="api-health">
         {{ state.label }}
@@ -32,5 +28,5 @@ const state = computed(() => {
         Recheck
       </UButton>
     </div>
-  </UCard>
+  </AppCard>
 </template>
