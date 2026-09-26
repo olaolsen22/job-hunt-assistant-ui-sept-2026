@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+@import '@nuxt/ui';
+
+/* Theme tokens. Nuxt UI reads the --ui-* variables; light first, then dark overrides. */
+:root {
+  --ui-radius: 0.375rem;
+}
+
+.dark {
+  --ui-bg: var(--ui-color-neutral-950);
+}
