@@ -57,9 +57,9 @@ over SSE for LLM parse-job updates.
 
 - Atomic: one logical change per commit. Don't mix features, refactors, and formatting.
 - Subject: imperative, ≤ 50 chars, no trailing period (e.g. `Add application status history`).
-- Body: 1–3 lines of _why_.
+- Body: 1–3 lines of _why_. When the change came from an owner request, say so: `Owner requested <x> to <goal>.`
 - Commit only when asked.
-- **Record the why at change time**, not commit time: after each change, append one line to `.claude/commit-notes.md` (`- <area>: <what> — <why>`). When committing, build messages from it, then remove the lines you used. This survives long chats, compaction, and `/clear`.
+- **Record the why at change time**, not commit time: after each change, append one line to `.claude/commit-notes.md` (`- <area>: <what> — <why>`, prefixing the why with `owner requested: ` when it was the owner's request). When committing, build messages from it, then remove the lines you used. This survives long chats, compaction, and `/clear`.
 
 ## Working rules (token budget: personal plan)
 
