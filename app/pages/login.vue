@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FetchError } from 'ofetch'
 import type { AuthFormField, FormSubmitEvent } from '@nuxt/ui'
+import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 useHead({ title: 'Sign in' })
 
@@ -33,10 +34,10 @@ async function signIn(kind: 'login' | 'guest', action: () => Promise<void>) {
     await navigateTo('/')
   } catch (e) {
     const status = (e as FetchError).statusCode
-    if (status === 401) errorMessage.value = 'Invalid email or password.'
+    if (status === 401) errorMessage.value = ERROR_MESSAGES.invalidCredentials
     // Both endpoints are rate-limited per IP, and login also locks the account after 5 tries.
-    else if (status === 429) errorMessage.value = 'Too many attempts. Try again in a few minutes.'
-    else errorMessage.value = 'Something went wrong. Try again.'
+    else if (status === 429) errorMessage.value = ERROR_MESSAGES.tooManyAttempts
+    else errorMessage.value = ERROR_MESSAGES.generic
   } finally {
     pending.value = null
   }
@@ -49,7 +50,7 @@ function onSubmit(event: FormSubmitEvent<{ email: string; password: string }>) {
 
 <template>
   <div class="flex justify-center pt-8">
-    <UCard class="w-full max-w-sm">
+    <AppCard class="w-full max-w-sm">
       <UAuthForm
         title="Sign in"
         icon="i-lucide-lock"
@@ -71,6 +72,6 @@ function onSubmit(event: FormSubmitEvent<{ email: string; password: string }>) {
           />
         </template>
       </UAuthForm>
-    </UCard>
+    </AppCard>
   </div>
 </template>
