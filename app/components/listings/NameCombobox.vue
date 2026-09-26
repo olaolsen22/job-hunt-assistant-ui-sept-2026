@@ -5,17 +5,15 @@ type Lookup = 'companies' | 'jobRoles' | 'skills' | 'locations'
 const props = defineProps<{ lookup: Lookup; placeholder?: string; countryCode?: string }>()
 const model = defineModel<string>()
 
+const PAGE_SIZE = 20
+
 // Only names: createListing takes names and creates any it doesn't know. A null $q lists all.
 const QUERIES: Record<Lookup, string> = {
-  companies:
-    'query CompanySearch($q: String) { companies(search: $q, first: 20, order: { name: ASC }) { nodes { name } } }',
-  jobRoles:
-    'query JobRoleSearch($q: String) { jobRoles(search: $q, first: 20, order: { name: ASC }) { nodes { name } } }',
-  skills:
-    'query SkillSearch($q: String) { skills(search: $q, first: 20, order: { name: ASC }) { nodes { name } } }',
+  companies: `query CompanySearch($q: String) { companies(search: $q, first: ${PAGE_SIZE}, order: { name: ASC }) { nodes { name } } }`,
+  jobRoles: `query JobRoleSearch($q: String) { jobRoles(search: $q, first: ${PAGE_SIZE}, order: { name: ASC }) { nodes { name } } }`,
+  skills: `query SkillSearch($q: String) { skills(search: $q, first: ${PAGE_SIZE}, order: { name: ASC }) { nodes { name } } }`,
   // Country-only locations have no city, so they're not city suggestions.
-  locations:
-    'query CitySearch($q: String, $country: String!) { locations(search: $q, first: 20, where: { countryCode: { eq: $country }, city: { neq: null } }, order: { city: ASC }) { nodes { name: city } } }'
+  locations: `query CitySearch($q: String, $country: String!) { locations(search: $q, first: ${PAGE_SIZE}, where: { countryCode: { eq: $country }, city: { neq: null } }, order: { city: ASC }) { nodes { name: city } } }`
 }
 
 const searchTerm = ref('')
@@ -32,6 +30,15 @@ const onCreate = (name: string) => {
   open.value = false
 }
 
+// Names fetched so far, shared by every combobox and kept across page visits so typing filters
+// locally. `complete` means the unfiltered fetch got every name, so the API has nothing more.
+// add.vue clears it after a save, since the save may have created names.
+const cache = useState<Record<string, { names: string[]; complete: boolean }>>(
+  'name-lookups',
+  () => ({})
+)
+const cacheKey = computed(() => `${props.lookup}:${props.countryCode ?? ''}`)
+
 let timer: ReturnType<typeof setTimeout> | undefined
 
 watch(searchTerm, (q) => {
@@ -40,20 +47,35 @@ watch(searchTerm, (q) => {
   timer = setTimeout(() => open.value && search(q), 200)
 })
 
-// Refetch on every open so the list is never stale (e.g. after the row's country changed).
 watch(open, (isOpen) => {
   if (isOpen && !searchTerm.value) search('')
 })
 
 const search = async (q: string) => {
+  const term = q.trim().toLowerCase()
+  const cached = cache.value[cacheKey.value]
+  if (cached) {
+    const local = cached.names.filter((n) => n.toLowerCase().includes(term))
+    // Local hits can miss names the first page didn't include; accepted to save a request.
+    if (local.length || cached.complete) {
+      items.value = local
+      return
+    }
+  }
+
   loading.value = true
   try {
     const data = await gql<Record<Lookup, { nodes: { name: string }[] }>>(QUERIES[props.lookup], {
-      q: q.trim() || null,
+      q: term || null,
       country: props.countryCode
     })
+    const names = data[props.lookup].nodes.map((n) => n.name)
+    cache.value[cacheKey.value] = {
+      names: [...new Set([...(cached?.names ?? []), ...names])].sort((a, b) => a.localeCompare(b)),
+      complete: cached?.complete || (!term && names.length < PAGE_SIZE)
+    }
     // A slower, older response must not overwrite results for what's typed now.
-    if (q === searchTerm.value) items.value = data[props.lookup].nodes.map((n) => n.name)
+    if (q === searchTerm.value) items.value = names
   } finally {
     loading.value = false
   }

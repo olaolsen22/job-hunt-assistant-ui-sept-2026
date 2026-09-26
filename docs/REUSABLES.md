@@ -11,7 +11,8 @@ remove it when you delete one.
 - `<DashboardApiHealth>` — API health indicator on the dashboard.
 - `<ListingsNameCombobox v-model lookup placeholder? countryCode?>` — debounced search over
   `companies` / `jobRoles` / `skills` by name, or `locations` by city within `countryCode`;
-  allows creating a new name.
+  allows creating a new name. Results are cached in `useState('name-lookups')` and filtered
+  locally; clear it with `clearNuxtState('name-lookups')` after a save that can create names.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
   active option clears it. Generic over the option value type.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
