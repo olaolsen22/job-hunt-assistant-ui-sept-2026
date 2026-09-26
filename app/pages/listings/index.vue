@@ -17,7 +17,7 @@ const { listings, totalCount, hasNextPage, hasPrevPage, loading, error, nextPage
 
     <div
       v-else-if="loading && listings.length === 0"
-      class="space-y-4"
+      class="grid gap-4 lg:grid-cols-2"
       data-testid="listings-loading"
     >
       <USkeleton v-for="i in 6" :key="i" class="h-28 w-full" />
@@ -36,7 +36,7 @@ const { listings, totalCount, hasNextPage, hasPrevPage, loading, error, nextPage
     <template v-else>
       <p class="text-sm text-muted">{{ totalCount }} listings</p>
 
-      <div class="space-y-4" data-testid="listings-grid">
+      <div class="grid gap-4 lg:grid-cols-2" data-testid="listings-grid">
         <ListingsCard v-for="listing in listings" :key="listing.id" :listing="listing" />
       </div>
 
