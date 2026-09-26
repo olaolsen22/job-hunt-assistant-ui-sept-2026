@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.nuxt/**)",
+      "Read(./.output/**)",
+      "Read(./node_modules/**)",
+      "Read(./pnpm-lock.yaml)",
+      "Read(./.env)",
+      "Bash(pkill:*)",
+      "Bash(killall:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(nuxt dev:*)"
+    ]
+  }
+}
