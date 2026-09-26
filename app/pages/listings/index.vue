@@ -3,8 +3,7 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Job listings' })
 
-const { listings, totalCount, hasNextPage, hasPrevPage, loading, error, nextPage, prevPage } =
-  useListingsList()
+const { listings, totalCount, page, pageSize, loading, error } = useListingsList()
 </script>
 
 <template>
@@ -40,25 +39,15 @@ const { listings, totalCount, hasNextPage, hasPrevPage, loading, error, nextPage
         <ListingsCard v-for="listing in listings" :key="listing.id" :listing="listing" />
       </div>
 
-      <div v-if="hasNextPage || hasPrevPage" class="flex justify-center gap-2">
-        <UButton
-          variant="outline"
-          color="neutral"
-          :disabled="!hasPrevPage || loading"
-          data-testid="listings-prev"
-          @click="prevPage"
-        >
-          Previous
-        </UButton>
-        <UButton
-          variant="outline"
-          color="neutral"
-          :disabled="!hasNextPage || loading"
-          data-testid="listings-next"
-          @click="nextPage"
-        >
-          Next
-        </UButton>
+      <!-- UPagination still renders a lone "1" with disabled arrows when everything fits on one page. -->
+      <div v-if="totalCount > pageSize" class="flex justify-center sm:justify-end">
+        <UPagination
+          v-model:page="page"
+          :total="totalCount"
+          :items-per-page="pageSize"
+          :disabled="loading"
+          data-testid="listings-pagination"
+        />
       </div>
     </template>
   </div>

@@ -9,35 +9,43 @@ export interface ListingListItem {
   deadlineType: DeadlineType
   deadlineOn: string | null
   url: string
+  favoritedAt: string | null
 }
 
 interface ListingsResult {
   listings: {
-    nodes: ListingListItem[]
-    pageInfo: {
-      hasNextPage: boolean
-      hasPreviousPage: boolean
-      startCursor: string | null
-      endCursor: string | null
-    }
+    items: ListingListItem[] | null
     totalCount: number
   }
 }
 
-const LISTINGS_PAGE_SIZE = 20
+// Page size is decided once per page load, not reactive to resize: changing it mid-pagination
+// would shift page boundaries under the user. Below `lg` the grid is a single column, so fewer rows fit
+// on a phone screen; at `lg`+ (two columns) the row count is picked from viewport height so the
+// list roughly fills common desktop heights (1440p/1080p/laptop) without a card-height formula.
+const getPageSize = () => {
+  if (!import.meta.client) return 5
+  if (!window.matchMedia('(min-width: 1024px)').matches) return 5
+  if (window.innerHeight >= 1200) return 10 // 5 rows x 2 cols, e.g. 1440p
+  if (window.innerHeight >= 900) return 8 // 4 rows x 2 cols, e.g. 1080p
+  return 6 // 3 rows x 2 cols
+}
 
-// Deadline soonest first. DeadlineType has no nulls-first/last control, so we sort by the enum
-// itself: DATE, ASAP, ROLLING, UNSPECIFIED groups dated listings first, then deadlineOn breaks
-// ties within DATE. Assumes the backend stores the enum as its declared int order, not as a
-// string (unverified against a live backend).
+// No `order` argument: the backend's default order is closest deadline first (ASAP counts as
+// due 14 days after postedOn), then rolling/unspecified newest first, then expired last. Sending
+// our own order (e.g. by deadlineType or deadlineOn) would sort those raw columns instead, which
+// is wrong: deadlineType is stored as a string and deadlineOn puts nulls first.
+// Dated deadlines that have passed are still filtered out server-side; a listing stays visible
+// through its deadline day. ASAP listings have no deadlineOn to filter on, so an "expired" one
+// (posted 14+ days ago) is flagged in ListingsDates instead of hidden.
 const LISTINGS_QUERY = `
-  query Listings($first: Int, $after: String) {
+  query Listings($skip: Int, $take: Int, $today: LocalDate!) {
     listings(
-      first: $first
-      after: $after
-      order: [{ deadlineType: ASC }, { deadlineOn: ASC }, { createdAt: DESC }]
+      skip: $skip
+      take: $take
+      where: { or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }] }
     ) {
-      nodes {
+      items {
         id
         title
         company { name }
@@ -46,8 +54,8 @@ const LISTINGS_QUERY = `
         deadlineType
         deadlineOn
         url
+        favoritedAt
       }
-      pageInfo { hasNextPage hasPreviousPage startCursor endCursor }
       totalCount
     }
   }
@@ -56,39 +64,28 @@ const LISTINGS_QUERY = `
 // Listings need the session cookie and change often; fetching client-only (server: false)
 // avoids wiring cookie forwarding into the shared `gql` util for a single, non-SSR-critical page.
 export const useListingsList = () => {
-  const after = ref<string>()
-  // Cursors of pages visited so "Previous" can step back without a "last/before" query.
-  const history = ref<string[]>([])
+  const pageSize = getPageSize()
+  const page = ref(1)
 
   const { data, status, error, refresh } = useAsyncData(
     'listings',
-    () => gql<ListingsResult>(LISTINGS_QUERY, { first: LISTINGS_PAGE_SIZE, after: after.value }),
-    { watch: [after], server: false }
+    () =>
+      gql<ListingsResult>(LISTINGS_QUERY, {
+        skip: (page.value - 1) * pageSize,
+        take: pageSize,
+        // The user's local date, not UTC: the sv-SE locale formats as YYYY-MM-DD.
+        today: new Date().toLocaleDateString('sv-SE')
+      }),
+    { watch: [page], server: false }
   )
 
-  const pageInfo = computed(() => data.value?.listings.pageInfo)
-
-  const nextPage = () => {
-    const info = pageInfo.value
-    if (!info?.hasNextPage || !info.endCursor) return
-    history.value.push(after.value ?? '')
-    after.value = info.endCursor
-  }
-
-  const prevPage = () => {
-    const prev = history.value.pop()
-    after.value = prev || undefined
-  }
-
   return {
-    listings: computed(() => data.value?.listings.nodes ?? []),
+    listings: computed(() => data.value?.listings.items ?? []),
     totalCount: computed(() => data.value?.listings.totalCount ?? 0),
-    hasNextPage: computed(() => pageInfo.value?.hasNextPage ?? false),
-    hasPrevPage: computed(() => history.value.length > 0),
+    page,
+    pageSize,
     loading: computed(() => status.value === 'pending'),
     error,
-    nextPage,
-    prevPage,
     refresh
   }
 }

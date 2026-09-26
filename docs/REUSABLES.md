@@ -29,10 +29,12 @@ remove it when you delete one.
 - `useListingForm()` → `{ state, validate, toInput }` — listing form state, `UForm` validator, and
   mapping to the API's `ListingInput`. Also exports `ListingLocation`, `ListingLanguage`,
   `ListingSkill` types.
-- `useListingsList()` → `{ listings, totalCount, hasNextPage, hasPrevPage, loading, error, nextPage,
-prevPage, refresh }` — cursor-paged `listings` query (20/page) for the listings list page.
-  Client-only fetch (`server: false`) since it needs the session cookie. Also exports
-  `ListingListItem`.
+- `useListingsList()` → `{ listings, totalCount, page, pageSize, loading, error, refresh }` —
+  offset-paged (bind `page`/`pageSize`/`totalCount` to `UPagination`) `listings` query (past
+  `DATE` deadlines filtered out server-side) for the
+  listings list page. Page size is fixed per page load from viewport (5 below `lg`, 6-10 at `lg`+
+  depending on window height). Client-only fetch (`server: false`) since it needs the session
+  cookie. Also exports `ListingListItem`.
 
 ## Stores (`app/stores/`)
 
