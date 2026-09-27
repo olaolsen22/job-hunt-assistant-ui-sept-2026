@@ -13,7 +13,51 @@ definePageMeta({ title: 'Listing' })
 const route = useRoute()
 const id = Number(route.params.id)
 
-const { listing, loading, error } = await useListing(id)
+const { listing, loading, error, refresh } = await useListing(id)
+
+const UPDATE_LISTING = `
+  mutation UpdateListing($id: Int!, $listing: ListingInput!) {
+    updateListing(input: { id: $id, listing: $listing }) {
+      listing { id }
+      errors { __typename ... on Error { message } }
+    }
+  }
+`
+
+interface UpdateListingResult {
+  updateListing: { listing: { id: number } | null; errors: { message: string }[] | null }
+}
+
+const toast = useToast()
+const { state, toInput, fill } = useListingForm()
+const markOpen = ref(false)
+const marking = ref(false)
+
+// The API has no mutation for just this flag and updateListing replaces the whole listing,
+// so rebuild the full input from the loaded listing.
+const markAnalyzed = async () => {
+  if (!listing.value) return
+  marking.value = true
+  try {
+    fill(listing.value)
+    state.isAnalyzed = true
+    const { updateListing } = await gql<UpdateListingResult>(UPDATE_LISTING, {
+      id,
+      listing: toInput()
+    })
+    if (updateListing.errors?.length) {
+      toast.add({ title: updateListing.errors[0]!.message, color: 'error' })
+      return
+    }
+    await refresh()
+    toast.add({ title: 'Marked as analyzed', color: 'success', icon: 'i-lucide-check' })
+  } catch {
+    toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
+  } finally {
+    marking.value = false
+    markOpen.value = false
+  }
+}
 
 const labelOf = <T extends string>(
   options: readonly { label: string; value: T }[],
@@ -30,6 +74,15 @@ const labelOf = <T extends string>(
         </UButton>
 
         <div v-if="listing" class="flex items-center gap-2">
+          <UButton
+            v-if="!listing.analyzedAt"
+            icon="i-lucide-check-check"
+            color="neutral"
+            variant="subtle"
+            data-testid="listing-mark-analyzed"
+            @click="markOpen = true"
+            >Mark analyzed</UButton
+          >
           <ListingsFavoriteButton :id="listing.id" :favorited-at="listing.favoritedAt" />
           <UButton :to="`/listings/${listing.id}/edit`" icon="i-lucide-pencil">Edit</UButton>
         </div>
@@ -56,7 +109,10 @@ const labelOf = <T extends string>(
         >
           <AppCard title="Job" class="lg:col-span-2">
             <div class="space-y-4">
-              <h1 class="text-lg font-semibold text-highlighted">{{ listing.title }}</h1>
+              <div class="flex items-start justify-between gap-2">
+                <h1 class="text-lg font-semibold text-highlighted">{{ listing.title }}</h1>
+                <ListingsAnalyzedBadge :analyzed-at="listing.analyzedAt" class="mt-1 shrink-0" />
+              </div>
 
               <div class="grid gap-3 sm:grid-cols-2 sm:gap-4">
                 <div class="space-y-1">
@@ -173,6 +229,15 @@ const labelOf = <T extends string>(
           </p>
           <p v-else class="text-sm text-muted">No summary</p>
         </AppCard>
+
+        <AppConfirmModal
+          v-model:open="markOpen"
+          title="Mark as analyzed?"
+          :description="`${listing.title} at ${listing.company.name}`"
+          confirm-label="Mark analyzed"
+          :loading="marking"
+          @confirm="markAnalyzed"
+        />
       </template>
     </div>
   </div>

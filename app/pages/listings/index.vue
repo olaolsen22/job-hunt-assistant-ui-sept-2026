@@ -3,13 +3,30 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Job listings' })
 
-const { listings, totalCount, page, pageSize, loading, error } = useListingsList()
+const { listings, totalCount, toAnalyzeCount, page, pageSize, loading, error } = useListingsList()
 </script>
 
 <template>
   <div class="space-y-6">
-    <div class="flex justify-end">
-      <UButton to="/listings/add" icon="i-lucide-plus">Add listing</UButton>
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <!-- "Active" because listings past their deadline are filtered out server-side. -->
+      <div v-if="listings.length" class="flex flex-wrap items-center gap-2">
+        <p class="text-lg font-semibold text-highlighted" data-testid="listings-total">
+          {{ totalCount }} active {{ totalCount === 1 ? 'listing' : 'listings' }}
+        </p>
+        <UBadge
+          v-if="toAnalyzeCount"
+          color="warning"
+          variant="subtle"
+          size="lg"
+          icon="i-lucide-clock"
+          data-testid="listings-to-analyze"
+          >{{ toAnalyzeCount }} to analyze</UBadge
+        >
+      </div>
+      <UButton to="/listings/add" icon="i-lucide-plus" class="justify-center sm:ml-auto">
+        Add listing
+      </UButton>
     </div>
 
     <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />
@@ -33,8 +50,6 @@ const { listings, totalCount, page, pageSize, loading, error } = useListingsList
     </div>
 
     <template v-else>
-      <p class="text-sm text-muted">{{ totalCount }} listings</p>
-
       <div class="grid gap-4 lg:grid-cols-2" data-testid="listings-grid">
         <ListingsCard v-for="listing in listings" :key="listing.id" :listing="listing" />
       </div>

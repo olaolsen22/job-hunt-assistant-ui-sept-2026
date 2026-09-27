@@ -10,6 +10,8 @@ export interface ListingListItem {
   deadlineOn: string | null
   url: string
   favoritedAt: string | null
+  analyzedAt: string | null
+  jobRole: { name: string }
 }
 
 interface ListingsResult {
@@ -17,6 +19,7 @@ interface ListingsResult {
     items: ListingListItem[] | null
     totalCount: number
   }
+  toAnalyze: { totalCount: number }
 }
 
 // Page size is decided once per page load, not reactive to resize: changing it mid-pagination
@@ -55,7 +58,19 @@ const LISTINGS_QUERY = `
         deadlineOn
         url
         favoritedAt
+        analyzedAt
+        jobRole { name }
       }
+      totalCount
+    }
+    # Only the count is needed; take: 1 keeps the unused page minimal.
+    toAnalyze: listings(
+      take: 1
+      where: {
+        or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]
+        analyzedAt: { eq: null }
+      }
+    ) {
       totalCount
     }
   }
@@ -82,6 +97,7 @@ export const useListingsList = () => {
   return {
     listings: computed(() => data.value?.listings.items ?? []),
     totalCount: computed(() => data.value?.listings.totalCount ?? 0),
+    toAnalyzeCount: computed(() => data.value?.toAnalyze.totalCount ?? 0),
     page,
     pageSize,
     loading: computed(() => status.value === 'pending'),

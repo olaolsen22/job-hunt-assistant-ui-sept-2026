@@ -69,7 +69,8 @@ export const useListingForm = () => {
     // Most ads name a place, so start with one row. Empty city = the whole country.
     locations: [{ countryCode: 'NO', city: '' }] as ListingLocation[],
     languages: [] as ListingLanguage[],
-    skills: [] as ListingSkill[]
+    skills: [] as ListingSkill[],
+    isAnalyzed: false
   })
 
   const validate = (s: typeof state): FormError[] => {
@@ -109,7 +110,9 @@ export const useListingForm = () => {
     postingLanguage: state.postingLanguage ?? null,
     locations: state.locations.map((l) => ({ ...l, city: orNull(l.city) })),
     languages: state.languages.map((l) => ({ ...l, level: l.level ?? null })),
-    skills: state.skills.map((s) => ({ ...s, minYears: s.minYears ?? null }))
+    skills: state.skills.map((s) => ({ ...s, minYears: s.minYears ?? null })),
+    // updateListing replaces the whole listing, so leaving this out would clear the marker.
+    isAnalyzed: state.isAnalyzed
   })
 
   // Inverse of toInput: the API's nulls become the form's empty values.
@@ -133,7 +136,8 @@ export const useListingForm = () => {
         city: location.city ?? ''
       })),
       languages: listing.languages.map((l) => ({ ...l, level: l.level ?? undefined })),
-      skills: listing.skills.map(({ skill, ...rest }) => ({ ...rest, name: skill.name }))
+      skills: listing.skills.map(({ skill, ...rest }) => ({ ...rest, name: skill.name })),
+      isAnalyzed: listing.analyzedAt != null
     })
 
   // Leaves url alone: the draft doesn't have one. Duplicates are dropped because the skill and
@@ -178,7 +182,9 @@ export const useListingForm = () => {
         .filter((l) => oneOf(COUNTRY_CODES, l?.countryCode))
         .map((l) => ({ countryCode: l.countryCode, city: text(l.city) })),
       languages,
-      skills
+      skills,
+      // A parsed ad has its details filled in, which is what "analyzed" means.
+      isAnalyzed: true
     })
   }
 

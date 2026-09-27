@@ -67,6 +67,7 @@ describe('useListingForm', () => {
       deadlineOn: '2026-10-01',
       postingLanguage: null,
       favoritedAt: null,
+      analyzedAt: '2026-09-20T10:00:00Z',
       locations: [{ location: { city: null, countryCode: 'SE' } }],
       languages: [{ language: 'NORWEGIAN', level: null, isRequired: true }],
       skills: [{ skill: { name: 'Vue' }, level: 4, minYears: 2, isRequired: false }]
@@ -81,7 +82,8 @@ describe('useListingForm', () => {
       deadlineOn: '2026-10-01',
       locations: [{ countryCode: 'SE', city: null }],
       languages: [{ language: 'NORWEGIAN', level: null, isRequired: true }],
-      skills: [{ name: 'Vue', level: 4, minYears: 2, isRequired: false }]
+      skills: [{ name: 'Vue', level: 4, minYears: 2, isRequired: false }],
+      isAnalyzed: true
     })
   })
 
