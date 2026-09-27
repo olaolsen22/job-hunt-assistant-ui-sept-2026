@@ -25,6 +25,22 @@ export default defineNuxtConfig({
     fallback: 'light'
   },
 
+  // gql.tada infers GraphQL result/variable types from the API schema. Paths are relative to
+  // .nuxt/tsconfig.app.json, where Nuxt writes this.
+  typescript: {
+    tsConfig: {
+      compilerOptions: {
+        plugins: [
+          {
+            name: 'gql.tada/ts-plugin',
+            schema: '../../job-hunt-assistant-api-sept-2026/schema.graphql',
+            tadaOutputLocation: '../app/graphql-env.d.ts'
+          }
+        ]
+      }
+    }
+  },
+
   // Same-origin proxy: the HttpOnly session cookie and SSE work without CORS.
   routeRules: {
     '/api/**': { proxy: `${apiUrl}/api/**` },

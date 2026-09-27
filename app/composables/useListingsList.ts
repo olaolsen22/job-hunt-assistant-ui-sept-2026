@@ -1,26 +1,31 @@
-import type { DeadlineType } from '~/constants/listing'
+import type { ResultOf } from 'gql.tada'
 
-export interface ListingListItem {
-  id: number
-  title: string
-  company: { name: string }
-  locations: { location: { city: string | null; countryCode: string } }[]
-  postedOn: string
-  deadlineType: DeadlineType
-  deadlineOn: string | null
-  url: string
-  favoritedAt: string | null
-  analyzedAt: string | null
-  jobRole: { name: string }
-}
-
-interface ListingsResult {
-  listings: {
-    items: ListingListItem[] | null
-    totalCount: number
+const LISTING_ITEM = graphql(`
+  fragment ListingListItem on Listing {
+    id
+    title
+    company {
+      name
+    }
+    locations {
+      location {
+        city
+        countryCode
+      }
+    }
+    postedOn
+    deadlineType
+    deadlineOn
+    url
+    favoritedAt
+    analyzedAt
+    jobRole {
+      name
+    }
   }
-  toAnalyze: { totalCount: number }
-}
+`)
+
+export type ListingListItem = ResultOf<typeof LISTING_ITEM>
 
 // Page size is decided once per page load, not reactive to resize: changing it mid-pagination
 // would shift page boundaries under the user. Below `lg` the grid is a single column, so fewer rows fit
@@ -43,35 +48,64 @@ const getPageSize = () => {
 // (posted 14+ days ago) is flagged in ListingsDates instead of hidden.
 // Filters are written into the query, not sent as a ListingFilterInput variable: the API can't
 // see inside a filter variable, so its cost check prices every possible filter field and rejects it.
-const ACTIVE = 'or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]'
-const listingsQuery = (toAnalyzeOnly: boolean) => `
-  query Listings($skip: Int, $take: Int, $today: LocalDate!) {
-    listings(
-      skip: $skip
-      take: $take
-      where: { ${ACTIVE} ${toAnalyzeOnly ? 'analyzedAt: { eq: null }' : ''} }
-    ) {
-      items {
-        id
-        title
-        company { name }
-        locations { location { city countryCode } }
-        postedOn
-        deadlineType
-        deadlineOn
-        url
-        favoritedAt
-        analyzedAt
-        jobRole { name }
+// That's also why there are two near-identical queries: gql.tada only types literal documents.
+// `toAnalyze` only needs the count; take: 1 keeps its unused page minimal.
+const LISTINGS = graphql(
+  `
+    query Listings($skip: Int, $take: Int, $today: LocalDate!) {
+      listings(
+        skip: $skip
+        take: $take
+        where: { or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }] }
+      ) {
+        items {
+          ...ListingListItem
+        }
+        totalCount
       }
-      totalCount
+      toAnalyze: listings(
+        take: 1
+        where: {
+          or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]
+          analyzedAt: { eq: null }
+        }
+      ) {
+        totalCount
+      }
     }
-    # Only the count is needed; take: 1 keeps the unused page minimal.
-    toAnalyze: listings(take: 1, where: { ${ACTIVE} analyzedAt: { eq: null } }) {
-      totalCount
+  `,
+  [LISTING_ITEM]
+)
+
+const LISTINGS_TO_ANALYZE = graphql(
+  `
+    query ListingsToAnalyze($skip: Int, $take: Int, $today: LocalDate!) {
+      listings(
+        skip: $skip
+        take: $take
+        where: {
+          or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]
+          analyzedAt: { eq: null }
+        }
+      ) {
+        items {
+          ...ListingListItem
+        }
+        totalCount
+      }
+      toAnalyze: listings(
+        take: 1
+        where: {
+          or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]
+          analyzedAt: { eq: null }
+        }
+      ) {
+        totalCount
+      }
     }
-  }
-`
+  `,
+  [LISTING_ITEM]
+)
 
 // Listings need the session cookie and change often; fetching client-only (server: false)
 // avoids wiring cookie forwarding into the shared `gql` util for a single, non-SSR-critical page.
@@ -85,7 +119,7 @@ export const useListingsList = () => {
   const { data, status, error, refresh } = useAsyncData(
     'listings',
     () =>
-      gql<ListingsResult>(listingsQuery(toAnalyzeOnly.value), {
+      gql(toAnalyzeOnly.value ? LISTINGS_TO_ANALYZE : LISTINGS, {
         skip: (page.value - 1) * pageSize,
         take: pageSize,
         // The user's local date, not UTC: the sv-SE locale formats as YYYY-MM-DD.
@@ -95,9 +129,9 @@ export const useListingsList = () => {
   )
 
   return {
-    listings: computed(() => data.value?.listings.items ?? []),
-    totalCount: computed(() => data.value?.listings.totalCount ?? 0),
-    toAnalyzeCount: computed(() => data.value?.toAnalyze.totalCount ?? 0),
+    listings: computed(() => data.value?.listings?.items ?? []),
+    totalCount: computed(() => data.value?.listings?.totalCount ?? 0),
+    toAnalyzeCount: computed(() => data.value?.toAnalyze?.totalCount ?? 0),
     page,
     pageSize,
     toAnalyzeOnly,

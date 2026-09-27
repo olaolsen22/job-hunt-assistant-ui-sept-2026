@@ -3,18 +3,21 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Add listing' })
 
-const CREATE_LISTING = `
+const CREATE_LISTING = graphql(`
   mutation CreateListing($listing: ListingInput!) {
     createListing(input: { listing: $listing }) {
-      listing { id }
-      errors { __typename ... on Error { message } }
+      listing {
+        id
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
     }
   }
-`
-
-interface CreateListingResult {
-  createListing: { listing: { id: number } | null; errors: { message: string }[] | null }
-}
+`)
 
 const { state, validate, toInput, fillDraft } = useListingForm()
 const { checkNewNames } = provideNewNames()
@@ -37,7 +40,7 @@ const onConfirm = async () => {
   submitting.value = true
   errorMessages.value = []
   try {
-    const { createListing } = await gql<CreateListingResult>(CREATE_LISTING, {
+    const { createListing } = await gql(CREATE_LISTING, {
       listing: toInput()
     })
     if (createListing.errors?.length) {
