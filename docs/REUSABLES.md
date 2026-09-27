@@ -6,8 +6,14 @@ remove it when you delete one.
 ## Components (`app/components/`)
 
 - `<AppCard title?>` — `UCard` with an optional `h2` header. Default wrapper for page sections.
-- `<AppConfirmModal v-model:open title description? confirm-label? loading? @confirm>` — confirm
-  dialog with Cancel / confirm buttons; not dismissible while `loading`.
+- `<AppConfirmModal v-model:open title description? confirm-label? loading? disabled? @confirm>` — confirm
+  dialog with Cancel / confirm buttons; not dismissible while `loading`. The default slot is the
+  body, so form modals (`<ListingsApplyModal>` etc.) wrap it too.
+- `<AppMarkdownEditor v-model label>` — `UTextarea` for a Markdown note with a `n / 10000` counter
+  (the API's max). Send the raw string; the API stores blank as null.
+- `<AppMarkdownContent source>` — renders Markdown with `marked`, sanitized by DOMPurify, in
+  `prose` (Tailwind typography). Use it as `<LazyAppMarkdownContent>` so both libs load only when a
+  note is shown.
 - `<DashboardApiHealth>` — API health indicator on the dashboard.
 - `<ListingsNameCombobox v-model lookup placeholder? countryCode?>` — debounced search over
   `companies` / `jobRoles` / `skills` by name, or `locations` by city within `countryCode`;
@@ -32,14 +38,32 @@ remove it when you delete one.
   the `setListingFavorite` mutation. Used by `<ListingsCard>` and the listing detail page.
 - `<ListingsAnalyzedBadge analyzedAt>` — "Analyzed" / "To analyze" badge. Used by `<ListingsCard>`
   and the listing detail page.
+- `<ListingsStatusBadge status>` — application status badge (colors in `APPLICATION_STATUS_OPTIONS`).
+  Used by `<ListingsCard>` and `<ListingsApplication>`.
+- `<ListingsApplication listing @changed>` — the detail page's Application card: status/archived
+  badges, company application count, Apply / Record outcome buttons per status, and
+  `<ListingsStatusTimeline>` + `<ListingsInterviews>`. `@changed` = refetch the listing.
+- `<ListingsStatusTimeline listing @changed>` — `UTimeline` of `statusHistory` with Edit
+  (`<ListingsStatusChangeModal>`) per entry and Undo (confirmed) on the newest.
+- `<ListingsInterviews listing @changed>` — upcoming/past interviews as "Round N · title", add/edit
+  via `<ListingsInterviewModal>`, confirmed delete.
+- `<ListingsApplyModal>`, `<ListingsOutcomeModal>`, `<ListingsStatusChangeModal>`,
+  `<ListingsInterviewModal>` — `v-model:open` form modals (on `<AppConfirmModal>`) that own their
+  mutation and emit `changed`.
+- `<ListingsDocumentPicker v-model:document-id v-model:file label documents>` — pick an uploaded
+  document or a new PDF (uploaded by the caller on submit); used twice by `<ListingsApplyModal>`.
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
 - `<ListingsDates listing>` — labelled posted and deadline lines, each colored by days ago/left; with
   no deadline date it shows the deadline type + days since posted, colored like the posted line.
 
 ## Composables (`app/composables/`)
 
-- `useListing(id)` → `{ listing, loading, error }` — client-only `listingById` query with every
-  field (key `listing-${id}`), for the detail and edit pages. Also exports `ListingDetail`.
+- `useListing(id)` → `{ listing, loading, error, refresh }` — client-only `listingById` query with every
+  field (key `listing-${id}`), incl. application status, history, interviews and documents, for the
+  detail and edit pages. Also exports `ListingDetail`.
+- `useMutation(onStale?)` → `{ run, loading }` — `run(async () => payload.errors)` toasts the API's
+  error message (or a generic one on a network error) and resolves `true` on success; a
+  `*NotFoundError` calls `onStale` to refetch.
 - `useListingForm()` → `{ state, validate, toInput, fill, fillDraft }` — listing form state, `UForm` validator,
   mapping to the API's `ListingInput`, `fill(listing: ListingDetail)` to load an existing one, and
   `fillDraft(json)` to load a parsed draft (keeps only valid values, leaves `url`). Also exports `ListingLocation`, `ListingLanguage`,
@@ -51,8 +75,10 @@ remove it when you delete one.
 - `useParsePrompt(name)` → `{ instructions, copied, load, copy(posting) }` — fetches
   `listingParsePrompt` or `listingQuickParsePrompt` and copies it + `<posting>` text for an external
   AI. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).
-- `useListingsList()` → `{ listings, totalCount, toAnalyzeCount, page, pageSize, toAnalyzeOnly, loading, error, refresh }` —
-  `toAnalyzeOnly` filters to `analyzedAt: null` and resets to page 1;
+- `useListingsList()` → `{ listings, totalCount, counts, page, pageSize, filter, loading, error, refresh }` —
+  `filter` (`'toAnalyze' | 'active' | 'archived' | null`, exported as `ListingsFilter`) picks one of
+  the literal queries and resets to page 1; `counts` has each filter's total for its button. Active
+  = Applied/Interviewing, newest activity first, past deadlines included; archived = `archived: true`;
   offset-paged (bind `page`/`pageSize`/`totalCount` to `UPagination`) `listings` query (past
   `DATE` deadlines filtered out server-side) for the
   listings list page. Page size is fixed per page load from viewport (5 below `lg`, 6-10 at `lg`+
@@ -72,10 +98,14 @@ remove it when you delete one.
 - `formatDate(iso)` — formats a `YYYY-MM-DD` date string as `nb-NO` medium date (`26. sep. 2026`), parsed at local
   midnight (avoids the UTC-parsing off-by-one-day bug for negative-offset zones).
 - `todayIso()` — local today as `YYYY-MM-DD` (not `toISOString()`, which is UTC).
+- `formatDateTime(iso)` — formats a `DateTime` instant as `nb-NO` medium date + short time, local zone.
+- `toDateTimeLocal(value = now)` — a date/ISO string as local `YYYY-MM-DDTHH:mm` for
+  `<input type="datetime-local">` (send back with `new Date(value).toISOString()`).
 - `daysFromToday(iso)` — whole days from local today to a `YYYY-MM-DD` date; negative if past.
 
 ## Constants (`app/constants/`, import explicitly)
 
 - `countries.ts` — `COUNTRY_CODES`, `COUNTRY_OPTIONS` (`{ label, value }`, sorted by English name).
-- `listing.ts` — `*_OPTIONS` for the listing enums, `CEFR_LEVELS`, and their value types.
+- `listing.ts` — `*_OPTIONS` for the listing enums (`APPLICATION_STATUS_OPTIONS` also carries each
+  status's badge color; `Outcome` is `OUTCOME_OPTIONS`' value type), `CEFR_LEVELS`, and their value types.
 - `errorMessages.ts` — `ERROR_MESSAGES` for user-facing errors.

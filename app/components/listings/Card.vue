@@ -25,6 +25,7 @@ const { listing } = defineProps<{ listing: ListingListItem }>()
       </div>
 
       <div class="flex flex-wrap gap-2">
+        <ListingsStatusBadge :status="listing.status" />
         <ListingsAnalyzedBadge :analyzed-at="listing.analyzedAt" />
         <UBadge
           color="neutral"
