@@ -1,0 +1,108 @@
+<script setup lang="ts">
+import type { ListingListItem } from '~/composables/useListingsList'
+import { DEADLINE_TYPE_OPTIONS } from '~/constants/listing'
+
+const { listing, detail = false } = defineProps<{
+  listing: Pick<ListingListItem, 'postedOn' | 'deadlineType' | 'deadlineOn'>
+  // Renders two label/value grid cells for the detail page instead of the compact card lines.
+  detail?: boolean
+}>()
+
+// Matches the backend's default-order rule: an ASAP listing counts as due 14 days after
+// it was posted. Not exposed on the API, so hardcoded here (see the backend's constant).
+const ASAP_DUE_DAYS = 14
+
+const RED = 'text-red-600/85 dark:text-red-400/85'
+const ORANGE = 'text-orange-600/85 dark:text-orange-400/85'
+const YELLOW = 'text-yellow-600/85 dark:text-yellow-400/85'
+const GREEN = 'text-green-600/85 dark:text-green-400/85'
+const BLUE = 'text-blue-600/85 dark:text-blue-400/85'
+
+// Past deadlines fall into the `<= 0` bucket and stay red.
+const deadlineColor = (daysLeft: number) => {
+  if (daysLeft <= 0) return RED
+  if (daysLeft <= 3) return ORANGE
+  if (daysLeft <= 5) return YELLOW
+  if (daysLeft <= 7) return GREEN
+  return BLUE
+}
+
+const postedColor = (daysAgo: number) => {
+  if (daysAgo <= 0) return BLUE
+  if (daysAgo <= 3) return GREEN
+  if (daysAgo <= 5) return YELLOW
+  if (daysAgo <= 7) return ORANGE
+  return RED
+}
+
+const daysSincePosted = computed(() => -daysFromToday(listing.postedOn))
+
+const postedClass = computed(() => postedColor(daysSincePosted.value))
+
+const hasDeadlineDate = computed(() => listing.deadlineType === 'DATE' && !!listing.deadlineOn)
+
+const isAsap = computed(() => listing.deadlineType === 'ASAP')
+
+// An ASAP listing's "deadline" for coloring/expiry purposes: postedOn + ASAP_DUE_DAYS.
+const asapDueDaysLeft = computed(() => ASAP_DUE_DAYS - daysSincePosted.value)
+
+const isExpired = computed(() => {
+  if (hasDeadlineDate.value) return daysFromToday(listing.deadlineOn!) < 0
+  if (isAsap.value) return asapDueDaysLeft.value < 0
+  return false
+})
+
+const deadlineClass = computed(() => {
+  if (isExpired.value) return RED
+  if (hasDeadlineDate.value) return deadlineColor(daysFromToday(listing.deadlineOn!))
+  if (isAsap.value) return deadlineColor(asapDueDaysLeft.value)
+  // No deadline date, so the posting's age is the only urgency signal left.
+  return postedClass.value
+})
+
+const deadlineLabel = computed(() => {
+  if (hasDeadlineDate.value) {
+    const date = formatDate(listing.deadlineOn!)
+    return isExpired.value ? `${date}, expired` : date
+  }
+
+  const type = DEADLINE_TYPE_OPTIONS.find((option) => option.value === listing.deadlineType)!.label
+
+  if (isAsap.value) {
+    if (isExpired.value) return `${type}, likely filled`
+    const due = new Date(`${listing.postedOn}T00:00:00`)
+    due.setDate(due.getDate() + ASAP_DUE_DAYS)
+    return `${type}, due ~${formatDate(due.toLocaleDateString('sv-SE'))}`
+  }
+
+  if (daysSincePosted.value === 0) return `${type}, posted today`
+  return `${type}, ${daysSincePosted.value} ${daysSincePosted.value === 1 ? 'day' : 'days'} since posted`
+})
+</script>
+
+<template>
+  <template v-if="detail">
+    <div class="space-y-1">
+      <p class="text-sm font-medium text-highlighted">Posted on</p>
+      <p class="text-sm" :class="postedClass" data-testid="listing-posted">
+        {{ formatDate(listing.postedOn) }}
+      </p>
+    </div>
+    <div class="space-y-1">
+      <p class="text-sm font-medium text-highlighted">Deadline</p>
+      <p class="text-sm" :class="deadlineClass" data-testid="listing-deadline">
+        {{ deadlineLabel }}
+      </p>
+    </div>
+  </template>
+  <div v-else class="space-y-1 text-sm">
+    <p class="flex items-center gap-1.5" :class="postedClass" data-testid="listing-posted">
+      <UIcon name="i-lucide-calendar" class="size-4 shrink-0" />
+      <strong>Posted:</strong> {{ formatDate(listing.postedOn) }}
+    </p>
+    <p class="flex items-center gap-1.5" :class="deadlineClass" data-testid="listing-deadline">
+      <UIcon name="i-lucide-hourglass" class="size-4 shrink-0" />
+      <strong>Deadline:</strong> {{ deadlineLabel }}
+    </p>
+  </div>
+</template>

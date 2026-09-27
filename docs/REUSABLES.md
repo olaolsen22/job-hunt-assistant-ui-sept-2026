@@ -18,12 +18,26 @@ remove it when you delete one.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
 - `<ListingsSkillsField v-model>` — skill search + `{ name, level, isRequired }[]` rows.
 - `<ListingsLanguagesField v-model>` — `{ language, level?, isRequired }[]` rows, one per language.
+- `<ListingsCard listing>` — plain `UCard` for one `ListingListItem`: title (links to
+  `/listings/{id}`), company, location `<ListingsLocation>`, `<ListingsDates>`,
+  `<ListingsFavoriteButton>`, external "View posting" link.
+- `<ListingsFavoriteButton id favoritedAt>` — star toggle button; owns its optimistic state and
+  the `setListingFavorite` mutation. Used by `<ListingsCard>` and the listing detail page.
+- `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
+- `<ListingsDates listing>` — labelled posted and deadline lines, each colored by days ago/left; with
+  no deadline date it shows the deadline type + days since posted, colored like the posted line.
 
 ## Composables (`app/composables/`)
 
 - `useListingForm()` → `{ state, validate, toInput }` — listing form state, `UForm` validator, and
   mapping to the API's `ListingInput`. Also exports `ListingLocation`, `ListingLanguage`,
   `ListingSkill` types.
+- `useListingsList()` → `{ listings, totalCount, page, pageSize, loading, error, refresh }` —
+  offset-paged (bind `page`/`pageSize`/`totalCount` to `UPagination`) `listings` query (past
+  `DATE` deadlines filtered out server-side) for the
+  listings list page. Page size is fixed per page load from viewport (5 below `lg`, 6-10 at `lg`+
+  depending on window height). Client-only fetch (`server: false`) since it needs the session
+  cookie. Also exports `ListingListItem`.
 
 ## Stores (`app/stores/`)
 
@@ -32,6 +46,9 @@ remove it when you delete one.
 ## Utils (`app/utils/`, auto-imported)
 
 - `gql<T>(query, variables?)` — POST to `/graphql`; throws on GraphQL errors or missing data.
+- `formatDate(iso)` — formats a `YYYY-MM-DD` date string as `nb-NO` medium date (`26. sep. 2026`), parsed at local
+  midnight (avoids the UTC-parsing off-by-one-day bug for negative-offset zones).
+- `daysFromToday(iso)` — whole days from local today to a `YYYY-MM-DD` date; negative if past.
 
 ## Constants (`app/constants/`, import explicitly)
 

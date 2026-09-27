@@ -88,7 +88,10 @@ const logout = async () => {
       </template>
 
       <template #body>
-        <slot />
+        <!-- Width cap only; UDashboardPanel's body already supplies the side padding. -->
+        <div class="mx-auto w-full max-w-(--ui-container)">
+          <slot />
+        </div>
       </template>
     </UDashboardPanel>
   </UDashboardGroup>
