@@ -25,7 +25,7 @@ const outcomeOpen = ref(false)
     <div class="space-y-6">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap items-center gap-2">
-          <ListingsStatusBadge :status="listing.status" />
+          <ListingsStatusBadge :status="listing.status" prominent />
           <UBadge
             v-if="listing.archivedAt"
             color="neutral"
@@ -64,13 +64,38 @@ const outcomeOpen = ref(false)
 
       <div
         v-if="listing.status !== 'SAVED' || listing.interviews.length"
-        class="grid gap-6 lg:grid-cols-2"
+        class="grid gap-6 border-t border-muted pt-6 lg:grid-cols-2"
       >
         <div class="space-y-3">
           <h3 class="font-medium text-highlighted">Timeline</h3>
           <ListingsStatusTimeline :listing="listing" @changed="emit('changed')" />
         </div>
-        <ListingsInterviews :listing="listing" @changed="emit('changed')" />
+        <!-- Stacked below lg, side by side from lg, so the divider flips from top to left.
+             Wrapped: Interviews has multiple roots (its modals), so a class on it is dropped. -->
+        <div class="border-t border-muted pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
+          <ListingsInterviews :listing="listing" @changed="emit('changed')" />
+        </div>
+      </div>
+
+      <div v-if="listing.documents.length" class="space-y-3 border-t border-muted pt-6">
+        <h3 class="font-medium text-highlighted">Documents</h3>
+        <ul class="space-y-1" data-testid="listing-documents">
+          <li v-for="doc in listing.documents" :key="doc.id" class="flex items-center gap-2">
+            <!-- `external` because /api/** is a proxied backend route, not a Nuxt page. -->
+            <UButton
+              :to="`/api/documents/${doc.id}`"
+              external
+              target="_blank"
+              variant="link"
+              size="sm"
+              icon="i-lucide-file-text"
+              class="min-w-0 p-0"
+            >
+              <span class="truncate">{{ doc.fileName }}</span>
+            </UButton>
+            <UBadge v-if="doc.sentAt" color="neutral" variant="subtle" size="sm">Sent</UBadge>
+          </li>
+        </ul>
       </div>
     </div>
 

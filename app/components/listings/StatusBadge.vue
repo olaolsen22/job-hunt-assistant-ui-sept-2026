@@ -2,7 +2,11 @@
 import type { ListingDetail } from '~/composables/useListing'
 import { APPLICATION_STATUS_OPTIONS } from '~/constants/listing'
 
-const { status } = defineProps<{ status: ListingDetail['status'] }>()
+const { status, prominent } = defineProps<{
+  status: ListingDetail['status']
+  // The detail page shows it as the card's headline; list cards keep it small and quiet.
+  prominent?: boolean
+}>()
 
 const option = computed(() => APPLICATION_STATUS_OPTIONS.find((o) => o.value === status)!)
 </script>
@@ -12,7 +16,8 @@ const option = computed(() => APPLICATION_STATUS_OPTIONS.find((o) => o.value ===
        outline variant tells them apart. -->
   <UBadge
     :color="option.color"
-    :variant="status === 'WITHDRAWN' ? 'outline' : 'subtle'"
+    :variant="status === 'WITHDRAWN' ? 'outline' : prominent ? 'solid' : 'subtle'"
+    :size="prominent ? 'lg' : 'md'"
     data-testid="listing-status"
     >{{ option.label }}</UBadge
   >
