@@ -48,7 +48,11 @@ remove it when you delete one.
   — the add page checks a filled form's names in one aliased query and provides the result;
   `NameCombobox` and `SkillsField` inject it to flag names the API doesn't know. No provider = nothing
   flagged. Also exports `NameLookup`.
-- `useListingsList()` → `{ listings, totalCount, page, pageSize, loading, error, refresh }` —
+- `useParsePrompt(name)` → `{ instructions, copied, load, copy(posting) }` — fetches
+  `listingParsePrompt` or `listingQuickParsePrompt` and copies it + `<posting>` text for an external
+  AI. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).
+- `useListingsList()` → `{ listings, totalCount, toAnalyzeCount, page, pageSize, toAnalyzeOnly, loading, error, refresh }` —
+  `toAnalyzeOnly` filters to `analyzedAt: null` and resets to page 1;
   offset-paged (bind `page`/`pageSize`/`totalCount` to `UPagination`) `listings` query (past
   `DATE` deadlines filtered out server-side) for the
   listings list page. Page size is fixed per page load from viewport (5 below `lg`, 6-10 at `lg`+
