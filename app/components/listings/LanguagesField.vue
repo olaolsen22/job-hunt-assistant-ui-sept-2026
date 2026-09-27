@@ -16,12 +16,12 @@ const addLanguage = () => {
 </script>
 
 <template>
-  <div class="space-y-2">
-    <p v-if="!languages.length" class="text-sm text-muted">No language requirements yet.</p>
+  <div class="space-y-3">
+    <p v-if="!languages.length" class="text-sm text-muted">No languages required.</p>
     <div
       v-for="(lang, i) in languages"
       :key="i"
-      class="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-3"
+      class="flex flex-wrap items-center gap-3 sm:flex-nowrap sm:gap-4"
       data-testid="language-row"
     >
       <USelect v-model="lang.language" :items="[...LANGUAGE_OPTIONS]" class="min-w-32 flex-1" />
@@ -37,7 +37,7 @@ const addLanguage = () => {
       class="w-full justify-center sm:w-auto"
       @click="addLanguage"
     >
-      Add language requirement
+      Add language
     </UButton>
   </div>
 </template>
