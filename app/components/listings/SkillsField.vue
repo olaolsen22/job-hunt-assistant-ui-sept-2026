@@ -5,6 +5,8 @@ const skills = defineModel<ListingSkill[]>({ required: true })
 
 const SKILL_LEVELS = [1, 2, 3, 4, 5]
 
+const isNewName = useIsNewName()
+
 const newSkill = ref<string>()
 
 const addSkill = (name?: string) => {
@@ -30,7 +32,18 @@ const addSkill = (name?: string) => {
       class="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:gap-3"
       data-testid="skill-row"
     >
-      <span class="min-w-0 flex-1 truncate">{{ skill.name }}</span>
+      <div class="flex min-w-0 flex-1 items-center gap-2">
+        <span class="truncate">{{ skill.name }}</span>
+        <!-- A badge, not NameCombobox's hint line, to keep skill rows one line high -->
+        <UBadge
+          v-if="isNewName('skills', skill.name)"
+          label="New"
+          color="neutral"
+          variant="subtle"
+          size="sm"
+          data-testid="skill-new-badge"
+        />
+      </div>
       <USelect v-model="skill.level" :items="SKILL_LEVELS" class="w-20" />
       <UInputNumber v-model="skill.minYears" :min="1" placeholder="Min yrs" class="w-28" />
       <USwitch v-model="skill.isRequired" label="Required" />
