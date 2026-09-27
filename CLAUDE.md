@@ -20,6 +20,7 @@ over SSE for LLM parse-job updates.
 - Typecheck: `pnpm typecheck`
 - Unit tests: `pnpm test` (single file while iterating: `pnpm vitest run test/unit/<Name>.test.ts`)
 - E2E: `pnpm test:e2e` (builds prod, serves on :3100, API mocked per test, no backend needed)
+- GraphQL types: `pnpm gql:gen` after the API schema changes (regenerates `app/graphql-env.d.ts`; commit it)
 
 ## Conventions
 
@@ -34,6 +35,8 @@ over SSE for LLM parse-job updates.
 - All backend calls go through the same-origin proxy (`/api/**`, `/graphql`). Never call the API URL
   directly: the proxy is what makes the HttpOnly cookie and SSE work without CORS.
 - Mirror the backend split: REST only for auth and health, GraphQL for all domain data.
+- GraphQL documents are literal ``graphql(`...`)`` strings (gql.tada), sent with `gql(doc, vars)`. No `${}`
+  interpolation: it loses the inferred types. Derive types with `ResultOf`; never hand-write API shapes.
 - Pinia only for state shared across pages. Everything else stays in the component or a composable.
 - Tests: keep them simple and few. Unit tests (`test/unit`, `mountSuspended` + `registerEndpoint`) cover
   the happy path of components with real logic. E2E (`test/e2e`, `page.route` mocks) only for key flows.
