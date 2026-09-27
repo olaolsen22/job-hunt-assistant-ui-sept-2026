@@ -3,7 +3,8 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Job listings' })
 
-const { listings, totalCount, toAnalyzeCount, page, pageSize, loading, error } = useListingsList()
+const { listings, totalCount, toAnalyzeCount, page, pageSize, toAnalyzeOnly, loading, error } =
+  useListingsList()
 </script>
 
 <template>
@@ -14,19 +15,32 @@ const { listings, totalCount, toAnalyzeCount, page, pageSize, loading, error } =
         <p class="text-lg font-semibold text-highlighted" data-testid="listings-total">
           {{ totalCount }} active {{ totalCount === 1 ? 'listing' : 'listings' }}
         </p>
-        <UBadge
+        <UButton
           v-if="toAnalyzeCount"
           color="warning"
-          variant="subtle"
-          size="lg"
+          :variant="toAnalyzeOnly ? 'solid' : 'subtle'"
+          size="sm"
           icon="i-lucide-clock"
+          :trailing-icon="toAnalyzeOnly ? 'i-lucide-x' : undefined"
           data-testid="listings-to-analyze"
-          >{{ toAnalyzeCount }} to analyze</UBadge
+          @click="toAnalyzeOnly = !toAnalyzeOnly"
+          >{{ toAnalyzeCount }} to analyze</UButton
         >
       </div>
-      <UButton to="/listings/add" icon="i-lucide-plus" class="justify-center sm:ml-auto">
-        Add listing
-      </UButton>
+      <div class="flex flex-col gap-2 sm:ml-auto sm:flex-row">
+        <UButton
+          to="/listings/quick-add"
+          icon="i-lucide-list-plus"
+          color="neutral"
+          variant="subtle"
+          class="justify-center"
+          data-testid="quick-add-open"
+          >Quick add</UButton
+        >
+        <UButton to="/listings/add" icon="i-lucide-plus" class="justify-center">
+          Add listing
+        </UButton>
+      </div>
     </div>
 
     <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />

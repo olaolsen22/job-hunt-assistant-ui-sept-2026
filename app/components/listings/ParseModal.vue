@@ -1,10 +1,6 @@
 <script setup lang="ts">
-import { ERROR_MESSAGES } from '~/constants/errorMessages'
-
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ apply: [draft: Record<string, unknown>] }>()
-
-const PROMPT_QUERY = `query ListingParsePrompt { listingParsePrompt { instructions } }`
 
 // Built-in parsing needs `llmParseAvailable` / `parseListing`, which the API doesn't have yet.
 const MODES = [
@@ -12,34 +8,15 @@ const MODES = [
   { label: 'Built-in parse (coming soon)', value: 'builtin', disabled: true }
 ]
 
-const toast = useToast()
-const instructions = ref('')
+const { instructions, copied, load, copy } = useParsePrompt('listingParsePrompt')
 const ad = ref('')
 const json = ref('')
 const jsonError = ref('')
 const mode = ref('paste')
-const copied = ref(false)
 
-// Fetched on open, not on click: browsers can refuse a clipboard write that follows an await.
-watch(open, async (isOpen) => {
-  if (!isOpen) return
-  try {
-    const data = await gql<{ listingParsePrompt: { instructions: string } }>(PROMPT_QUERY)
-    instructions.value = data.listingParsePrompt.instructions
-  } catch {
-    toast.add({ title: ERROR_MESSAGES.generic, color: 'error', icon: 'i-lucide-circle-alert' })
-  }
-})
+watch(open, (isOpen) => isOpen && load())
 
 watch(json, () => (jsonError.value = ''))
-
-const copyPrompt = async () => {
-  await navigator.clipboard.writeText(
-    `${instructions.value}\n\n<posting>\n${ad.value.trim()}\n</posting>`
-  )
-  copied.value = true
-  setTimeout(() => (copied.value = false), 1500)
-}
 
 const apply = () => {
   // AIs often wrap the JSON in a code fence or a sentence, so take the outermost object.
@@ -85,7 +62,7 @@ const apply = () => {
             :loading="!instructions"
             :disabled="!ad.trim()"
             data-testid="parse-copy-prompt"
-            @click="copyPrompt"
+            @click="copy(ad)"
           >
             {{ copied ? 'Copied' : 'Copy prompt' }}
           </UButton>

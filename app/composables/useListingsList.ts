@@ -41,12 +41,15 @@ const getPageSize = () => {
 // Dated deadlines that have passed are still filtered out server-side; a listing stays visible
 // through its deadline day. ASAP listings have no deadlineOn to filter on, so an "expired" one
 // (posted 14+ days ago) is flagged in ListingsDates instead of hidden.
-const LISTINGS_QUERY = `
+// Filters are written into the query, not sent as a ListingFilterInput variable: the API can't
+// see inside a filter variable, so its cost check prices every possible filter field and rejects it.
+const ACTIVE = 'or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]'
+const listingsQuery = (toAnalyzeOnly: boolean) => `
   query Listings($skip: Int, $take: Int, $today: LocalDate!) {
     listings(
       skip: $skip
       take: $take
-      where: { or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }] }
+      where: { ${ACTIVE} ${toAnalyzeOnly ? 'analyzedAt: { eq: null }' : ''} }
     ) {
       items {
         id
@@ -64,13 +67,7 @@ const LISTINGS_QUERY = `
       totalCount
     }
     # Only the count is needed; take: 1 keeps the unused page minimal.
-    toAnalyze: listings(
-      take: 1
-      where: {
-        or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]
-        analyzedAt: { eq: null }
-      }
-    ) {
+    toAnalyze: listings(take: 1, where: { ${ACTIVE} analyzedAt: { eq: null } }) {
       totalCount
     }
   }
@@ -81,17 +78,20 @@ const LISTINGS_QUERY = `
 export const useListingsList = () => {
   const pageSize = getPageSize()
   const page = ref(1)
+  const toAnalyzeOnly = ref(false)
+  // A different filter has different pages.
+  watch(toAnalyzeOnly, () => (page.value = 1))
 
   const { data, status, error, refresh } = useAsyncData(
     'listings',
     () =>
-      gql<ListingsResult>(LISTINGS_QUERY, {
+      gql<ListingsResult>(listingsQuery(toAnalyzeOnly.value), {
         skip: (page.value - 1) * pageSize,
         take: pageSize,
         // The user's local date, not UTC: the sv-SE locale formats as YYYY-MM-DD.
         today: new Date().toLocaleDateString('sv-SE')
       }),
-    { watch: [page], server: false }
+    { watch: [page, toAnalyzeOnly], server: false }
   )
 
   return {
@@ -100,6 +100,7 @@ export const useListingsList = () => {
     toAnalyzeCount: computed(() => data.value?.toAnalyze.totalCount ?? 0),
     page,
     pageSize,
+    toAnalyzeOnly,
     loading: computed(() => status.value === 'pending'),
     error,
     refresh
