@@ -20,10 +20,15 @@ defineProps<{
   cancelTo: string
 }>()
 defineEmits<{ submit: [] }>()
+
+const form = useTemplateRef('form')
+// Lets the add page show every field's error right after filling the form from a parsed ad.
+defineExpose({ validate: () => form.value?.validate({ silent: true }) })
 </script>
 
 <template>
   <UForm
+    ref="form"
     :state="state"
     :validate="validate"
     class="w-full max-w-3xl space-y-4 sm:space-y-6"
