@@ -19,6 +19,7 @@ const LISTING_ITEM = graphql(`
     url
     favoritedAt
     analyzedAt
+    status
     jobRole {
       name
     }
@@ -48,8 +49,28 @@ const getPageSize = () => {
 // (posted 14+ days ago) is flagged in ListingsDates instead of hidden.
 // Filters are written into the query, not sent as a ListingFilterInput variable: the API can't
 // see inside a filter variable, so its cost check prices every possible filter field and rejects it.
-// That's also why there are two near-identical queries: gql.tada only types literal documents.
-// `toAnalyze` only needs the count; take: 1 keeps its unused page minimal.
+// That's also why there is one near-identical query per filter: gql.tada only types literal documents.
+// The counts only feed the filter buttons; take: 1 keeps their unused pages minimal.
+const LISTING_COUNTS = graphql(`
+  fragment ListingCounts on Query {
+    toAnalyze: listings(
+      take: 1
+      where: {
+        or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]
+        analyzedAt: { eq: null }
+      }
+    ) {
+      totalCount
+    }
+    active: listings(take: 1, where: { status: { in: [APPLIED, INTERVIEWING] } }) {
+      totalCount
+    }
+    archived: listings(take: 1, archived: true) {
+      totalCount
+    }
+  }
+`)
+
 const LISTINGS = graphql(
   `
     query Listings($skip: Int, $take: Int, $today: LocalDate!) {
@@ -63,18 +84,10 @@ const LISTINGS = graphql(
         }
         totalCount
       }
-      toAnalyze: listings(
-        take: 1
-        where: {
-          or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]
-          analyzedAt: { eq: null }
-        }
-      ) {
-        totalCount
-      }
+      ...ListingCounts
     }
   `,
-  [LISTING_ITEM]
+  [LISTING_ITEM, LISTING_COUNTS]
 )
 
 const LISTINGS_TO_ANALYZE = graphql(
@@ -93,48 +106,88 @@ const LISTINGS_TO_ANALYZE = graphql(
         }
         totalCount
       }
-      toAnalyze: listings(
-        take: 1
-        where: {
-          or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]
-          analyzedAt: { eq: null }
-        }
-      ) {
-        totalCount
-      }
+      ...ListingCounts
     }
   `,
-  [LISTING_ITEM]
+  [LISTING_ITEM, LISTING_COUNTS]
 )
+
+// Active applications stay visible past their deadline, newest activity first.
+const LISTINGS_ACTIVE = graphql(
+  `
+    query ListingsActive($skip: Int, $take: Int, $today: LocalDate!) {
+      listings(
+        skip: $skip
+        take: $take
+        where: { status: { in: [APPLIED, INTERVIEWING] } }
+        order: { statusChangedAt: DESC }
+      ) {
+        items {
+          ...ListingListItem
+        }
+        totalCount
+      }
+      ...ListingCounts
+    }
+  `,
+  [LISTING_ITEM, LISTING_COUNTS]
+)
+
+const LISTINGS_ARCHIVED = graphql(
+  `
+    query ListingsArchived($skip: Int, $take: Int, $today: LocalDate!) {
+      listings(skip: $skip, take: $take, archived: true) {
+        items {
+          ...ListingListItem
+        }
+        totalCount
+      }
+      ...ListingCounts
+    }
+  `,
+  [LISTING_ITEM, LISTING_COUNTS]
+)
+
+const QUERIES = {
+  toAnalyze: LISTINGS_TO_ANALYZE,
+  active: LISTINGS_ACTIVE,
+  archived: LISTINGS_ARCHIVED
+}
+
+export type ListingsFilter = keyof typeof QUERIES
 
 // Listings need the session cookie and change often; fetching client-only (server: false)
 // avoids wiring cookie forwarding into the shared `gql` util for a single, non-SSR-critical page.
 export const useListingsList = () => {
   const pageSize = getPageSize()
   const page = ref(1)
-  const toAnalyzeOnly = ref(false)
+  const filter = ref<ListingsFilter | null>(null)
   // A different filter has different pages.
-  watch(toAnalyzeOnly, () => (page.value = 1))
+  watch(filter, () => (page.value = 1))
 
   const { data, status, error, refresh } = useAsyncData(
     'listings',
     () =>
-      gql(toAnalyzeOnly.value ? LISTINGS_TO_ANALYZE : LISTINGS, {
+      gql(filter.value ? QUERIES[filter.value] : LISTINGS, {
         skip: (page.value - 1) * pageSize,
         take: pageSize,
         // The user's local date, not UTC: the sv-SE locale formats as YYYY-MM-DD.
         today: new Date().toLocaleDateString('sv-SE')
       }),
-    { watch: [page, toAnalyzeOnly], server: false }
+    { watch: [page, filter], server: false }
   )
 
   return {
     listings: computed(() => data.value?.listings?.items ?? []),
     totalCount: computed(() => data.value?.listings?.totalCount ?? 0),
-    toAnalyzeCount: computed(() => data.value?.toAnalyze?.totalCount ?? 0),
+    counts: computed(() => ({
+      toAnalyze: data.value?.toAnalyze?.totalCount ?? 0,
+      active: data.value?.active?.totalCount ?? 0,
+      archived: data.value?.archived?.totalCount ?? 0
+    })),
     page,
     pageSize,
-    toAnalyzeOnly,
+    filter,
     loading: computed(() => status.value === 'pending'),
     error,
     refresh

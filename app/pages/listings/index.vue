@@ -1,31 +1,50 @@
 <script setup lang="ts">
+import type { ListingsFilter } from '~/composables/useListingsList'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Job listings' })
 
-const { listings, totalCount, toAnalyzeCount, page, pageSize, toAnalyzeOnly, loading, error } =
-  useListingsList()
+const { listings, totalCount, counts, page, pageSize, filter, loading, error } = useListingsList()
+
+// Clicking the active filter clears it.
+const toggle = (value: ListingsFilter) => (filter.value = filter.value === value ? null : value)
+
+const FILTERS = [
+  { value: 'toAnalyze', label: 'to analyze', color: 'warning', icon: 'i-lucide-clock' },
+  { value: 'active', label: 'active applications', color: 'info', icon: 'i-lucide-send' },
+  { value: 'archived', label: 'archived', color: 'neutral', icon: 'i-lucide-archive' }
+] as const
+
+const heading = computed(() => {
+  const n = totalCount.value
+  const adjective = filter.value === 'archived' ? 'archived' : 'active'
+  const noun = filter.value === 'active' ? 'application' : 'listing'
+  return `${n} ${adjective} ${noun}${n === 1 ? '' : 's'}`
+})
 </script>
 
 <template>
   <div class="space-y-6">
     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <!-- "Active" because listings past their deadline are filtered out server-side. -->
-      <div v-if="listings.length" class="flex flex-wrap items-center gap-2">
+      <!-- "Active" listings because those past their deadline are filtered out server-side.
+           Kept visible while a filter is on, so an empty filtered page can still clear it. -->
+      <div v-if="listings.length || filter" class="flex flex-wrap items-center gap-2">
         <p class="text-lg font-semibold text-highlighted" data-testid="listings-total">
-          {{ totalCount }} active {{ totalCount === 1 ? 'listing' : 'listings' }}
+          {{ heading }}
         </p>
-        <UButton
-          v-if="toAnalyzeCount"
-          color="warning"
-          :variant="toAnalyzeOnly ? 'solid' : 'subtle'"
-          size="sm"
-          icon="i-lucide-clock"
-          :trailing-icon="toAnalyzeOnly ? 'i-lucide-x' : undefined"
-          data-testid="listings-to-analyze"
-          @click="toAnalyzeOnly = !toAnalyzeOnly"
-          >{{ toAnalyzeCount }} to analyze</UButton
-        >
+        <template v-for="f in FILTERS" :key="f.value">
+          <UButton
+            v-if="counts[f.value] || filter === f.value"
+            :color="f.color"
+            :variant="filter === f.value ? 'solid' : 'subtle'"
+            size="sm"
+            :icon="f.icon"
+            :trailing-icon="filter === f.value ? 'i-lucide-x' : undefined"
+            :data-testid="`listings-filter-${f.value}`"
+            @click="toggle(f.value)"
+            >{{ counts[f.value] }} {{ f.label }}</UButton
+          >
+        </template>
       </div>
       <div class="flex flex-col gap-2 sm:ml-auto sm:flex-row">
         <UButton
@@ -59,8 +78,8 @@ const { listings, totalCount, toAnalyzeCount, page, pageSize, toAnalyzeOnly, loa
       data-testid="listings-empty"
     >
       <UIcon name="i-lucide-inbox" class="size-10 text-muted" />
-      <p>No listings yet.</p>
-      <UButton to="/listings/add">Add listing</UButton>
+      <p>{{ filter ? 'No listings match this filter.' : 'No listings yet.' }}</p>
+      <UButton v-if="!filter" to="/listings/add">Add listing</UButton>
     </div>
 
     <template v-else>

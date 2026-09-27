@@ -48,3 +48,20 @@ export type WorkMode = (typeof WORK_MODE_OPTIONS)[number]['value']
 export type DeadlineType = (typeof DEADLINE_TYPE_OPTIONS)[number]['value']
 export type Language = (typeof LANGUAGE_OPTIONS)[number]['value']
 export type CefrLevel = (typeof CEFR_LEVELS)[number]
+
+export const APPLICATION_STATUS_OPTIONS = [
+  { label: 'Saved', value: 'SAVED', color: 'neutral' },
+  { label: 'Applied', value: 'APPLIED', color: 'info' },
+  { label: 'Interviewing', value: 'INTERVIEWING', color: 'primary' },
+  { label: 'Offer', value: 'OFFER', color: 'success' },
+  { label: 'Rejected', value: 'REJECTED', color: 'error' },
+  { label: 'Withdrawn', value: 'WITHDRAWN', color: 'neutral' }
+] as const
+
+export const OUTCOME_OPTIONS = [
+  { label: 'Offer', value: 'OFFER' },
+  { label: 'Rejected', value: 'REJECTED' },
+  { label: 'Withdrawn', value: 'WITHDRAWN' }
+] as const
+
+export type Outcome = (typeof OUTCOME_OPTIONS)[number]['value']

@@ -7,6 +7,7 @@ const LISTING = graphql(`
       title
       company {
         name
+        applicationCount
       }
       jobRole {
         name
@@ -23,6 +24,26 @@ const LISTING = graphql(`
       postingLanguage
       favoritedAt
       analyzedAt
+      archivedAt
+      status
+      statusHistory(order: { id: ASC }) {
+        id
+        status
+        occurredAt
+        note
+      }
+      interviews(order: { scheduledAt: ASC }) {
+        id
+        title
+        scheduledAt
+        notes
+      }
+      documents {
+        id
+        kind
+        fileName
+        sentAt
+      }
       locations {
         location {
           city
