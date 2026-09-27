@@ -11,21 +11,27 @@ remove it when you delete one.
 - `<DashboardApiHealth>` — API health indicator on the dashboard.
 - `<ListingsNameCombobox v-model lookup placeholder? countryCode?>` — debounced search over
   `companies` / `jobRoles` / `skills` by name, or `locations` by city within `countryCode`;
-  allows creating a new name. Results are cached in `useState('name-lookups')` and filtered
+  allows creating a new name; shows a "new" hint for created names and ones `useIsNewName` flags. Results are cached in `useState('name-lookups')` and filtered
   locally; clear it with `clearNuxtState('name-lookups')` after a save that can create names.
 - `<ListingsForm v-model :validate submit-label cancel-to @submit>` — the listing form's fields
   and Cancel/submit buttons, shared by add and edit. `v-model` is `useListingForm().state`; the
   default slot renders above the buttons (error alert). The page owns mutation, confirm, errors.
+- `<ListingsParseModal v-model:open @apply>` — paste an ad, copy the `listingParsePrompt` + ad for
+  an external AI, paste its JSON back; emits the parsed object (feed it to `fillDraft`). Built-in
+  parse is a disabled option until the API has it.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
   active option clears it. Generic over the option value type.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
 - `<ListingsSkillsField v-model>` — skill search + `{ name, level, isRequired }[]` rows.
 - `<ListingsLanguagesField v-model>` — `{ language, level?, isRequired }[]` rows, one per language.
-- `<ListingsCard listing>` — plain `UCard` for one `ListingListItem`: title (links to
-  `/listings/{id}`), company, location `<ListingsLocation>`, `<ListingsDates>`,
-  `<ListingsFavoriteButton>`, external "View posting" link.
+- `<ListingsCard listing>` — plain `UCard` for one `ListingListItem`, stacked mobile-first: title
+  (links to `/listings/{id}`) + `<ListingsFavoriteButton>` on one row, `<ListingsAnalyzedBadge>` on
+  its own row below, then company, location `<ListingsLocation>`, `<ListingsDates>`, and a labelled
+  "View posting" external link button.
 - `<ListingsFavoriteButton id favoritedAt>` — star toggle button; owns its optimistic state and
   the `setListingFavorite` mutation. Used by `<ListingsCard>` and the listing detail page.
+- `<ListingsAnalyzedBadge analyzedAt>` — "Analyzed" / "To analyze" badge. Used by `<ListingsCard>`
+  and the listing detail page.
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
 - `<ListingsDates listing>` — labelled posted and deadline lines, each colored by days ago/left; with
   no deadline date it shows the deadline type + days since posted, colored like the posted line.
@@ -34,9 +40,14 @@ remove it when you delete one.
 
 - `useListing(id)` → `{ listing, loading, error }` — client-only `listingById` query with every
   field (key `listing-${id}`), for the detail and edit pages. Also exports `ListingDetail`.
-- `useListingForm()` → `{ state, validate, toInput, fill }` — listing form state, `UForm` validator,
-  mapping to the API's `ListingInput`, and `fill(listing: ListingDetail)` to load an existing one. Also exports `ListingLocation`, `ListingLanguage`,
+- `useListingForm()` → `{ state, validate, toInput, fill, fillDraft }` — listing form state, `UForm` validator,
+  mapping to the API's `ListingInput`, `fill(listing: ListingDetail)` to load an existing one, and
+  `fillDraft(json)` to load a parsed draft (keeps only valid values, leaves `url`). Also exports `ListingLocation`, `ListingLanguage`,
   `ListingSkill` types.
+- `provideNewNames()` → `{ checkNewNames(state) }` / `useIsNewName()` → `(lookup, name, countryCode?) => boolean`
+  — the add page checks a filled form's names in one aliased query and provides the result;
+  `NameCombobox` and `SkillsField` inject it to flag names the API doesn't know. No provider = nothing
+  flagged. Also exports `NameLookup`.
 - `useListingsList()` → `{ listings, totalCount, page, pageSize, loading, error, refresh }` —
   offset-paged (bind `page`/`pageSize`/`totalCount` to `UPagination`) `listings` query (past
   `DATE` deadlines filtered out server-side) for the

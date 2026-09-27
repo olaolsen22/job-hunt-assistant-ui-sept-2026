@@ -16,9 +16,19 @@ interface CreateListingResult {
   createListing: { listing: { id: number } | null; errors: { message: string }[] | null }
 }
 
-const { state, validate, toInput } = useListingForm()
+const { state, validate, toInput, fillDraft } = useListingForm()
+const { checkNewNames } = provideNewNames()
 
 const toast = useToast()
+const parseOpen = ref(false)
+const listingForm = useTemplateRef('listingForm')
+
+const onDraft = (draft: Record<string, unknown>) => {
+  fillDraft(draft)
+  listingForm.value?.validate()
+  toast.add({ title: 'Form filled from the ad', color: 'success', icon: 'i-lucide-check' })
+  checkNewNames(state)
+}
 const submitting = ref(false)
 const errorMessages = ref<string[]>([])
 const confirmOpen = ref(false)
@@ -48,8 +58,20 @@ const onConfirm = async () => {
 </script>
 
 <template>
-  <div class="flex justify-center">
+  <div class="flex flex-col items-center gap-4">
+    <div class="flex w-full max-w-3xl justify-end">
+      <UButton
+        icon="i-lucide-sparkles"
+        color="neutral"
+        variant="subtle"
+        data-testid="parse-open"
+        @click="parseOpen = true"
+        >Paste from ad</UButton
+      >
+    </div>
+
     <ListingsForm
+      ref="listingForm"
       v-model="state"
       :validate="validate"
       submit-label="Add listing"
@@ -66,6 +88,8 @@ const onConfirm = async () => {
         data-testid="add-listing-error"
       />
     </ListingsForm>
+
+    <ListingsParseModal v-model:open="parseOpen" @apply="onDraft" />
 
     <AppConfirmModal
       v-model:open="confirmOpen"

@@ -24,6 +24,7 @@ export interface ListingDetail {
   deadlineOn: string | null
   postingLanguage: Language | null
   favoritedAt: string | null
+  analyzedAt: string | null
   locations: { location: { city: string | null; countryCode: string } }[]
   languages: { language: Language; level: CefrLevel | null; isRequired: boolean }[]
   skills: { skill: { name: string }; level: number; minYears: number | null; isRequired: boolean }[]
@@ -47,6 +48,7 @@ const LISTING_QUERY = `
       deadlineOn
       postingLanguage
       favoritedAt
+      analyzedAt
       locations { location { city countryCode } }
       languages { language level isRequired }
       skills { skill { name } level minYears isRequired }
@@ -56,7 +58,7 @@ const LISTING_QUERY = `
 
 // Client-only (`server: false`) since it needs the session cookie.
 export const useListing = async (id: number) => {
-  const { data, status, error } = await useAsyncData(
+  const { data, status, error, refresh } = await useAsyncData(
     `listing-${id}`,
     () => gql<{ listingById: ListingDetail | null }>(LISTING_QUERY, { id }),
     { server: false }
@@ -65,5 +67,5 @@ export const useListing = async (id: number) => {
   const listing = computed(() => data.value?.listingById ?? null)
   const loading = computed(() => status.value === 'pending')
 
-  return { listing, loading, error }
+  return { listing, loading, error, refresh }
 }

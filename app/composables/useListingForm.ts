@@ -1,5 +1,15 @@
 import type { FormError } from '@nuxt/ui'
 import type { ListingDetail } from '~/composables/useListing'
+import { COUNTRY_CODES } from '~/constants/countries'
+import {
+  CEFR_LEVELS,
+  DEADLINE_TYPE_OPTIONS,
+  EMPLOYMENT_TYPE_OPTIONS,
+  LANGUAGE_OPTIONS,
+  SCHEDULE_OPTIONS,
+  SENIORITY_OPTIONS,
+  WORK_MODE_OPTIONS
+} from '~/constants/listing'
 import type {
   CefrLevel,
   DeadlineType,
@@ -31,6 +41,16 @@ export interface ListingSkill {
 // The API wants null, not "", for empty optional fields.
 const orNull = (value?: string) => value?.trim() || null
 
+// A parsed draft is an external AI's JSON, so fillDraft keeps only values the form can hold.
+const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+const isoDate = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '')
+const list = (v: unknown) => (Array.isArray(v) ? v : [])
+const oneOf = <T>(values: readonly T[], v: unknown) => values.find((x) => x === v)
+const option = <T>(options: readonly { value: T }[], v: unknown) =>
+  options.find((o) => o.value === v)?.value
+const int = (v: unknown, min: number, max: number) =>
+  Number.isInteger(v) && (v as number) >= min && (v as number) <= max ? (v as number) : undefined
+
 export const useListingForm = () => {
   const state = reactive({
     title: '',
@@ -49,7 +69,8 @@ export const useListingForm = () => {
     // Most ads name a place, so start with one row. Empty city = the whole country.
     locations: [{ countryCode: 'NO', city: '' }] as ListingLocation[],
     languages: [] as ListingLanguage[],
-    skills: [] as ListingSkill[]
+    skills: [] as ListingSkill[],
+    isAnalyzed: false
   })
 
   const validate = (s: typeof state): FormError[] => {
@@ -89,7 +110,9 @@ export const useListingForm = () => {
     postingLanguage: state.postingLanguage ?? null,
     locations: state.locations.map((l) => ({ ...l, city: orNull(l.city) })),
     languages: state.languages.map((l) => ({ ...l, level: l.level ?? null })),
-    skills: state.skills.map((s) => ({ ...s, minYears: s.minYears ?? null }))
+    skills: state.skills.map((s) => ({ ...s, minYears: s.minYears ?? null })),
+    // updateListing replaces the whole listing, so leaving this out would clear the marker.
+    isAnalyzed: state.isAnalyzed
   })
 
   // Inverse of toInput: the API's nulls become the form's empty values.
@@ -113,8 +136,57 @@ export const useListingForm = () => {
         city: location.city ?? ''
       })),
       languages: listing.languages.map((l) => ({ ...l, level: l.level ?? undefined })),
-      skills: listing.skills.map(({ skill, ...rest }) => ({ ...rest, name: skill.name }))
+      skills: listing.skills.map(({ skill, ...rest }) => ({ ...rest, name: skill.name })),
+      isAnalyzed: listing.analyzedAt != null
     })
 
-  return { state, validate, toInput, fill }
+  // Leaves url alone: the draft doesn't have one. Duplicates are dropped because the skill and
+  // language rows allow one of each.
+  const fillDraft = (d: Record<string, unknown>) => {
+    const skills = list(d.skills)
+      .map((s) => ({
+        name: text(s?.name),
+        level: int(s?.level, 1, 5) ?? 3,
+        minYears: int(s?.minYears, 1, 50) ?? null,
+        isRequired: s?.isRequired !== false
+      }))
+      .filter(
+        (s, i, all) =>
+          s.name && all.findIndex((x) => x.name.toLowerCase() === s.name.toLowerCase()) === i
+      )
+    const languages: ListingLanguage[] = list(d.languages)
+      .filter(
+        (l, i, all) =>
+          option(LANGUAGE_OPTIONS, l?.language) &&
+          all.findIndex((x) => x?.language === l.language) === i
+      )
+      .map((l) => ({
+        language: l.language,
+        level: oneOf(CEFR_LEVELS, l.level),
+        isRequired: l.isRequired !== false
+      }))
+    Object.assign(state, {
+      title: text(d.title),
+      companyName: text(d.companyName) || undefined,
+      jobRoleName: text(d.jobRoleName) || undefined,
+      seniority: option(SENIORITY_OPTIONS, d.seniority),
+      employmentType: option(EMPLOYMENT_TYPE_OPTIONS, d.employmentType),
+      schedule: option(SCHEDULE_OPTIONS, d.schedule),
+      workMode: option(WORK_MODE_OPTIONS, d.workMode),
+      description: text(d.description),
+      postedOn: isoDate(d.postedOn) || todayIso(),
+      deadlineType: option(DEADLINE_TYPE_OPTIONS, d.deadlineType) ?? 'UNSPECIFIED',
+      deadlineOn: isoDate(d.deadlineOn),
+      postingLanguage: option(LANGUAGE_OPTIONS, d.postingLanguage),
+      locations: list(d.locations)
+        .filter((l) => oneOf(COUNTRY_CODES, l?.countryCode))
+        .map((l) => ({ countryCode: l.countryCode, city: text(l.city) })),
+      languages,
+      skills,
+      // A parsed ad has its details filled in, which is what "analyzed" means.
+      isAnalyzed: true
+    })
+  }
+
+  return { state, validate, toInput, fill, fillDraft }
 }
