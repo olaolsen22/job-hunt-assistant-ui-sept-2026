@@ -122,12 +122,12 @@ const search = async (q: string) => {
 
   loading.value = true
   try {
-    const q = term || null
+    const searchQ = term || null
     const { result } =
       props.lookup === 'locations'
         ? // A locations combobox always gets the row's country.
-          await gql(QUERIES.locations, { q, country: props.countryCode! })
-        : await gql(QUERIES[props.lookup], { q })
+          await gql(QUERIES.locations, { q: searchQ, country: props.countryCode! })
+        : await gql(QUERIES[props.lookup], { q: searchQ })
     // `city` is nullable in the schema, but the query filters out null cities.
     const names = result?.nodes?.map((n) => n.name!) ?? []
     cache.value[cacheKey.value] = {
