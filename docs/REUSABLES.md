@@ -13,6 +13,9 @@ remove it when you delete one.
   `companies` / `jobRoles` / `skills` by name, or `locations` by city within `countryCode`;
   allows creating a new name. Results are cached in `useState('name-lookups')` and filtered
   locally; clear it with `clearNuxtState('name-lookups')` after a save that can create names.
+- `<ListingsForm v-model :validate submit-label cancel-to @submit>` — the listing form's fields
+  and Cancel/submit buttons, shared by add and edit. `v-model` is `useListingForm().state`; the
+  default slot renders above the buttons (error alert). The page owns mutation, confirm, errors.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
   active option clears it. Generic over the option value type.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
@@ -29,8 +32,10 @@ remove it when you delete one.
 
 ## Composables (`app/composables/`)
 
-- `useListingForm()` → `{ state, validate, toInput }` — listing form state, `UForm` validator, and
-  mapping to the API's `ListingInput`. Also exports `ListingLocation`, `ListingLanguage`,
+- `useListing(id)` → `{ listing, loading, error }` — client-only `listingById` query with every
+  field (key `listing-${id}`), for the detail and edit pages. Also exports `ListingDetail`.
+- `useListingForm()` → `{ state, validate, toInput, fill }` — listing form state, `UForm` validator,
+  mapping to the API's `ListingInput`, and `fill(listing: ListingDetail)` to load an existing one. Also exports `ListingLocation`, `ListingLanguage`,
   `ListingSkill` types.
 - `useListingsList()` → `{ listings, totalCount, page, pageSize, loading, error, refresh }` —
   offset-paged (bind `page`/`pageSize`/`totalCount` to `UPagination`) `listings` query (past
@@ -48,6 +53,7 @@ remove it when you delete one.
 - `gql<T>(query, variables?)` — POST to `/graphql`; throws on GraphQL errors or missing data.
 - `formatDate(iso)` — formats a `YYYY-MM-DD` date string as `nb-NO` medium date (`26. sep. 2026`), parsed at local
   midnight (avoids the UTC-parsing off-by-one-day bug for negative-offset zones).
+- `todayIso()` — local today as `YYYY-MM-DD` (not `toISOString()`, which is UTC).
 - `daysFromToday(iso)` — whole days from local today to a `YYYY-MM-DD` date; negative if past.
 
 ## Constants (`app/constants/`, import explicitly)

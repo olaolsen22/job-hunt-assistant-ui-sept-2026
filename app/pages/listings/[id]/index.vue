@@ -5,75 +5,15 @@ import {
   LANGUAGE_OPTIONS,
   SCHEDULE_OPTIONS,
   SENIORITY_OPTIONS,
-  WORK_MODE_OPTIONS,
-  type CefrLevel,
-  type DeadlineType,
-  type EmploymentType,
-  type Language,
-  type Schedule,
-  type Seniority,
-  type WorkMode
+  WORK_MODE_OPTIONS
 } from '~/constants/listing'
 
 definePageMeta({ title: 'Listing' })
 
-interface ListingDetail {
-  id: number
-  title: string
-  company: { name: string }
-  jobRole: { name: string }
-  seniority: Seniority | null
-  employmentType: EmploymentType | null
-  schedule: Schedule | null
-  workMode: WorkMode | null
-  description: string | null
-  url: string
-  postedOn: string
-  deadlineType: DeadlineType
-  deadlineOn: string | null
-  postingLanguage: Language | null
-  favoritedAt: string | null
-  locations: { location: { city: string | null; countryCode: string } }[]
-  languages: { language: Language; level: CefrLevel | null; isRequired: boolean }[]
-  skills: { skill: { name: string }; level: number; minYears: number | null; isRequired: boolean }[]
-}
-
-const LISTING_QUERY = `
-  query ListingById($id: Int!) {
-    listingById(id: $id) {
-      id
-      title
-      company { name }
-      jobRole { name }
-      seniority
-      employmentType
-      schedule
-      workMode
-      description
-      url
-      postedOn
-      deadlineType
-      deadlineOn
-      postingLanguage
-      favoritedAt
-      locations { location { city countryCode } }
-      languages { language level isRequired }
-      skills { skill { name } level minYears isRequired }
-    }
-  }
-`
-
 const route = useRoute()
 const id = Number(route.params.id)
 
-const { data, status, error } = await useAsyncData(
-  `listing-${id}`,
-  () => gql<{ listingById: ListingDetail | null }>(LISTING_QUERY, { id }),
-  { server: false }
-)
-
-const listing = computed(() => data.value?.listingById ?? null)
-const loading = computed(() => status.value === 'pending')
+const { listing, loading, error } = await useListing(id)
 
 const labelOf = <T extends string>(
   options: readonly { label: string; value: T }[],
@@ -91,7 +31,7 @@ const labelOf = <T extends string>(
 
         <div v-if="listing" class="flex items-center gap-2">
           <ListingsFavoriteButton :id="listing.id" :favorited-at="listing.favoritedAt" />
-          <UButton icon="i-lucide-pencil">Edit</UButton>
+          <UButton :to="`/listings/${listing.id}/edit`" icon="i-lucide-pencil">Edit</UButton>
         </div>
       </div>
 

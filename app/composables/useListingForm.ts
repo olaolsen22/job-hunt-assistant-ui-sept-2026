@@ -1,4 +1,5 @@
 import type { FormError } from '@nuxt/ui'
+import type { ListingDetail } from '~/composables/useListing'
 import type {
   CefrLevel,
   DeadlineType,
@@ -29,9 +30,6 @@ export interface ListingSkill {
 
 // The API wants null, not "", for empty optional fields.
 const orNull = (value?: string) => value?.trim() || null
-
-// Local YYYY-MM-DD. toISOString() is UTC, so near midnight it would give yesterday or tomorrow.
-const todayIso = () => new Date().toLocaleDateString('sv-SE')
 
 export const useListingForm = () => {
   const state = reactive({
@@ -94,5 +92,29 @@ export const useListingForm = () => {
     skills: state.skills.map((s) => ({ ...s, minYears: s.minYears ?? null }))
   })
 
-  return { state, validate, toInput, todayIso }
+  // Inverse of toInput: the API's nulls become the form's empty values.
+  const fill = (listing: ListingDetail) =>
+    Object.assign(state, {
+      title: listing.title,
+      companyName: listing.company.name,
+      jobRoleName: listing.jobRole.name,
+      seniority: listing.seniority ?? undefined,
+      employmentType: listing.employmentType ?? undefined,
+      schedule: listing.schedule ?? undefined,
+      workMode: listing.workMode ?? undefined,
+      description: listing.description ?? '',
+      url: listing.url,
+      postedOn: listing.postedOn,
+      deadlineType: listing.deadlineType,
+      deadlineOn: listing.deadlineOn ?? '',
+      postingLanguage: listing.postingLanguage ?? undefined,
+      locations: listing.locations.map(({ location }) => ({
+        countryCode: location.countryCode,
+        city: location.city ?? ''
+      })),
+      languages: listing.languages.map((l) => ({ ...l, level: l.level ?? undefined })),
+      skills: listing.skills.map(({ skill, ...rest }) => ({ ...rest, name: skill.name }))
+    })
+
+  return { state, validate, toInput, fill }
 }
