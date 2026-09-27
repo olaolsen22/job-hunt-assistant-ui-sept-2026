@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import StatusTimeline from '~/components/listings/StatusTimeline.vue'
@@ -36,9 +36,9 @@ describe('StatusTimeline', () => {
     await flushPromises()
     // The confirm modal is teleported to <body>, outside the wrapper.
     document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
-    await flushPromises()
 
-    expect(wrapper.emitted('changed')).toHaveLength(1)
+    // The mocked endpoint's round trip takes more than one flushPromises.
+    await vi.waitFor(() => expect(wrapper.emitted('changed')).toHaveLength(1))
     wrapper.unmount()
   })
 })
