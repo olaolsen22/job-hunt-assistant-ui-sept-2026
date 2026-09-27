@@ -1,0 +1,87 @@
+<script setup lang="ts">
+import { OUTCOME_OPTIONS, type Outcome } from '~/constants/listing'
+
+const { listingId, outcomes, appliedAt } = defineProps<{
+  listingId: number
+  outcomes: readonly Outcome[]
+  appliedAt: string | undefined
+}>()
+const open = defineModel<boolean>('open', { required: true })
+const emit = defineEmits<{ changed: [] }>()
+
+const RECORD_OUTCOME = graphql(`
+  mutation RecordOutcome($input: RecordOutcomeInput!) {
+    recordOutcome(input: $input) {
+      listing {
+        id
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
+const items = computed(() => OUTCOME_OPTIONS.filter((o) => outcomes.includes(o.value)))
+
+const outcome = ref<Outcome>()
+const occurredAt = ref('')
+const now = ref('')
+const note = ref('')
+
+watch(open, (isOpen) => {
+  if (!isOpen) return
+  outcome.value = outcomes.length === 1 ? outcomes[0] : undefined
+  occurredAt.value = now.value = toDateTimeLocal()
+  note.value = ''
+})
+
+const { run, loading } = useMutation(() => emit('changed'))
+
+const submit = async () => {
+  const ok = await run(async () => {
+    const { recordOutcome } = await gql(RECORD_OUTCOME, {
+      input: {
+        listingId,
+        outcome: outcome.value!,
+        occurredAt: new Date(occurredAt.value).toISOString(),
+        note: note.value
+      }
+    })
+    return recordOutcome.errors
+  })
+  if (!ok) return
+  open.value = false
+  emit('changed')
+}
+</script>
+
+<template>
+  <AppConfirmModal
+    v-model:open="open"
+    title="Record outcome"
+    confirm-label="Save"
+    :loading="loading"
+    :disabled="!outcome || !occurredAt"
+    @confirm="submit"
+  >
+    <div class="space-y-4">
+      <UFormField label="Outcome" required>
+        <URadioGroup v-model="outcome" orientation="horizontal" :items="items" />
+      </UFormField>
+      <UFormField label="Date" required>
+        <UInput
+          v-model="occurredAt"
+          type="datetime-local"
+          :min="appliedAt && toDateTimeLocal(appliedAt)"
+          :max="now"
+          class="w-full"
+        />
+      </UFormField>
+      <AppMarkdownEditor v-model="note" label="Note" />
+    </div>
+  </AppConfirmModal>
+</template>

@@ -31,6 +31,22 @@ const UPDATE_LISTING = graphql(`
   }
 `)
 
+const SET_ARCHIVED = graphql(`
+  mutation SetListingArchived($input: SetListingArchivedInput!) {
+    setListingArchived(input: $input) {
+      listing {
+        id
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
 const toast = useToast()
 const { state, toInput, fill } = useListingForm()
 const markOpen = ref(false)
@@ -62,6 +78,21 @@ const markAnalyzed = async () => {
   }
 }
 
+const { run: runArchive, loading: archiving } = useMutation(refresh)
+
+// Applied listings can't be deleted; archiving is how finished ones leave the list.
+const toggleArchived = async () => {
+  if (!listing.value) return
+  const isArchived = !listing.value.archivedAt
+  const ok = await runArchive(async () => {
+    const { setListingArchived } = await gql(SET_ARCHIVED, { input: { id, isArchived } })
+    return setListingArchived.errors
+  })
+  if (!ok) return
+  await refresh()
+  toast.add({ title: isArchived ? 'Archived' : 'Unarchived', color: 'success' })
+}
+
 const labelOf = <T extends string>(
   options: readonly { label: string; value: T }[],
   value: T | null
@@ -76,7 +107,7 @@ const labelOf = <T extends string>(
           Back
         </UButton>
 
-        <div v-if="listing" class="flex items-center gap-2">
+        <div v-if="listing" class="flex flex-wrap items-center justify-end gap-2">
           <UButton
             v-if="!listing.analyzedAt"
             icon="i-lucide-check-check"
@@ -85,6 +116,15 @@ const labelOf = <T extends string>(
             data-testid="listing-mark-analyzed"
             @click="markOpen = true"
             >Mark analyzed</UButton
+          >
+          <UButton
+            :icon="listing.archivedAt ? 'i-lucide-archive-restore' : 'i-lucide-archive'"
+            color="neutral"
+            variant="subtle"
+            :loading="archiving"
+            data-testid="listing-archive"
+            @click="toggleArchived"
+            >{{ listing.archivedAt ? 'Unarchive' : 'Archive' }}</UButton
           >
           <ListingsFavoriteButton :id="listing.id" :favorited-at="listing.favoritedAt" />
           <UButton :to="`/listings/${listing.id}/edit`" icon="i-lucide-pencil">Edit</UButton>
@@ -100,13 +140,20 @@ const labelOf = <T extends string>(
         description="It may have been deleted."
       />
 
-      <div v-else-if="loading" class="grid gap-4 lg:grid-cols-3" data-testid="listing-loading">
+      <!-- Only on first load: refreshes after an action keep the page (and its open modals) mounted. -->
+      <div
+        v-else-if="loading && !listing"
+        class="grid gap-4 lg:grid-cols-3"
+        data-testid="listing-loading"
+      >
         <USkeleton class="h-96 w-full lg:col-span-2" />
         <USkeleton class="h-40 w-full" />
         <USkeleton class="h-32 w-full lg:col-span-3" />
       </div>
 
       <template v-else-if="listing">
+        <ListingsApplication :listing="listing" @changed="refresh" />
+
         <div
           class="space-y-4 sm:space-y-6 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0"
         >
