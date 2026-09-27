@@ -83,7 +83,7 @@ const labelOf = <T extends string>(
 
 <template>
   <div class="flex justify-center">
-    <div class="w-full max-w-3xl space-y-4 sm:space-y-6">
+    <div class="w-full max-w-3xl space-y-4 sm:space-y-6 lg:max-w-6xl">
       <div class="flex items-center justify-between gap-4">
         <UButton to="/listings" icon="i-lucide-arrow-left" variant="ghost" color="neutral">
           Back
@@ -104,103 +104,128 @@ const labelOf = <T extends string>(
         description="It may have been deleted."
       />
 
-      <div v-else-if="loading" class="space-y-4" data-testid="listing-loading">
-        <USkeleton class="h-96 w-full" />
+      <div v-else-if="loading" class="grid gap-4 lg:grid-cols-3" data-testid="listing-loading">
+        <USkeleton class="h-96 w-full lg:col-span-2" />
         <USkeleton class="h-40 w-full" />
-        <USkeleton class="h-32 w-full" />
+        <USkeleton class="h-32 w-full lg:col-span-3" />
       </div>
 
       <template v-else-if="listing">
-        <AppCard title="Job">
-          <div class="space-y-3">
-            <div class="space-y-1">
+        <div
+          class="space-y-4 sm:space-y-6 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0"
+        >
+          <AppCard title="Job" class="lg:col-span-2">
+            <div class="space-y-4">
               <h1 class="text-lg font-semibold text-highlighted">{{ listing.title }}</h1>
-              <p class="flex items-center gap-1.5 text-sm text-muted">
-                <UIcon name="i-lucide-building-2" class="size-4 shrink-0" />
-                {{ listing.company.name }}
-              </p>
-              <p class="text-sm text-muted">{{ listing.jobRole.name }}</p>
-              <ListingsLocation :listing="listing" />
-            </div>
 
-            <UButton
-              :to="listing.url"
-              target="_blank"
-              rel="noopener"
-              variant="soft"
-              icon="i-lucide-external-link"
-            >
-              View posting
-            </UButton>
+              <div class="grid gap-3 sm:grid-cols-2 sm:gap-4">
+                <div class="space-y-1">
+                  <p class="text-sm font-medium text-highlighted">Company</p>
+                  <p class="text-sm text-muted">{{ listing.company.name }}</p>
+                </div>
+                <div class="space-y-1">
+                  <p class="text-sm font-medium text-highlighted">Role</p>
+                  <p class="text-sm text-muted">{{ listing.jobRole.name }}</p>
+                </div>
 
-            <div class="grid gap-3 sm:grid-cols-2 sm:gap-4">
-              <div>
-                <p class="text-xs text-muted">Work mode</p>
-                <p>{{ labelOf(WORK_MODE_OPTIONS, listing.workMode) }}</p>
-              </div>
-              <div>
-                <p class="text-xs text-muted">Employment type</p>
-                <p>{{ labelOf(EMPLOYMENT_TYPE_OPTIONS, listing.employmentType) }}</p>
-              </div>
-              <div>
-                <p class="text-xs text-muted">Schedule</p>
-                <p>{{ labelOf(SCHEDULE_OPTIONS, listing.schedule) }}</p>
-              </div>
-              <div>
-                <p class="text-xs text-muted">Seniority</p>
-                <p>{{ labelOf(SENIORITY_OPTIONS, listing.seniority) }}</p>
-              </div>
-
-              <div class="sm:col-span-2">
-                <p class="text-xs text-muted">Language requirements</p>
-                <p v-if="!listing.languages.length" class="text-sm text-muted">None required.</p>
-                <div v-else class="flex flex-wrap gap-2">
-                  <UBadge
-                    v-for="(lang, i) in listing.languages"
-                    :key="i"
-                    :color="lang.isRequired ? 'primary' : 'neutral'"
-                    :variant="lang.isRequired ? 'solid' : 'subtle'"
+                <div class="space-y-1 sm:col-span-2">
+                  <p class="text-sm font-medium text-highlighted">Job ad URL</p>
+                  <UButton
+                    :to="listing.url"
+                    target="_blank"
+                    rel="noopener"
+                    variant="link"
+                    size="sm"
+                    trailing-icon="i-lucide-external-link"
+                    class="max-w-full p-0"
                   >
-                    {{ labelOf(LANGUAGE_OPTIONS, lang.language)
-                    }}{{ lang.level ? ` · ${lang.level}` : '' }}
+                    <span class="truncate">{{ listing.url }}</span>
+                  </UButton>
+                </div>
+
+                <div class="space-y-1 sm:col-span-2">
+                  <p class="text-sm font-medium text-highlighted">Locations</p>
+                  <ListingsLocation :listing="listing" />
+                </div>
+
+                <div class="space-y-1">
+                  <p class="text-sm font-medium text-highlighted">Work mode</p>
+                  <p class="text-sm text-muted">
+                    {{ labelOf(WORK_MODE_OPTIONS, listing.workMode) }}
+                  </p>
+                </div>
+                <div class="space-y-1">
+                  <p class="text-sm font-medium text-highlighted">Employment type</p>
+                  <p class="text-sm text-muted">
+                    {{ labelOf(EMPLOYMENT_TYPE_OPTIONS, listing.employmentType) }}
+                  </p>
+                </div>
+                <div class="space-y-1">
+                  <p class="text-sm font-medium text-highlighted">Schedule</p>
+                  <p class="text-sm text-muted">
+                    {{ labelOf(SCHEDULE_OPTIONS, listing.schedule) }}
+                  </p>
+                </div>
+                <div class="space-y-1">
+                  <p class="text-sm font-medium text-highlighted">Seniority</p>
+                  <p class="text-sm text-muted">
+                    {{ labelOf(SENIORITY_OPTIONS, listing.seniority) }}
+                  </p>
+                </div>
+
+                <div class="space-y-1 sm:col-span-2">
+                  <p class="text-sm font-medium text-highlighted">Language requirements</p>
+                  <p v-if="!listing.languages.length" class="text-sm text-muted">None required.</p>
+                  <div v-else class="flex flex-wrap gap-2">
+                    <UBadge
+                      v-for="(lang, i) in listing.languages"
+                      :key="i"
+                      :color="lang.isRequired ? 'primary' : 'neutral'"
+                      :variant="lang.isRequired ? 'solid' : 'subtle'"
+                    >
+                      {{ labelOf(LANGUAGE_OPTIONS, lang.language)
+                      }}{{ lang.level ? ` · ${lang.level}` : '' }}
+                    </UBadge>
+                  </div>
+                </div>
+                <div class="space-y-1 sm:col-span-2">
+                  <p class="text-sm font-medium text-highlighted">Ad language</p>
+                  <p class="text-sm text-muted">
+                    {{ labelOf(LANGUAGE_OPTIONS, listing.postingLanguage) }}
+                  </p>
+                </div>
+
+                <ListingsDates :listing="listing" detail />
+              </div>
+            </div>
+          </AppCard>
+
+          <AppCard title="Skills">
+            <p v-if="!listing.skills.length" class="text-sm text-muted">No skills listed</p>
+            <div v-else class="divide-y divide-default">
+              <div
+                v-for="(skill, i) in listing.skills"
+                :key="i"
+                class="flex items-center justify-between gap-2 py-2"
+              >
+                <span class="font-medium">{{ skill.skill.name }}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm text-muted">
+                    Level {{ skill.level }}/5<template v-if="skill.minYears">
+                      · {{ skill.minYears }}+ yrs</template
+                    >
+                  </span>
+                  <UBadge
+                    :color="skill.isRequired ? 'primary' : 'neutral'"
+                    :variant="skill.isRequired ? 'solid' : 'subtle'"
+                  >
+                    {{ skill.isRequired ? 'Required' : 'Optional' }}
                   </UBadge>
                 </div>
               </div>
-              <div>
-                <p class="text-xs text-muted">Ad language</p>
-                <p>{{ labelOf(LANGUAGE_OPTIONS, listing.postingLanguage) }}</p>
-              </div>
             </div>
-
-            <ListingsDates :listing="listing" />
-          </div>
-        </AppCard>
-
-        <AppCard title="Skills">
-          <p v-if="!listing.skills.length" class="text-sm text-muted">No skills listed</p>
-          <div v-else class="divide-y divide-default">
-            <div
-              v-for="(skill, i) in listing.skills"
-              :key="i"
-              class="flex items-center justify-between gap-2 py-2"
-            >
-              <span class="font-medium">{{ skill.skill.name }}</span>
-              <div class="flex items-center gap-2">
-                <span class="text-sm text-muted">
-                  Level {{ skill.level }}/5<template v-if="skill.minYears">
-                    · {{ skill.minYears }}+ yrs</template
-                  >
-                </span>
-                <UBadge
-                  :color="skill.isRequired ? 'primary' : 'neutral'"
-                  :variant="skill.isRequired ? 'solid' : 'subtle'"
-                >
-                  {{ skill.isRequired ? 'Required' : 'Optional' }}
-                </UBadge>
-              </div>
-            </div>
-          </div>
-        </AppCard>
+          </AppCard>
+        </div>
 
         <AppCard title="Summary">
           <p v-if="listing.description" class="whitespace-pre-line text-sm">

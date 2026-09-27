@@ -2,8 +2,10 @@
 import type { ListingListItem } from '~/composables/useListingsList'
 import { DEADLINE_TYPE_OPTIONS } from '~/constants/listing'
 
-const { listing } = defineProps<{
+const { listing, detail = false } = defineProps<{
   listing: Pick<ListingListItem, 'postedOn' | 'deadlineType' | 'deadlineOn'>
+  // Renders two label/value grid cells for the detail page instead of the compact card lines.
+  detail?: boolean
 }>()
 
 // Matches the backend's default-order rule: an ASAP listing counts as due 14 days after
@@ -79,7 +81,21 @@ const deadlineLabel = computed(() => {
 </script>
 
 <template>
-  <div class="space-y-1 text-sm">
+  <template v-if="detail">
+    <div class="space-y-1">
+      <p class="text-sm font-medium text-highlighted">Posted on</p>
+      <p class="text-sm" :class="postedClass" data-testid="listing-posted">
+        {{ formatDate(listing.postedOn) }}
+      </p>
+    </div>
+    <div class="space-y-1">
+      <p class="text-sm font-medium text-highlighted">Deadline</p>
+      <p class="text-sm" :class="deadlineClass" data-testid="listing-deadline">
+        {{ deadlineLabel }}
+      </p>
+    </div>
+  </template>
+  <div v-else class="space-y-1 text-sm">
     <p class="flex items-center gap-1.5" :class="postedClass" data-testid="listing-posted">
       <UIcon name="i-lucide-calendar" class="size-4 shrink-0" />
       <strong>Posted:</strong> {{ formatDate(listing.postedOn) }}
