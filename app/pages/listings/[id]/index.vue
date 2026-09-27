@@ -126,7 +126,6 @@ const labelOf = <T extends string>(
             @click="toggleArchived"
             >{{ listing.archivedAt ? 'Unarchive' : 'Archive' }}</UButton
           >
-          <ListingsFavoriteButton :id="listing.id" :favorited-at="listing.favoritedAt" />
           <UButton :to="`/listings/${listing.id}/edit`" icon="i-lucide-pencil">Edit</UButton>
         </div>
       </div>
@@ -160,7 +159,14 @@ const labelOf = <T extends string>(
           <AppCard title="Job" class="lg:col-span-2">
             <div class="space-y-4">
               <div class="flex items-start justify-between gap-2">
-                <h1 class="text-lg font-semibold text-highlighted">{{ listing.title }}</h1>
+                <div class="flex items-start gap-1">
+                  <h1 class="text-lg font-semibold text-highlighted">{{ listing.title }}</h1>
+                  <ListingsFavoriteButton
+                    :id="listing.id"
+                    :favorited-at="listing.favoritedAt"
+                    class="mt-0.5 shrink-0"
+                  />
+                </div>
                 <ListingsAnalyzedBadge :analyzed-at="listing.analyzedAt" class="mt-1 shrink-0" />
               </div>
 
