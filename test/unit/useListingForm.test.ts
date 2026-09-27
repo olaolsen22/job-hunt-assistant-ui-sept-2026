@@ -84,4 +84,31 @@ describe('useListingForm', () => {
       skills: [{ name: 'Vue', level: 4, minYears: 2, isRequired: false }]
     })
   })
+
+  it('fills from a parsed draft, dropping values the form cannot hold', () => {
+    const { state, fillDraft } = useListingForm()
+    state.url = 'https://example.com/job'
+    fillDraft({
+      title: 'Frontend Developer',
+      companyName: 'Acme',
+      jobRoleName: 'Developer',
+      seniority: 'PRINCIPAL',
+      workMode: 'REMOTE',
+      deadlineType: 'DATE',
+      deadlineOn: '2026-10-01',
+      locations: [{ countryCode: 'NO', city: 'Oslo' }, { countryCode: 'XX' }],
+      languages: [{ language: 'NORWEGIAN', level: 'B2' }, { language: 'KLINGON' }],
+      skills: [{ name: 'Vue', level: 9 }, { name: 'vue' }, { name: '' }]
+    })
+
+    expect(state).toMatchObject({
+      url: 'https://example.com/job',
+      seniority: undefined,
+      workMode: 'REMOTE',
+      deadlineOn: '2026-10-01',
+      locations: [{ countryCode: 'NO', city: 'Oslo' }],
+      languages: [{ language: 'NORWEGIAN', level: 'B2', isRequired: true }],
+      skills: [{ name: 'Vue', level: 3, minYears: null, isRequired: true }]
+    })
+  })
 })
