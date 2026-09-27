@@ -18,8 +18,11 @@ remove it when you delete one.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
 - `<ListingsSkillsField v-model>` — skill search + `{ name, level, isRequired }[]` rows.
 - `<ListingsLanguagesField v-model>` — `{ language, level?, isRequired }[]` rows, one per language.
-- `<ListingsCard listing>` — plain `UCard` for one `ListingListItem`: title, company, location
-  `<ListingsLocation>`, `<ListingsDates>`, external "View posting" link.
+- `<ListingsCard listing>` — plain `UCard` for one `ListingListItem`: title (links to
+  `/listings/{id}`), company, location `<ListingsLocation>`, `<ListingsDates>`,
+  `<ListingsFavoriteButton>`, external "View posting" link.
+- `<ListingsFavoriteButton id favoritedAt>` — star toggle button; owns its optimistic state and
+  the `setListingFavorite` mutation. Used by `<ListingsCard>` and the listing detail page.
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
 - `<ListingsDates listing>` — labelled posted and deadline lines, each colored by days ago/left; with
   no deadline date it shows the deadline type + days since posted, colored like the posted line.
