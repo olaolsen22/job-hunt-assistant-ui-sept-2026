@@ -23,8 +23,8 @@ remove it when you delete one.
   and Cancel/submit buttons, shared by add and edit. `v-model` is `useListingForm().state`; the
   default slot renders above the buttons (error alert). The page owns mutation, confirm, errors.
 - `<ListingsParseModal v-model:open @apply>` — paste an ad, copy the `listingParsePrompt` + ad for
-  an external AI, paste its JSON back; emits the parsed object (feed it to `fillDraft`). Built-in
-  parse is a disabled option until the API has it.
+  an external AI, paste its JSON back; emits the parsed object (feed it to `fillDraft`). A "Use built-in
+  parser" checkbox sends the ad to `parseListing` instead, falling back to copy-paste on failure.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
   active option clears it. Generic over the option value type.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
@@ -72,9 +72,10 @@ remove it when you delete one.
   — the add page checks a filled form's names in one aliased query and provides the result;
   `NameCombobox` and `SkillsField` inject it to flag names the API doesn't know. No provider = nothing
   flagged. Also exports `NameLookup`.
-- `useParsePrompt(name)` → `{ instructions, copied, load, copy(posting) }` — fetches
+- `useParsePrompt(name)` → `{ instructions, copied, load, copy(posting), parsing, parse(posting) }` — fetches
   `listingParsePrompt` or `listingQuickParsePrompt` and copies it + `<posting>` text for an external
-  AI. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).
+  AI. `parse()` runs the built-in parser (`parseListing`, FULL or QUICK by `name`) and returns the
+  JSON reply, or `undefined` after a toast. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).
 - `useListingsList()` → `{ listings, totalCount, counts, page, pageSize, filter, loading, error, refresh }` —
   `filter` (`'toAnalyze' | 'active' | 'archived' | null`, exported as `ListingsFilter`) picks one of
   the literal queries and resets to page 1; `counts` has each filter's total for its button. Active

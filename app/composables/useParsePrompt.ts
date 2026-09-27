@@ -20,6 +20,26 @@ const QUERIES = {
 
 type PromptName = keyof typeof QUERIES
 
+const PARSE_MODES = { listingParsePrompt: 'FULL', listingQuickParsePrompt: 'QUICK' } as const
+
+const PARSE_LISTING = graphql(`
+  mutation ParseListing($text: String!, $mode: ParseMode!) {
+    parseListing(input: { text: $text, mode: $mode }) {
+      parseJob {
+        status
+        result
+        error
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
 // Call load() before the user can click copy: browsers can refuse a clipboard write that follows
 // an await, so the instructions must already be here.
 export const useParsePrompt = (name: PromptName) => {
@@ -44,5 +64,29 @@ export const useParsePrompt = (name: PromptName) => {
     setTimeout(() => (copied.value = false), 1500)
   }
 
-  return { instructions, copied, load, copy }
+  // The server adds the prompt, so only the ad goes up. Returns the AI's JSON reply, or undefined
+  // after a toast so the caller can fall back to copy-paste.
+  const parsing = ref(false)
+  const parse = async (posting: string) => {
+    parsing.value = true
+    try {
+      const { parseListing } = await gql(PARSE_LISTING, {
+        text: posting.trim(),
+        mode: PARSE_MODES[name]
+      })
+      const { parseJob, errors } = parseListing
+      if (parseJob?.status === 'SUCCEEDED' && parseJob.result) return parseJob.result
+      toast.add({
+        title: errors?.[0]?.message ?? parseJob?.error ?? ERROR_MESSAGES.generic,
+        color: 'error',
+        icon: 'i-lucide-circle-alert'
+      })
+    } catch {
+      toast.add({ title: ERROR_MESSAGES.generic, color: 'error', icon: 'i-lucide-circle-alert' })
+    } finally {
+      parsing.value = false
+    }
+  }
+
+  return { instructions, copied, load, copy, parsing, parse }
 }
