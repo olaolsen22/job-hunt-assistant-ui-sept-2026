@@ -48,4 +48,40 @@ describe('useListingForm', () => {
       skills: [{ name: 'Vue', level: 4, minYears: null, isRequired: true }]
     })
   })
+
+  it('fills from a fetched listing and maps back to the same input', () => {
+    const { state, toInput, fill } = useListingForm()
+    fill({
+      id: 1,
+      title: 'Frontend Developer',
+      company: { name: 'Acme' },
+      jobRole: { name: 'Developer' },
+      seniority: null,
+      employmentType: 'PERMANENT',
+      schedule: null,
+      workMode: null,
+      description: null,
+      url: 'https://example.com/job',
+      postedOn: '2026-09-01',
+      deadlineType: 'DATE',
+      deadlineOn: '2026-10-01',
+      postingLanguage: null,
+      favoritedAt: null,
+      locations: [{ location: { city: null, countryCode: 'SE' } }],
+      languages: [{ language: 'NORWEGIAN', level: null, isRequired: true }],
+      skills: [{ skill: { name: 'Vue' }, level: 4, minYears: 2, isRequired: false }]
+    })
+
+    expect(state.companyName).toBe('Acme')
+    expect(toInput()).toMatchObject({
+      companyName: 'Acme',
+      jobRoleName: 'Developer',
+      employmentType: 'PERMANENT',
+      description: null,
+      deadlineOn: '2026-10-01',
+      locations: [{ countryCode: 'SE', city: null }],
+      languages: [{ language: 'NORWEGIAN', level: null, isRequired: true }],
+      skills: [{ name: 'Vue', level: 4, minYears: 2, isRequired: false }]
+    })
+  })
 })
