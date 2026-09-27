@@ -181,7 +181,10 @@ const parse = async () => {
   ad.value = ''
   json.value = ''
   pasteOpen.value = false
-  // Shows what the AI missed (e.g. a null url) right away instead of on Save.
+  // Shows what the AI missed (e.g. a null url) right away instead of on Save. The row fields use
+  // eager-validation because UForm otherwise only rechecks a field on input after its first blur:
+  // the error would stay while fixing it, then vanish on the Save mousedown, shifting Save away
+  // from under the click.
   await nextTick()
   form.value?.validate({ silent: true })
 }
@@ -405,20 +408,33 @@ const onConfirmRemove = async () => {
         <div class="grid gap-3 sm:grid-cols-2 xl:flex xl:items-start">
           <UFormField
             label="Job title"
+            eager-validation
             :name="`${row.key}.title`"
             required
             class="sm:col-span-2 xl:flex-1"
           >
             <UInput v-model="row.title" class="w-full" />
           </UFormField>
-          <UFormField label="Company" :name="`${row.key}.companyName`" required class="xl:w-44">
+          <UFormField
+            label="Company"
+            eager-validation
+            :name="`${row.key}.companyName`"
+            required
+            class="xl:w-44"
+          >
             <ListingsNameCombobox
               v-model="row.companyName"
               lookup="companies"
               placeholder="Search or add"
             />
           </UFormField>
-          <UFormField label="Role" :name="`${row.key}.jobRoleName`" required class="xl:w-44">
+          <UFormField
+            label="Role"
+            eager-validation
+            :name="`${row.key}.jobRoleName`"
+            required
+            class="xl:w-44"
+          >
             <ListingsNameCombobox
               v-model="row.jobRoleName"
               lookup="jobRoles"
@@ -427,6 +443,7 @@ const onConfirmRemove = async () => {
           </UFormField>
           <UFormField
             label="Job ad URL"
+            eager-validation
             :name="`${row.key}.url`"
             required
             class="sm:col-span-2 xl:flex-1"
@@ -434,7 +451,13 @@ const onConfirmRemove = async () => {
             <UInput v-model="row.url" type="url" placeholder="https://" class="w-full" />
           </UFormField>
           <div class="flex items-end gap-2 xl:w-48">
-            <UFormField label="Posted on" :name="`${row.key}.postedOn`" required class="flex-1">
+            <UFormField
+              label="Posted on"
+              eager-validation
+              :name="`${row.key}.postedOn`"
+              required
+              class="flex-1"
+            >
               <UInput v-model="row.postedOn" type="date" :max="todayIso()" class="w-full" />
             </UFormField>
             <UButton
@@ -460,6 +483,7 @@ const onConfirmRemove = async () => {
           <UFormField
             v-if="row.deadlineType === 'DATE'"
             label="Deadline date"
+            eager-validation
             :name="`${row.key}.deadlineOn`"
             class="w-40"
           >

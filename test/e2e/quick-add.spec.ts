@@ -67,13 +67,15 @@ test('parses an AI reply into rows and saves them independently', async ({ page 
   // The missing url is flagged right after parsing.
   await expect(page.getByText('Enter an http(s) link')).toBeVisible()
   await page.getByLabel('Job ad URL').nth(1).fill('https://example.com/b')
+  await expect(page.getByText('Enter an http(s) link')).toBeHidden()
   await page.getByTestId('quick-add-save').click()
 
+  await expect(page.getByTestId('quick-add-row-saved')).toContainText('https://example.com/a')
+  // Checked after a result shows, so the request has been sent.
   expect(variables?.l0).toMatchObject({
     deadlineType: 'ROLLING',
     locations: [{ countryCode: 'NO', city: 'Oslo' }]
   })
-  await expect(page.getByTestId('quick-add-row-saved')).toContainText('https://example.com/a')
   await expect(page.getByTestId('quick-add-row-error')).toContainText('already have a listing')
   await expect(page.getByRole('link', { name: 'View the existing listing' })).toHaveAttribute(
     'href',
