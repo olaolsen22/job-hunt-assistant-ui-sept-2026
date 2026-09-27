@@ -6,21 +6,22 @@ const { id, favoritedAt: initialFavoritedAt } = defineProps<{
   favoritedAt: string | null
 }>()
 
-const SET_LISTING_FAVORITE = `
+const SET_LISTING_FAVORITE = graphql(`
   mutation SetListingFavorite($input: SetListingFavoriteInput!) {
     setListingFavorite(input: $input) {
-      listing { id favoritedAt }
-      errors { __typename ... on Error { message } }
+      listing {
+        id
+        favoritedAt
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
     }
   }
-`
-
-interface SetListingFavoriteResult {
-  setListingFavorite: {
-    listing: { id: number; favoritedAt: string | null } | null
-    errors: { message: string }[] | null
-  }
-}
+`)
 
 const toast = useToast()
 // Props are read-only, so the button keeps its own copy to flip optimistically.
@@ -32,7 +33,7 @@ const toggleFavorite = async () => {
   favoritedAt.value = previous ? null : new Date().toISOString()
   saving.value = true
   try {
-    const { setListingFavorite } = await gql<SetListingFavoriteResult>(SET_LISTING_FAVORITE, {
+    const { setListingFavorite } = await gql(SET_LISTING_FAVORITE, {
       input: { id, isFavorite: !previous }
     })
     if (setListingFavorite.errors?.length || !setListingFavorite.listing) {

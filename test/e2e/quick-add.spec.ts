@@ -12,7 +12,7 @@ test('parses an AI reply into rows and saves them independently', async ({ page 
     const body = route.request().postDataJSON()
     if (body.query.includes('ListingQuickParsePrompt')) {
       return route.fulfill({
-        json: { data: { listingQuickParsePrompt: { instructions: 'Parse these.' } } }
+        json: { data: { prompt: { instructions: 'Parse these.' } } }
       })
     }
     if (body.query.includes('QuickAddListings')) {
@@ -41,7 +41,7 @@ test('parses an AI reply into rows and saves them independently', async ({ page 
       })
     }
     return route.fulfill({
-      json: { data: { companies: { nodes: [] }, jobRoles: { nodes: [] } } }
+      json: { data: { result: { nodes: [] } } }
     })
   })
   await page.goto('/listings/quick-add')

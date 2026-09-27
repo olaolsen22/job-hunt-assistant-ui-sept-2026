@@ -7,7 +7,7 @@ describe('NameCombobox', () => {
   it('suggests names from the API while typing', async () => {
     registerEndpoint('/graphql', {
       method: 'POST',
-      handler: () => ({ data: { companies: { nodes: [{ name: 'Acme' }, { name: 'Acme Labs' }] } } })
+      handler: () => ({ data: { result: { nodes: [{ name: 'Acme' }, { name: 'Acme Labs' }] } } })
     })
 
     const wrapper = await mountSuspended(NameCombobox, {

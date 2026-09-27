@@ -1,8 +1,21 @@
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
+// Both aliased to `prompt` so either document has the same result shape.
 const QUERIES = {
-  listingParsePrompt: `query ListingParsePrompt { listingParsePrompt { instructions } }`,
-  listingQuickParsePrompt: `query ListingQuickParsePrompt { listingQuickParsePrompt { instructions } }`
+  listingParsePrompt: graphql(`
+    query ListingParsePrompt {
+      prompt: listingParsePrompt {
+        instructions
+      }
+    }
+  `),
+  listingQuickParsePrompt: graphql(`
+    query ListingQuickParsePrompt {
+      prompt: listingQuickParsePrompt {
+        instructions
+      }
+    }
+  `)
 }
 
 type PromptName = keyof typeof QUERIES
@@ -16,8 +29,8 @@ export const useParsePrompt = (name: PromptName) => {
 
   const load = async () => {
     try {
-      const data = await gql<Record<PromptName, { instructions: string }>>(QUERIES[name])
-      instructions.value = data[name].instructions
+      const { prompt } = await gql(QUERIES[name])
+      instructions.value = prompt.instructions
     } catch {
       toast.add({ title: ERROR_MESSAGES.generic, color: 'error', icon: 'i-lucide-circle-alert' })
     }

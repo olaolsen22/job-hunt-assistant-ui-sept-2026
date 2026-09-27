@@ -8,12 +8,51 @@ const model = defineModel<string>()
 const PAGE_SIZE = 20
 
 // Only names: createListing takes names and creates any it doesn't know. A null $q lists all.
-const QUERIES: Record<Lookup, string> = {
-  companies: `query CompanySearch($q: String) { companies(search: $q, first: ${PAGE_SIZE}, order: { name: ASC }) { nodes { name } } }`,
-  jobRoles: `query JobRoleSearch($q: String) { jobRoles(search: $q, first: ${PAGE_SIZE}, order: { name: ASC }) { nodes { name } } }`,
-  skills: `query SkillSearch($q: String) { skills(search: $q, first: ${PAGE_SIZE}, order: { name: ASC }) { nodes { name } } }`,
+// The root field is aliased to `result` so every lookup reads the same. gql.tada only types
+// literal documents, so the page size is written out rather than interpolated.
+const QUERIES = {
+  companies: graphql(`
+    query CompanySearch($q: String) {
+      result: companies(search: $q, first: 20, order: { name: ASC }) {
+        nodes {
+          name
+        }
+      }
+    }
+  `),
+  jobRoles: graphql(`
+    query JobRoleSearch($q: String) {
+      result: jobRoles(search: $q, first: 20, order: { name: ASC }) {
+        nodes {
+          name
+        }
+      }
+    }
+  `),
+  skills: graphql(`
+    query SkillSearch($q: String) {
+      result: skills(search: $q, first: 20, order: { name: ASC }) {
+        nodes {
+          name
+        }
+      }
+    }
+  `),
   // Country-only locations have no city, so they're not city suggestions.
-  locations: `query CitySearch($q: String, $country: String!) { locations(search: $q, first: ${PAGE_SIZE}, where: { countryCode: { eq: $country }, city: { neq: null } }, order: { city: ASC }) { nodes { name: city } } }`
+  locations: graphql(`
+    query CitySearch($q: String, $country: String!) {
+      result: locations(
+        search: $q
+        first: 20
+        where: { countryCode: { eq: $country }, city: { neq: null } }
+        order: { city: ASC }
+      ) {
+        nodes {
+          name: city
+        }
+      }
+    }
+  `)
 }
 
 const searchTerm = ref('')
@@ -83,11 +122,14 @@ const search = async (q: string) => {
 
   loading.value = true
   try {
-    const data = await gql<Record<Lookup, { nodes: { name: string }[] }>>(QUERIES[props.lookup], {
-      q: term || null,
-      country: props.countryCode
-    })
-    const names = data[props.lookup].nodes.map((n) => n.name)
+    const searchQ = term || null
+    const { result } =
+      props.lookup === 'locations'
+        ? // A locations combobox always gets the row's country.
+          await gql(QUERIES.locations, { q: searchQ, country: props.countryCode! })
+        : await gql(QUERIES[props.lookup], { q: searchQ })
+    // `city` is nullable in the schema, but the query filters out null cities.
+    const names = result?.nodes?.map((n) => n.name!) ?? []
     cache.value[cacheKey.value] = {
       names: [...new Set([...(cached?.names ?? []), ...names])].sort((a, b) => a.localeCompare(b)),
       complete: cached?.complete || (!term && names.length < PAGE_SIZE)

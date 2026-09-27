@@ -51,15 +51,17 @@ export const provideNewNames = () => {
       ])
     )
     try {
-      const data = await gql<Record<string, { nodes: { name: string | null }[] }>>(
-        `query NewNameCheck(${params.join(', ')}) { ${fields.join(' ')} }`,
+      const data = await gql(
+        batchDocument<{ nodes: { name: string | null }[] | null } | null>(
+          `query NewNameCheck(${params.join(', ')}) { ${fields.join(' ')} }`
+        ),
         variables
       )
       newKeys.value = new Set(
         names
           .filter(
             (n, i) =>
-              !data[`n${i}`]?.nodes.some((x) => x.name?.toLowerCase() === n.name.toLowerCase())
+              !data[`n${i}`]?.nodes?.some((x) => x.name?.toLowerCase() === n.name.toLowerCase())
           )
           .map((n) => keyOf(n.lookup, n.name, n.countryCode))
       )

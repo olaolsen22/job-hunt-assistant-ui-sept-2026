@@ -95,8 +95,9 @@ export const useListingForm = () => {
 
   const toInput = () => ({
     title: state.title.trim(),
-    companyName: state.companyName,
-    jobRoleName: state.jobRoleName,
+    // Callers validate() first, which requires both.
+    companyName: state.companyName!,
+    jobRoleName: state.jobRoleName!,
     seniority: state.seniority ?? null,
     employmentType: state.employmentType ?? null,
     schedule: state.schedule ?? null,

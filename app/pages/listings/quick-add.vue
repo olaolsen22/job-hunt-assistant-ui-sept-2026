@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { FormError } from '@nuxt/ui'
+import { print } from '@0no-co/graphql.web'
+import type { ResultOf } from 'gql.tada'
 import type { ListingLocation } from '~/composables/useListingForm'
 import { COUNTRY_CODES } from '~/constants/countries'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
@@ -8,23 +10,38 @@ import type { DeadlineType } from '~/constants/listing'
 
 definePageMeta({ title: 'Quick add listings' })
 
-interface PossibleDuplicate {
-  id: number
-  title: string
-  archivedAt: string | null
-  company: { name: string }
-  jobRole: { name: string }
-}
+const RESULT_FRAGMENT = graphql(`
+  fragment R on CreateListingPayload {
+    listing {
+      id
+      title
+      url
+    }
+    possibleDuplicates {
+      id
+      title
+      archivedAt
+      company {
+        name
+      }
+      jobRole {
+        name
+      }
+    }
+    errors {
+      __typename
+      ... on Error {
+        message
+      }
+      ... on DuplicateListingError {
+        existingListingId
+      }
+    }
+  }
+`)
 
-interface CreateListingResult {
-  listing: { id: number; title: string; url: string } | null
-  possibleDuplicates: PossibleDuplicate[] | null
-  errors: { message: string; existingListingId?: number }[] | null
-}
-
-interface DeleteListingResult {
-  deleteListing: { errors: { message: string }[] | null }
-}
+type CreateListingResult = ResultOf<typeof RESULT_FRAGMENT>
+type PossibleDuplicate = NonNullable<CreateListingResult['possibleDuplicates']>[number]
 
 interface Row {
   key: number
@@ -42,37 +59,30 @@ interface Row {
   existingListingId?: number
 }
 
-const RESULT_FRAGMENT = `
-  fragment R on CreateListingPayload {
-    listing { id title url }
-    possibleDuplicates { id title archivedAt company { name } jobRole { name } }
-    errors {
-      __typename
-      ... on Error { message }
-      ... on DuplicateListingError { existingListingId }
-    }
-  }
-`
-
 // One aliased createListing per row keeps a batch to one request; the API saves each row on its
 // own, so one failing row doesn't stop the others.
 const buildMutation = (count: number) => {
   const indexes = [...Array(count).keys()]
-  return `
+  return batchDocument<CreateListingResult>(`
     mutation QuickAddListings(${indexes.map((i) => `$l${i}: ListingInput!`).join(', ')}) {
       ${indexes.map((i) => `r${i}: createListing(input: { listing: $l${i} }) { ...R }`).join('\n')}
     }
-    ${RESULT_FRAGMENT}
-  `
+    ${print(RESULT_FRAGMENT)}
+  `)
 }
 
-const DELETE_LISTING = `
+const DELETE_LISTING = graphql(`
   mutation DeleteListing($id: Int!) {
     deleteListing(input: { id: $id }) {
-      errors { __typename ... on Error { message } }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
     }
   }
-`
+`)
 
 let nextKey = 0
 const newRow = (): Row => ({
@@ -198,7 +208,7 @@ const onSave = async () => {
   saving.value = true
   saveError.value = ''
   try {
-    const data = await gql<Record<string, CreateListingResult>>(
+    const data = await gql(
       buildMutation(rows.length),
       Object.fromEntries(rows.map((r, i) => [`l${i}`, toInput(r)]))
     )
@@ -208,7 +218,8 @@ const onSave = async () => {
         saved: listing ?? undefined,
         duplicates: possibleDuplicates?.length ? possibleDuplicates : undefined,
         error: errors?.map((e) => e.message).join(' '),
-        existingListingId: errors?.find((e) => e.existingListingId)?.existingListingId
+        existingListingId: errors?.find((e) => e.__typename === 'DuplicateListingError')
+          ?.existingListingId
       })
     })
     const savedCount = rows.filter((r) => r.saved).length
@@ -242,7 +253,7 @@ const onConfirmRemove = async () => {
   const row = toRemove.value!
   deleting.value = true
   try {
-    const { deleteListing } = await gql<DeleteListingResult>(DELETE_LISTING, {
+    const { deleteListing } = await gql(DELETE_LISTING, {
       id: row.saved!.id
     })
     if (deleteListing.errors?.length) {

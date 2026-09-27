@@ -3,18 +3,21 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Edit listing' })
 
-const UPDATE_LISTING = `
+const UPDATE_LISTING = graphql(`
   mutation UpdateListing($id: Int!, $listing: ListingInput!) {
     updateListing(input: { id: $id, listing: $listing }) {
-      listing { id }
-      errors { __typename ... on Error { message } }
+      listing {
+        id
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
     }
   }
-`
-
-interface UpdateListingResult {
-  updateListing: { listing: { id: number } | null; errors: { message: string }[] | null }
-}
+`)
 
 const route = useRoute()
 const id = Number(route.params.id)
@@ -34,7 +37,7 @@ const onConfirm = async () => {
   submitting.value = true
   errorMessages.value = []
   try {
-    const { updateListing } = await gql<UpdateListingResult>(UPDATE_LISTING, {
+    const { updateListing } = await gql(UPDATE_LISTING, {
       id,
       listing: toInput()
     })

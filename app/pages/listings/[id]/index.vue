@@ -15,18 +15,21 @@ const id = Number(route.params.id)
 
 const { listing, loading, error, refresh } = await useListing(id)
 
-const UPDATE_LISTING = `
+const UPDATE_LISTING = graphql(`
   mutation UpdateListing($id: Int!, $listing: ListingInput!) {
     updateListing(input: { id: $id, listing: $listing }) {
-      listing { id }
-      errors { __typename ... on Error { message } }
+      listing {
+        id
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
     }
   }
-`
-
-interface UpdateListingResult {
-  updateListing: { listing: { id: number } | null; errors: { message: string }[] | null }
-}
+`)
 
 const toast = useToast()
 const { state, toInput, fill } = useListingForm()
@@ -41,7 +44,7 @@ const markAnalyzed = async () => {
   try {
     fill(listing.value)
     state.isAnalyzed = true
-    const { updateListing } = await gql<UpdateListingResult>(UPDATE_LISTING, {
+    const { updateListing } = await gql(UPDATE_LISTING, {
       id,
       listing: toInput()
     })

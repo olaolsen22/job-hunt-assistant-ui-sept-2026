@@ -65,7 +65,10 @@ remove it when you delete one.
 
 ## Utils (`app/utils/`, auto-imported)
 
-- `gql<T>(query, variables?)` — POST to `/graphql`; throws on GraphQL errors or missing data.
+- ``graphql(`...`, [fragments])`` — gql.tada document; result/variable types inferred from the API schema
+  (`app/graphql-env.d.ts`, regenerate with `pnpm gql:gen`). Use `ResultOf<typeof DOC>` for derived types.
+- `gql(document, variables?)` — POST to `/graphql`; result typed from the document; throws on GraphQL errors or missing data.
+- `batchDocument<Item>(source)` — untyped runtime-built doc (one alias per item); caller names each alias's type.
 - `formatDate(iso)` — formats a `YYYY-MM-DD` date string as `nb-NO` medium date (`26. sep. 2026`), parsed at local
   midnight (avoids the UTC-parsing off-by-one-day bug for negative-offset zones).
 - `todayIso()` — local today as `YYYY-MM-DD` (not `toISOString()`, which is UTC).

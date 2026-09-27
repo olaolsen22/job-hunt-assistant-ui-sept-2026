@@ -16,15 +16,8 @@ test('adds a listing and returns to the list', async ({ page }) => {
         json: { data: { createListing: { listing: { id: 1 }, errors: null } } }
       })
     }
-    // Each combobox reads only its own lookup key.
-    return route.fulfill({
-      json: {
-        data: {
-          companies: { nodes: [{ name: 'Acme' }] },
-          jobRoles: { nodes: [{ name: 'Developer' }] }
-        }
-      }
-    })
+    const name = query.includes('JobRoleSearch') ? 'Developer' : 'Acme'
+    return route.fulfill({ json: { data: { result: { nodes: [{ name }] } } } })
   })
   await page.goto('/listings/add')
 
