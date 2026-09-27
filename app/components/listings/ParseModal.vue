@@ -2,36 +2,37 @@
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ apply: [draft: Record<string, unknown>] }>()
 
-// Built-in parsing needs `llmParseAvailable` / `parseListing`, which the API doesn't have yet.
-const MODES = [
-  { label: 'Paste JSON reply', value: 'paste' },
-  { label: 'Built-in parse (coming soon)', value: 'builtin', disabled: true }
-]
-
-const { instructions, copied, load, copy } = useParsePrompt('listingParsePrompt')
+const { instructions, copied, load, copy, parsing, parse } = useParsePrompt('listingParsePrompt')
 const ad = ref('')
 const json = ref('')
 const jsonError = ref('')
-const mode = ref('paste')
+const builtIn = ref(false)
 
 watch(open, (isOpen) => isOpen && load())
 
 watch(json, () => (jsonError.value = ''))
 
-const apply = () => {
+const apply = (reply: string) => {
   // AIs often wrap the JSON in a code fence or a sentence, so take the outermost object.
-  const raw = json.value.slice(json.value.indexOf('{'), json.value.lastIndexOf('}') + 1)
+  const raw = reply.slice(reply.indexOf('{'), reply.lastIndexOf('}') + 1)
   let draft: Record<string, unknown>
   try {
     draft = JSON.parse(raw)
   } catch {
     jsonError.value = 'That doesn’t look like valid JSON.'
-    return
+    return false
   }
   emit('apply', draft)
   ad.value = ''
   json.value = ''
   open.value = false
+  return true
+}
+
+const parseBuiltIn = async () => {
+  const reply = await parse(ad.value)
+  // Failed: show the copy-paste steps, with the ad still filled in.
+  if (!reply || !apply(reply)) builtIn.value = false
 }
 </script>
 
@@ -39,12 +40,17 @@ const apply = () => {
   <UModal
     v-model:open="open"
     title="Parse listing from ad"
-    description="Paste the ad, run the prompt in ChatGPT, Gemini or Claude, then paste back its reply."
+    :description="
+      builtIn
+        ? 'Paste the ad and the built-in parser fills in the form.'
+        : 'Paste the ad, run the prompt in ChatGPT, Gemini or Claude, then paste back its reply.'
+    "
   >
     <template #body>
       <div class="space-y-6">
         <div class="space-y-3">
-          <UFormField label="1. Paste the ad">
+          <UCheckbox v-model="builtIn" label="Use built-in parser" data-testid="parse-builtin" />
+          <UFormField :label="builtIn ? 'Paste the ad' : '1. Paste the ad'">
             <UTextarea
               v-model="ad"
               :rows="6"
@@ -56,6 +62,7 @@ const apply = () => {
             />
           </UFormField>
           <UButton
+            v-if="!builtIn"
             :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
             :color="copied ? 'success' : 'primary'"
             variant="subtle"
@@ -68,13 +75,11 @@ const apply = () => {
           </UButton>
         </div>
 
-        <USeparator />
+        <template v-if="!builtIn">
+          <USeparator />
 
-        <div class="space-y-3">
-          <UFormField label="2. Paste the reply">
-            <URadioGroup v-model="mode" orientation="horizontal" :items="MODES" />
-          </UFormField>
           <UFormField
+            label="2. Paste the reply"
             help="The ad URL isn’t included; add it in the form."
             :error="jsonError || undefined"
           >
@@ -88,14 +93,23 @@ const apply = () => {
               data-testid="parse-json"
             />
           </UFormField>
-        </div>
+        </template>
       </div>
     </template>
 
     <template #footer>
       <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <UButton color="neutral" variant="ghost" @click="open = false">Cancel</UButton>
-        <UButton :disabled="!json.trim()" data-testid="parse-apply" @click="apply"
+        <UButton
+          v-if="builtIn"
+          icon="i-lucide-sparkles"
+          :loading="parsing"
+          :disabled="!ad.trim()"
+          data-testid="parse-builtin-run"
+          @click="parseBuiltIn"
+          >Parse ad</UButton
+        >
+        <UButton v-else :disabled="!json.trim()" data-testid="parse-apply" @click="apply(json)"
           >Use this JSON</UButton
         >
       </div>

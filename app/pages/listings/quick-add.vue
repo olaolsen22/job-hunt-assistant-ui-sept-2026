@@ -159,7 +159,8 @@ const toRow = (d: Record<string, unknown>): Row => ({
     .map((l) => ({ countryCode: l.countryCode, city: text(l.city) }))
 })
 
-const { instructions, copied, load, copy } = useParsePrompt('listingQuickParsePrompt')
+const { instructions, copied, load, copy, parsing, parse } =
+  useParsePrompt('listingQuickParsePrompt')
 onMounted(load)
 
 const form = useTemplateRef('form')
@@ -168,22 +169,23 @@ const ad = ref('')
 const json = ref('')
 const jsonError = ref('')
 const pastedCount = ref(0)
+const builtIn = ref(false)
 watch(json, () => (jsonError.value = ''))
 
-const parse = async () => {
+const addRows = async (reply: string) => {
   // AIs often wrap the JSON in a code fence or a sentence, so take the outermost array.
-  const raw = json.value.slice(json.value.indexOf('['), json.value.lastIndexOf(']') + 1)
+  const raw = reply.slice(reply.indexOf('['), reply.lastIndexOf(']') + 1)
   let items: unknown
   try {
     items = JSON.parse(raw)
   } catch {
     jsonError.value = 'That doesn’t look like a valid JSON array.'
-    return
+    return false
   }
   const rows = list(items).map(toRow)
   if (!rows.length) {
     jsonError.value = 'No listings found in that reply.'
-    return
+    return false
   }
   // Appended, not replaced, so a second paste never drops rows already saved or edited.
   state.rows.push(...rows)
@@ -197,6 +199,13 @@ const parse = async () => {
   // from under the click.
   await nextTick()
   form.value?.validate({ silent: true })
+  return true
+}
+
+const parseBuiltIn = async () => {
+  const reply = await parse(ad.value)
+  // Failed: show the copy-paste steps, with the ads still filled in.
+  if (!reply || !(await addRows(reply))) builtIn.value = false
 }
 
 const toast = useToast()
@@ -283,8 +292,17 @@ const onConfirmRemove = async () => {
     <UCard v-if="pasteOpen" data-testid="quick-add-paste">
       <div class="space-y-6">
         <div class="space-y-3">
+          <UCheckbox
+            v-model="builtIn"
+            label="Use built-in parser"
+            data-testid="quick-add-builtin"
+          />
           <UFormField
-            label="1. Paste one or more ads, or a job-board results page"
+            :label="
+              builtIn
+                ? 'Paste one or more ads, or a job-board results page'
+                : '1. Paste one or more ads, or a job-board results page'
+            "
             help="Only the basics are parsed; fill in the details later."
           >
             <UTextarea
@@ -298,6 +316,17 @@ const onConfirmRemove = async () => {
             />
           </UFormField>
           <UButton
+            v-if="builtIn"
+            icon="i-lucide-sparkles"
+            :loading="parsing"
+            :disabled="!ad.trim()"
+            data-testid="quick-add-builtin-run"
+            @click="parseBuiltIn"
+          >
+            Parse into rows
+          </UButton>
+          <UButton
+            v-else
             :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
             :color="copied ? 'success' : 'primary'"
             variant="subtle"
@@ -310,9 +339,9 @@ const onConfirmRemove = async () => {
           </UButton>
         </div>
 
-        <USeparator />
+        <USeparator v-if="!builtIn" />
 
-        <div class="space-y-3">
+        <div v-if="!builtIn" class="space-y-3">
           <UFormField label="2. Paste the AI’s reply" :error="jsonError || undefined">
             <UTextarea
               v-model="json"
@@ -324,7 +353,7 @@ const onConfirmRemove = async () => {
               data-testid="quick-add-json"
             />
           </UFormField>
-          <UButton :disabled="!json.trim()" data-testid="quick-add-parse" @click="parse"
+          <UButton :disabled="!json.trim()" data-testid="quick-add-parse" @click="addRows(json)"
             >Parse into rows</UButton
           >
         </div>
