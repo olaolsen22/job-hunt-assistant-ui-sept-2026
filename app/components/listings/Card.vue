@@ -7,8 +7,8 @@ const { listing } = defineProps<{ listing: ListingListItem }>()
 <template>
   <UCard data-testid="listing-card" class="group relative">
     <div class="min-w-0 space-y-2">
-      <div class="flex items-center gap-1">
-        <h3 class="min-w-0 font-semibold text-highlighted">
+      <div class="flex items-center gap-1 md:justify-between">
+        <h3 class="min-w-0 font-semibold text-highlighted md:line-clamp-2">
           <!-- The ::after overlay stretches the link over the whole card, so the card
                stays a real <a> (middle-click, open in new tab) without nesting buttons in it. -->
           <NuxtLink
@@ -17,11 +17,25 @@ const { listing } = defineProps<{ listing: ListingListItem }>()
             >{{ listing.title }}</NuxtLink
           >
         </h3>
-        <ListingsFavoriteButton
-          :id="listing.id"
-          :favorited-at="listing.favoritedAt"
-          class="relative z-10 shrink-0"
-        />
+        <div class="flex shrink-0 items-center gap-1">
+          <ListingsFavoriteButton
+            :id="listing.id"
+            :favorited-at="listing.favoritedAt"
+            class="relative z-10 shrink-0"
+          />
+          <!-- Rendered twice: a tablet button in the title row and the phone button at the bottom;
+               one element can't live in two parents, and CSS only toggles which one shows. -->
+          <UButton
+            :to="listing.url"
+            target="_blank"
+            rel="noopener"
+            variant="soft"
+            color="neutral"
+            icon="i-lucide-external-link"
+            label="View posting"
+            class="relative z-10 hidden md:inline-flex"
+          />
+        </div>
       </div>
 
       <div class="flex flex-wrap gap-2">
@@ -36,14 +50,18 @@ const { listing } = defineProps<{ listing: ListingListItem }>()
         >
       </div>
 
-      <p class="flex items-center gap-1.5 text-sm text-muted">
-        <UIcon name="i-lucide-building-2" class="size-4 shrink-0" />
-        {{ listing.company.name }}
-      </p>
+      <div class="space-y-2 md:grid md:grid-cols-2 md:gap-x-4 md:space-y-0">
+        <div class="space-y-2">
+          <p class="flex items-center gap-1.5 text-sm text-muted">
+            <UIcon name="i-lucide-building-2" class="size-4 shrink-0" />
+            {{ listing.company.name }}
+          </p>
 
-      <ListingsLocation :listing="listing" />
+          <ListingsLocation :listing="listing" />
+        </div>
 
-      <ListingsDates :listing="listing" />
+        <ListingsDates :listing="listing" />
+      </div>
 
       <UButton
         :to="listing.url"
@@ -53,7 +71,7 @@ const { listing } = defineProps<{ listing: ListingListItem }>()
         color="neutral"
         icon="i-lucide-external-link"
         label="View posting"
-        class="relative z-10"
+        class="relative z-10 md:hidden"
       />
     </div>
   </UCard>
