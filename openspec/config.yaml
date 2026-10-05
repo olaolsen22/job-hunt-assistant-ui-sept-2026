@@ -1,0 +1,20 @@
+schema: spec-driven
+
+# Kept short on purpose: CLAUDE.md is the source of truth, this only points at it.
+context: |
+  Follow CLAUDE.md (conventions, code style, commits). Read docs/STATUS.md and
+  docs/REUSABLES.md before proposing; reuse what exists.
+  Backend contract: ../job-hunt-assistant-api-sept-2026/schema.graphql (GraphQL)
+  and ../job-hunt-assistant-api-sept-2026/docs/STATUS.md (REST). Read only the
+  parts the change needs. The frontend never changes the API.
+  Hobby project: simplest design that works, no a11y/i18n work.
+
+rules:
+  proposal:
+    - State what is out of scope
+  design:
+    - Skip design.md for small changes; prefer Nuxt / Nuxt UI built-ins over new packages
+  tasks:
+    - New pages or UI layouts start with a ui-ux-designer task
+    - Tests stay simple and few (unit happy path; e2e only for key flows)
+    - End with pnpm typecheck, pnpm lint, pnpm test, and a /log-progress task for notable features
