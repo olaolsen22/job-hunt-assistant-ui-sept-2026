@@ -23,11 +23,13 @@ test('parses an AI reply into rows and saves them independently', async ({ page 
             r0: {
               listing: { id: 7, title: 'Frontend Developer', url: 'https://example.com/a' },
               possibleDuplicates: [],
+              previousAttempts: [{ id: 2, title: 'Frontend Developer', status: 'REJECTED' }],
               errors: null
             },
             r1: {
               listing: null,
               possibleDuplicates: null,
+              previousAttempts: null,
               errors: [
                 {
                   __typename: 'DuplicateListingError',
@@ -53,6 +55,7 @@ test('parses an AI reply into rows and saves them independently', async ({ page 
       jobRoleName: 'Developer',
       url: 'https://example.com/a/?utm_source=x',
       postedOn: null,
+      // A parse result saved before the backend merged ROLLING into ASAP.
       deadlineType: 'ROLLING',
       locations: [{ countryCode: 'NO', city: 'Oslo' }]
     },
@@ -73,9 +76,15 @@ test('parses an AI reply into rows and saves them independently', async ({ page 
   await expect(page.getByTestId('quick-add-row-saved')).toContainText('https://example.com/a')
   // Checked after a result shows, so the request has been sent.
   expect(variables?.l0).toMatchObject({
-    deadlineType: 'ROLLING',
+    deadlineType: 'ASAP',
     locations: [{ countryCode: 'NO', city: 'Oslo' }]
   })
+  await expect(page.getByTestId('quick-add-row-previous-attempts')).toContainText('Rejected')
+  await expect(
+    page.getByTestId('quick-add-row-previous-attempts').getByRole('link', {
+      name: 'Frontend Developer'
+    })
+  ).toHaveAttribute('href', '/listings/2')
   await expect(page.getByTestId('quick-add-row-error')).toContainText('already have a listing')
   await expect(page.getByRole('link', { name: 'View the existing listing' })).toHaveAttribute(
     'href',

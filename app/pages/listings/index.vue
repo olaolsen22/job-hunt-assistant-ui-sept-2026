@@ -4,12 +4,14 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Job listings' })
 
-const { listings, totalCount, counts, page, pageSize, filter, loading, error } = useListingsList()
+const { listings, totalCount, counts, page, pageSize, filter, search, loading, error } =
+  useListingsList()
 
 // Clicking the active filter clears it.
 const toggle = (value: ListingsFilter) => (filter.value = filter.value === value ? null : value)
 
 const FILTERS = [
+  { value: 'closingSoon', label: 'closing soon', color: 'error', icon: 'i-lucide-alarm-clock' },
   { value: 'toAnalyze', label: 'to analyze', color: 'warning', icon: 'i-lucide-clock' },
   { value: 'active', label: 'active applications', color: 'info', icon: 'i-lucide-send' },
   { value: 'archived', label: 'archived', color: 'neutral', icon: 'i-lucide-archive' }
@@ -25,10 +27,29 @@ const heading = computed(() => {
 
 <template>
   <div class="space-y-6">
+    <UInput
+      v-if="listings.length || filter || search"
+      v-model="search"
+      icon="i-lucide-search"
+      placeholder="Search title, company, role"
+      class="w-full sm:max-w-sm"
+      data-testid="listings-search"
+    >
+      <template v-if="search" #trailing>
+        <UButton
+          icon="i-lucide-x"
+          color="neutral"
+          variant="link"
+          data-testid="listings-search-clear"
+          @click="search = ''"
+        />
+      </template>
+    </UInput>
+
     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <!-- "Active" listings because those past their deadline are filtered out server-side.
            Kept visible while a filter is on, so an empty filtered page can still clear it. -->
-      <div v-if="listings.length || filter" class="flex flex-wrap items-center gap-2">
+      <div v-if="listings.length || filter || search" class="flex flex-wrap items-center gap-2">
         <p class="text-lg font-semibold text-highlighted" data-testid="listings-total">
           {{ heading }}
         </p>
@@ -78,8 +99,8 @@ const heading = computed(() => {
       data-testid="listings-empty"
     >
       <UIcon name="i-lucide-inbox" class="size-10 text-muted" />
-      <p>{{ filter ? 'No listings match this filter.' : 'No listings yet.' }}</p>
-      <UButton v-if="!filter" to="/listings/add">Add listing</UButton>
+      <p>{{ filter || search ? 'No listings match.' : 'No listings yet.' }}</p>
+      <UButton v-if="!filter && !search" to="/listings/add">Add listing</UButton>
     </div>
 
     <template v-else>

@@ -9,9 +9,11 @@ const emit = defineEmits<{ changed: [] }>()
 const outcomes = computed((): Outcome[] => {
   if (listing.status === 'APPLIED' || listing.status === 'INTERVIEWING')
     return ['OFFER', 'REJECTED', 'WITHDRAWN']
-  if (listing.status === 'OFFER') return ['WITHDRAWN']
+  if (listing.status === 'OFFER') return ['ACCEPTED', 'REJECTED', 'WITHDRAWN']
   return []
 })
+// From an offer, the API's REJECTED means the company withdrew it and WITHDRAWN means we declined.
+const offerLabels = { ACCEPTED: 'Accepted', REJECTED: 'Offer withdrawn', WITHDRAWN: 'Declined' }
 const appliedAt = computed(
   () => listing.statusHistory.find((e) => e.status === 'APPLIED')?.occurredAt
 )
@@ -57,7 +59,7 @@ const outcomeOpen = ref(false)
             icon="i-lucide-flag"
             data-testid="listing-record-outcome"
             @click="outcomeOpen = true"
-            >{{ listing.status === 'OFFER' ? 'Withdraw' : 'Record outcome' }}</UButton
+            >Record outcome</UButton
           >
         </div>
       </div>
@@ -104,6 +106,7 @@ const outcomeOpen = ref(false)
       v-model:open="outcomeOpen"
       :listing-id="listing.id"
       :outcomes="outcomes"
+      :labels="listing.status === 'OFFER' ? offerLabels : undefined"
       :applied-at="appliedAt"
       @changed="emit('changed')"
     />

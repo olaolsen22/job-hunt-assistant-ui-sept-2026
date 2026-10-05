@@ -21,6 +21,7 @@ const LISTING = graphql(`
       postedOn
       deadlineType
       deadlineOn
+      dueOn
       postingLanguage
       favoritedAt
       analyzedAt

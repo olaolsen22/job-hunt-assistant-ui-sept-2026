@@ -17,6 +17,11 @@ const RESULT_FRAGMENT = graphql(`
       title
       url
     }
+    previousAttempts {
+      id
+      title
+      status
+    }
     possibleDuplicates {
       id
       title
@@ -42,6 +47,7 @@ const RESULT_FRAGMENT = graphql(`
 
 type CreateListingResult = ResultOf<typeof RESULT_FRAGMENT>
 type PossibleDuplicate = NonNullable<CreateListingResult['possibleDuplicates']>[number]
+type PreviousAttempt = NonNullable<CreateListingResult['previousAttempts']>[number]
 
 interface Row {
   key: number
@@ -55,6 +61,7 @@ interface Row {
   locations: ListingLocation[]
   saved?: CreateListingResult['listing']
   duplicates?: PossibleDuplicate[]
+  previousAttempts?: PreviousAttempt[]
   error?: string
   existingListingId?: number
 }
@@ -151,8 +158,11 @@ const toRow = (d: Record<string, unknown>): Row => ({
   jobRoleName: text(d?.jobRoleName) || undefined,
   url: text(d?.url),
   postedOn: isoDate(d?.postedOn) || todayIso(),
+  // Parse results saved before the backend merged ROLLING into ASAP can still say ROLLING.
   deadlineType:
-    DEADLINE_TYPE_OPTIONS.find((o) => o.value === d?.deadlineType)?.value ?? 'UNSPECIFIED',
+    DEADLINE_TYPE_OPTIONS.find(
+      (o) => o.value === (d?.deadlineType === 'ROLLING' ? 'ASAP' : d?.deadlineType)
+    )?.value ?? 'UNSPECIFIED',
   deadlineOn: isoDate(d?.deadlineOn),
   locations: list(d?.locations)
     .filter((l) => COUNTRY_CODES.find((c) => c === l?.countryCode))
@@ -222,10 +232,11 @@ const onSave = async () => {
       Object.fromEntries(rows.map((r, i) => [`l${i}`, toInput(r)]))
     )
     rows.forEach((row, i) => {
-      const { listing, possibleDuplicates, errors } = data[`r${i}`]!
+      const { listing, possibleDuplicates, previousAttempts, errors } = data[`r${i}`]!
       Object.assign(row, {
         saved: listing ?? undefined,
         duplicates: possibleDuplicates?.length ? possibleDuplicates : undefined,
+        previousAttempts: previousAttempts?.length ? previousAttempts : undefined,
         error: errors?.map((e) => e.message).join(' '),
         existingListingId: errors?.find((e) => e.__typename === 'DuplicateListingError')
           ?.existingListingId
@@ -440,6 +451,31 @@ const onConfirmRemove = async () => {
                 >Remove this one</UButton
               >
             </div>
+          </template>
+        </UAlert>
+
+        <UAlert
+          v-if="row.previousAttempts"
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-history"
+          title="Applied to this URL before"
+          class="mt-3"
+          data-testid="quick-add-row-previous-attempts"
+        >
+          <template #description>
+            <ul class="space-y-1">
+              <li
+                v-for="attempt in row.previousAttempts"
+                :key="attempt.id"
+                class="flex flex-wrap items-center gap-x-2"
+              >
+                <NuxtLink :to="`/listings/${attempt.id}`" class="font-medium hover:underline">{{
+                  attempt.title
+                }}</NuxtLink>
+                <ListingsStatusBadge :status="attempt.status" />
+              </li>
+            </ul>
           </template>
         </UAlert>
       </UCard>

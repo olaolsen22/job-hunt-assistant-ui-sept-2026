@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { OUTCOME_OPTIONS, type Outcome } from '~/constants/listing'
 
-const { listingId, outcomes, appliedAt } = defineProps<{
+const {
+  listingId,
+  outcomes,
+  labels = {},
+  appliedAt
+} = defineProps<{
   listingId: number
   outcomes: readonly Outcome[]
+  // Replaces the default label of an outcome whose meaning depends on the current status.
+  labels?: Partial<Record<Outcome, string>>
   appliedAt: string | undefined
 }>()
 const open = defineModel<boolean>('open', { required: true })
@@ -25,7 +32,12 @@ const RECORD_OUTCOME = graphql(`
   }
 `)
 
-const items = computed(() => OUTCOME_OPTIONS.filter((o) => outcomes.includes(o.value)))
+const items = computed(() =>
+  OUTCOME_OPTIONS.filter((o) => outcomes.includes(o.value)).map((o) => ({
+    ...o,
+    label: labels[o.value] ?? o.label
+  }))
+)
 
 const outcome = ref<Outcome>()
 const occurredAt = ref('')

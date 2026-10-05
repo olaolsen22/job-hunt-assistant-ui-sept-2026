@@ -30,7 +30,6 @@ export const WORK_MODE_OPTIONS = [
 export const DEADLINE_TYPE_OPTIONS = [
   { label: 'Date', value: 'DATE' },
   { label: 'ASAP', value: 'ASAP' },
-  { label: 'Rolling', value: 'ROLLING' },
   { label: 'Not stated', value: 'UNSPECIFIED' }
 ] as const
 
@@ -54,12 +53,14 @@ export const APPLICATION_STATUS_OPTIONS = [
   { label: 'Applied', value: 'APPLIED', color: 'info' },
   { label: 'Interviewing', value: 'INTERVIEWING', color: 'primary' },
   { label: 'Offer', value: 'OFFER', color: 'success' },
+  { label: 'Accepted', value: 'ACCEPTED', color: 'success' },
   { label: 'Rejected', value: 'REJECTED', color: 'error' },
   { label: 'Withdrawn', value: 'WITHDRAWN', color: 'neutral' }
 ] as const
 
 export const OUTCOME_OPTIONS = [
   { label: 'Offer', value: 'OFFER' },
+  { label: 'Accepted', value: 'ACCEPTED' },
   { label: 'Rejected', value: 'REJECTED' },
   { label: 'Withdrawn', value: 'WITHDRAWN' }
 ] as const

@@ -3,14 +3,10 @@ import type { ListingListItem } from '~/composables/useListingsList'
 import { DEADLINE_TYPE_OPTIONS } from '~/constants/listing'
 
 const { listing, detail = false } = defineProps<{
-  listing: Pick<ListingListItem, 'postedOn' | 'deadlineType' | 'deadlineOn'>
+  listing: Pick<ListingListItem, 'postedOn' | 'deadlineType' | 'deadlineOn' | 'dueOn'>
   // Renders two label/value grid cells for the detail page instead of the compact card lines.
   detail?: boolean
 }>()
-
-// Matches the backend's default-order rule: an ASAP listing counts as due 14 days after
-// it was posted. Not exposed on the API, so hardcoded here (see the backend's constant).
-const ASAP_DUE_DAYS = 14
 
 const RED = 'text-red-600/85 dark:text-red-400/85'
 const ORANGE = 'text-orange-600/85 dark:text-orange-400/85'
@@ -41,24 +37,13 @@ const postedClass = computed(() => postedColor(daysSincePosted.value))
 
 const hasDeadlineDate = computed(() => listing.deadlineType === 'DATE' && !!listing.deadlineOn)
 
-const isAsap = computed(() => listing.deadlineType === 'ASAP')
+// The server owns the due date (DATE: the deadline, ASAP: posted + 14, otherwise posted + 30),
+// so the colors and expiry here match the list's sort order.
+const dueDaysLeft = computed(() => daysFromToday(listing.dueOn))
 
-// An ASAP listing's "deadline" for coloring/expiry purposes: postedOn + ASAP_DUE_DAYS.
-const asapDueDaysLeft = computed(() => ASAP_DUE_DAYS - daysSincePosted.value)
+const isExpired = computed(() => dueDaysLeft.value < 0)
 
-const isExpired = computed(() => {
-  if (hasDeadlineDate.value) return daysFromToday(listing.deadlineOn!) < 0
-  if (isAsap.value) return asapDueDaysLeft.value < 0
-  return false
-})
-
-const deadlineClass = computed(() => {
-  if (isExpired.value) return RED
-  if (hasDeadlineDate.value) return deadlineColor(daysFromToday(listing.deadlineOn!))
-  if (isAsap.value) return deadlineColor(asapDueDaysLeft.value)
-  // No deadline date, so the posting's age is the only urgency signal left.
-  return postedClass.value
-})
+const deadlineClass = computed(() => (isExpired.value ? RED : deadlineColor(dueDaysLeft.value)))
 
 const deadlineLabel = computed(() => {
   if (hasDeadlineDate.value) {
@@ -67,16 +52,7 @@ const deadlineLabel = computed(() => {
   }
 
   const type = DEADLINE_TYPE_OPTIONS.find((option) => option.value === listing.deadlineType)!.label
-
-  if (isAsap.value) {
-    if (isExpired.value) return `${type}, likely filled`
-    const due = new Date(`${listing.postedOn}T00:00:00`)
-    due.setDate(due.getDate() + ASAP_DUE_DAYS)
-    return `${type}, due ~${formatDate(due.toLocaleDateString('sv-SE'))}`
-  }
-
-  if (daysSincePosted.value === 0) return `${type}, posted today`
-  return `${type}, ${daysSincePosted.value} ${daysSincePosted.value === 1 ? 'day' : 'days'} since posted`
+  return isExpired.value ? `${type}, likely filled` : `${type}, due ~${formatDate(listing.dueOn)}`
 })
 </script>
 
