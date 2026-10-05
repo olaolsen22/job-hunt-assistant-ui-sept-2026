@@ -4,8 +4,9 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Job listings' })
 
+const grid = useTemplateRef('grid')
 const { listings, totalCount, counts, page, pageSize, filter, search, loading, error } =
-  useListingsList()
+  useListingsList(grid)
 
 // Clicking the active filter clears it.
 const toggle = (value: ListingsFilter) => (filter.value = filter.value === value ? null : value)
@@ -27,8 +28,9 @@ const heading = computed(() => {
 
 <template>
   <div class="space-y-6">
+    <!-- Shown while loading too, so the grid sits at the same height when its page size is measured. -->
     <UInput
-      v-if="listings.length || filter || search"
+      v-if="loading || listings.length || filter || search"
       v-model="search"
       icon="i-lucide-search"
       placeholder="Search title, company, role"
@@ -86,15 +88,7 @@ const heading = computed(() => {
     <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />
 
     <div
-      v-else-if="loading && listings.length === 0"
-      class="grid gap-4 lg:grid-cols-2"
-      data-testid="listings-loading"
-    >
-      <USkeleton v-for="i in 6" :key="i" class="h-28 w-full" />
-    </div>
-
-    <div
-      v-else-if="listings.length === 0"
+      v-else-if="!loading && listings.length === 0"
       class="flex flex-col items-center gap-3 py-16 text-center"
       data-testid="listings-empty"
     >
@@ -104,8 +98,11 @@ const heading = computed(() => {
     </div>
 
     <template v-else>
-      <div class="grid gap-4 lg:grid-cols-2" data-testid="listings-grid">
-        <ListingsCard v-for="listing in listings" :key="listing.id" :listing="listing" />
+      <div ref="grid" class="grid gap-4 lg:grid-cols-2" data-testid="listings-grid">
+        <template v-if="loading && listings.length === 0">
+          <USkeleton v-for="i in pageSize" :key="i" class="h-42 w-full" />
+        </template>
+        <ListingsCard v-for="listing in listings" v-else :key="listing.id" :listing="listing" />
       </div>
 
       <!-- UPagination still renders a lone "1" with disabled arrows when everything fits on one page. -->
