@@ -41,6 +41,10 @@ export default defineNuxtConfig({
     }
   },
 
+  // Vite's dev server rejects unknown Host headers; `tailscale serve` forwards the *.ts.net name.
+  // clientPort: the phone reaches the dev server through serve's HTTPS on 443, not :3000.
+  vite: { server: { allowedHosts: ['.ts.net'], hmr: { clientPort: 443 } } },
+
   // Same-origin proxy: the HttpOnly session cookie and SSE work without CORS.
   routeRules: {
     '/api/**': { proxy: `${apiUrl}/api/**` },
