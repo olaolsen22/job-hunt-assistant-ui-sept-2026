@@ -16,6 +16,9 @@ const UNDO_STATUS_CHANGE = graphql(`
         ... on Error {
           message
         }
+        ... on DuplicateListingError {
+          existingListingId
+        }
       }
     }
   }
@@ -49,17 +52,34 @@ const undoDescription = computed(() => {
   return 'The listing goes back to its previous status.'
 })
 
+const toast = useToast()
 const { run, loading } = useMutation(() => emit('changed'))
 
 const undo = async () => {
+  let reopenBlocked = false
   const ok = await run(async () => {
     const { undoStatusChange } = await gql(UNDO_STATUS_CHANGE, {
       input: { listingId: listing.id }
     })
-    return undoStatusChange.errors
+    const duplicate = undoStatusChange.errors?.find((e) => e.__typename === 'DuplicateListingError')
+    if (!duplicate) return undoStatusChange.errors
+    // useMutation's toast has no link, and the user needs the open listing that blocks the undo.
+    reopenBlocked = true
+    toast.add({
+      title: duplicate.message,
+      color: 'error',
+      actions: [
+        {
+          label: 'View open listing',
+          to: `/listings/${duplicate.existingListingId}`,
+          color: 'neutral',
+          variant: 'outline'
+        }
+      ]
+    })
   })
   undoOpen.value = false
-  if (ok) emit('changed')
+  if (ok && !reopenBlocked) emit('changed')
 }
 </script>
 

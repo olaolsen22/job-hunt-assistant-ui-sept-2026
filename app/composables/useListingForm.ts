@@ -176,7 +176,10 @@ export const useListingForm = () => {
       workMode: option(WORK_MODE_OPTIONS, d.workMode),
       description: text(d.description),
       postedOn: isoDate(d.postedOn) || todayIso(),
-      deadlineType: option(DEADLINE_TYPE_OPTIONS, d.deadlineType) ?? 'UNSPECIFIED',
+      // Parse results saved before the backend merged ROLLING into ASAP can still say ROLLING.
+      deadlineType:
+        option(DEADLINE_TYPE_OPTIONS, d.deadlineType === 'ROLLING' ? 'ASAP' : d.deadlineType) ??
+        'UNSPECIFIED',
       deadlineOn: isoDate(d.deadlineOn),
       postingLanguage: option(LANGUAGE_OPTIONS, d.postingLanguage),
       locations: list(d.locations)

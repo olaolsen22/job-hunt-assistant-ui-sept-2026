@@ -53,8 +53,8 @@ remove it when you delete one.
 - `<ListingsDocumentPicker v-model:document-id v-model:file label documents>` — pick an uploaded
   document or a new PDF (uploaded by the caller on submit); used twice by `<ListingsApplyModal>`.
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
-- `<ListingsDates listing>` — labelled posted and deadline lines, each colored by days ago/left; with
-  no deadline date it shows the deadline type + days since posted, colored like the posted line.
+- `<ListingsDates listing>` — labelled posted and deadline lines, posted colored by days ago, deadline
+  colored by days left to the server's `dueOn` (ASAP/Not stated show `due ~date`, or "likely filled" once past).
 
 ## Composables (`app/composables/`)
 
@@ -76,15 +76,17 @@ remove it when you delete one.
   `listingParsePrompt` or `listingQuickParsePrompt` and copies it + `<posting>` text for an external
   AI. `parse()` runs the built-in parser (`parseListing`, FULL or QUICK by `name`) and returns the
   JSON reply, or `undefined` after a toast. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).
-- `useListingsList()` → `{ listings, totalCount, counts, page, pageSize, filter, loading, error, refresh }` —
-  `filter` (`'toAnalyze' | 'active' | 'archived' | null`, exported as `ListingsFilter`) picks one of
+- `useListingsList(grid)` → `{ listings, totalCount, counts, page, pageSize, filter, search, loading, error, refresh }` —
+  `search` (bound to an input) is debounced 300 ms, resets to page 1, and applies to the list and every
+  count. `filter` (`'closingSoon' | 'toAnalyze' | 'active' | 'archived' | null`, exported as `ListingsFilter`) picks one of
   the literal queries and resets to page 1; `counts` has each filter's total for its button. Active
   = Applied/Interviewing, newest activity first, past deadlines included; archived = `archived: true`;
   offset-paged (bind `page`/`pageSize`/`totalCount` to `UPagination`) `listings` query (past
   `DATE` deadlines filtered out server-side) for the
-  listings list page. Page size is fixed per page load from viewport (5 below `lg`, 6-10 at `lg`+
-  depending on window height). Client-only fetch (`server: false`) since it needs the session
-  cookie. Also exports `ListingListItem`.
+  listings list page. `grid` is a template ref to the cards' grid: on mount the
+  page size is measured from it (rows that fit in the viewport x grid columns, 5 below `md`; fixed for
+  the page load), then the single fetch starts (`immediate: false`). Client-only fetch (`server: false`)
+  since it needs the session cookie. Also exports `ListingListItem` and `measurePageSize`.
 
 ## Stores (`app/stores/`)
 

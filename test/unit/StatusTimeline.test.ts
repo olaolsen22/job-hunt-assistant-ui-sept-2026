@@ -41,4 +41,33 @@ describe('StatusTimeline', () => {
     await vi.waitFor(() => expect(wrapper.emitted('changed')).toHaveLength(1))
     wrapper.unmount()
   })
+
+  it('links to the open listing when undoing would reopen a duplicate', async () => {
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: () => ({
+        data: {
+          undoStatusChange: {
+            listing: null,
+            errors: [
+              { __typename: 'DuplicateListingError', message: 'Already open', existingListingId: 7 }
+            ]
+          }
+        }
+      })
+    })
+
+    const wrapper = await mountSuspended(StatusTimeline, {
+      props: { listing },
+      attachTo: document.body
+    })
+    await wrapper.find('[data-testid="status-undo"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
+
+    const { toasts } = useToast()
+    await vi.waitFor(() => expect(toasts.value.at(-1)?.actions?.[0]?.to).toBe('/listings/7'))
+    expect(wrapper.emitted('changed')).toBeUndefined()
+    wrapper.unmount()
+  })
 })

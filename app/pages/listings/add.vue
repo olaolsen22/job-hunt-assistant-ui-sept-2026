@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import { APPLICATION_STATUS_OPTIONS } from '~/constants/listing'
 
 definePageMeta({ title: 'Add listing' })
 
@@ -8,6 +9,10 @@ const CREATE_LISTING = graphql(`
     createListing(input: { listing: $listing }) {
       listing {
         id
+      }
+      previousAttempts {
+        id
+        status
       }
       errors {
         __typename
@@ -49,7 +54,26 @@ const onConfirm = async () => {
       return
     }
     clearNuxtState('name-lookups')
-    toast.add({ title: 'Listing added', color: 'success', icon: 'i-lucide-check' })
+    // Newest first, so [0] is the latest earlier attempt at this posting.
+    const previous = createListing.previousAttempts?.[0]
+    toast.add(
+      previous
+        ? {
+            title: 'Listing added',
+            description: `You closed an earlier listing for this URL (${APPLICATION_STATUS_OPTIONS.find((o) => o.value === previous.status)!.label}).`,
+            color: 'success',
+            icon: 'i-lucide-history',
+            actions: [
+              {
+                label: 'View previous attempt',
+                to: `/listings/${previous.id}`,
+                color: 'neutral',
+                variant: 'outline'
+              }
+            ]
+          }
+        : { title: 'Listing added', color: 'success', icon: 'i-lucide-check' }
+    )
     await navigateTo('/listings')
   } catch {
     confirmOpen.value = false

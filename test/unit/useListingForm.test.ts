@@ -113,4 +113,11 @@ describe('useListingForm', () => {
       skills: [{ name: 'Vue', level: 3, minYears: null, isRequired: true }]
     })
   })
+
+  it('maps a legacy ROLLING deadline in a parsed draft to ASAP', () => {
+    const { state, fillDraft } = useListingForm()
+    fillDraft({ title: 'Frontend Developer', deadlineType: 'ROLLING' })
+
+    expect(state.deadlineType).toBe('ASAP')
+  })
 })
