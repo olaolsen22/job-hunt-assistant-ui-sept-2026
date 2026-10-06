@@ -15,6 +15,7 @@ const COMPANIES = graphql(`
         name
         listingCount
         applicationCount
+        favoritedAt
         industry {
           name
         }
@@ -186,7 +187,8 @@ const places = (c: (typeof companies.value)[number]) =>
                 <UIcon name="i-lucide-map-pin" class="size-4 shrink-0" />
                 <span class="truncate">{{ places(c) }}</span>
               </p>
-              <div class="flex shrink-0 gap-2">
+              <div class="flex shrink-0 items-center gap-2">
+                <CompaniesFavoriteButton :id="c.id" :favorited-at="c.favoritedAt" />
                 <UBadge
                   color="neutral"
                   variant="subtle"
