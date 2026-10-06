@@ -1,6 +1,6 @@
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
-// Both aliased to `prompt` so either document has the same result shape.
+// All aliased to `prompt` so every document has the same result shape.
 const QUERIES = {
   listingParsePrompt: graphql(`
     query ListingParsePrompt {
@@ -15,12 +15,23 @@ const QUERIES = {
         instructions
       }
     }
+  `),
+  companyParsePrompt: graphql(`
+    query CompanyParsePrompt {
+      prompt: companyParsePrompt {
+        instructions
+      }
+    }
   `)
 }
 
 type PromptName = keyof typeof QUERIES
 
-const PARSE_MODES = { listingParsePrompt: 'FULL', listingQuickParsePrompt: 'QUICK' } as const
+const PARSE_MODES = {
+  listingParsePrompt: 'FULL',
+  listingQuickParsePrompt: 'QUICK',
+  companyParsePrompt: 'COMPANIES'
+} as const
 
 const PARSE_LISTING = graphql(`
   mutation ParseListing($text: String!, $mode: ParseMode!) {

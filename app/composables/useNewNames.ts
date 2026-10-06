@@ -1,6 +1,6 @@
 import type { InjectionKey } from 'vue'
 
-export type NameLookup = 'companies' | 'jobRoles' | 'skills' | 'locations'
+export type NameLookup = 'companies' | 'jobRoles' | 'skills' | 'locations' | 'industries'
 
 type IsNewName = (lookup: NameLookup, name: string, countryCode?: string) => boolean
 type ListingFormState = ReturnType<typeof useListingForm>['state']

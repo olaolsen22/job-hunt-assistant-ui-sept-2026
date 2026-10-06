@@ -29,6 +29,15 @@ const QUERIES = {
       }
     }
   `),
+  industries: graphql(`
+    query IndustrySearch($q: String) {
+      result: industries(search: $q, first: 20, order: { name: ASC }) {
+        nodes {
+          name
+        }
+      }
+    }
+  `),
   skills: graphql(`
     query SkillSearch($q: String) {
       result: skills(search: $q, first: 20, order: { name: ASC }) {

@@ -23,4 +23,24 @@ describe('NameCombobox', () => {
     expect(document.body.textContent).toContain('Acme Labs')
     wrapper.unmount()
   })
+
+  it('suggests industries', async () => {
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: () => ({
+        data: { result: { nodes: [{ name: 'Fintech' }, { name: 'Consulting' }] } }
+      })
+    })
+
+    const wrapper = await mountSuspended(NameCombobox, {
+      props: { lookup: 'industries' },
+      attachTo: document.body
+    })
+    await wrapper.get('input').setValue('fin')
+    await new Promise((r) => setTimeout(r, 250))
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Fintech')
+    wrapper.unmount()
+  })
 })
