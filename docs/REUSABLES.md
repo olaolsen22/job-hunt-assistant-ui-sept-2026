@@ -16,7 +16,7 @@ remove it when you delete one.
   note is shown.
 - `<DashboardApiHealth>` — API health indicator on the dashboard.
 - `<ListingsNameCombobox v-model lookup placeholder? countryCode?>` — debounced search over
-  `companies` / `jobRoles` / `skills` by name, or `locations` by city within `countryCode`;
+  `companies` / `jobRoles` / `skills` / `industries` by name, or `locations` by city within `countryCode`;
   allows creating a new name; shows a "new" hint for created names and ones `useIsNewName` flags. Results are cached in `useState('name-lookups')` and filtered
   locally; clear it with `clearNuxtState('name-lookups')` after a save that can create names.
 - `<ListingsForm v-model :validate submit-label cancel-to @submit>` — the listing form's fields
@@ -27,6 +27,10 @@ remove it when you delete one.
   parser" checkbox sends the ad to `parseListing` instead, falling back to copy-paste on failure.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
   active option clears it. Generic over the option value type.
+- `<ListingsFilterPanel :facets v-model:sort>` — the `/listings` facet controls, sort select and clear all;
+  edits `facets` in place. Facets collapse behind a "Filters (n)" toggle below `md`.
+- `<ListingsFilterCombobox v-model lookup="skills" | "locations" placeholder?>` — multi-select search over
+  existing skills (by name) or locations (by id, labelled `City, Country`); no create option.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
 - `<ListingsSkillsField v-model>` — skill search + `{ name, level, isRequired }[]` rows.
 - `<ListingsLanguagesField v-model>` — `{ language, level?, isRequired }[]` rows, one per language.
@@ -73,20 +77,21 @@ remove it when you delete one.
   `NameCombobox` and `SkillsField` inject it to flag names the API doesn't know. No provider = nothing
   flagged. Also exports `NameLookup`.
 - `useParsePrompt(name)` → `{ instructions, copied, load, copy(posting), parsing, parse(posting) }` — fetches
-  `listingParsePrompt` or `listingQuickParsePrompt` and copies it + `<posting>` text for an external
-  AI. `parse()` runs the built-in parser (`parseListing`, FULL or QUICK by `name`) and returns the
+  `listingParsePrompt`, `listingQuickParsePrompt` or `companyParsePrompt` and copies it + `<posting>` text
+  for an external AI. `parse()` runs the built-in parser (`parseListing`, FULL, QUICK or COMPANIES by `name`) and returns the
   JSON reply, or `undefined` after a toast. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).
-- `useListingsList(grid)` → `{ listings, totalCount, counts, page, pageSize, filter, search, loading, error, refresh }` —
-  `search` (bound to an input) is debounced 300 ms, resets to page 1, and applies to the list and every
-  count. `filter` (`'closingSoon' | 'toAnalyze' | 'active' | 'archived' | null`, exported as `ListingsFilter`) picks one of
-  the literal queries and resets to page 1; `counts` has each filter's total for its button. Active
-  = Applied/Interviewing, newest activity first, past deadlines included; archived = `archived: true`;
-  offset-paged (bind `page`/`pageSize`/`totalCount` to `UPagination`) `listings` query (past
-  `DATE` deadlines filtered out server-side) for the
-  listings list page. `grid` is a template ref to the cards' grid: on mount the
-  page size is measured from it (rows that fit in the viewport x grid columns, 5 below `md`; fixed for
-  the page load), then the single fetch starts (`immediate: false`). Client-only fetch (`server: false`)
-  since it needs the session cookie. Also exports `ListingListItem` and `measurePageSize`.
+- `useListingsList(grid)` → `{ listings, totalCount, counts, page, pageSize, filter, search, sort, facets, loading, error, refresh }` —
+  `search` (bound to an input; starts as `?search=` from the URL, which the companies list links with) is debounced 300 ms and applies to the list and every count. `filter`
+  (`'closingSoon' | 'toAnalyze' | 'archived' | null`, `ListingsFilter`) is the preset; `facets` (reactive
+  `ListingsFacets`: favorites, statuses, skills, locationIds, postingLanguages, languages) AND with it and
+  with the counts; `sort` (`'due' | 'newest' | 'changed'`). Any change resets to page 1. The query is built
+  at runtime by the exported `buildListingsQuery(filter, facets, sort)` (a filter variable fails the API cost
+  check, so only selected facets go into the `where` text). Picking statuses lifts the past-deadline
+  exclusion. Offset-paged (bind `page`/`pageSize`/`totalCount` to `UPagination`). `grid` is a template ref
+  to the cards' grid: on mount the page size is measured from it (rows that fit in the viewport x grid
+  columns, 5 below `md`; fixed for the page load), then the single fetch starts (`immediate: false`).
+  Client-only fetch (`server: false`) since it needs the session cookie. Also exports `ListingListItem`,
+  `measurePageSize(grid, cardHeight?, gap?)` (also used by /companies), `emptyFacets()` and `countActiveFacets(facets)`.
 
 ## Stores (`app/stores/`)
 

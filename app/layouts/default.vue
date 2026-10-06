@@ -9,7 +9,8 @@ useHead({ title })
 
 const items: NavigationMenuItem[] = [
   { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/' },
-  { label: 'Job listings', icon: 'i-lucide-file-text', to: '/listings' }
+  { label: 'Job listings', icon: 'i-lucide-file-text', to: '/listings' },
+  { label: 'Companies', icon: 'i-lucide-building-2', to: '/companies' }
 ]
 
 const colorMode = useColorMode()
