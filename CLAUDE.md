@@ -30,7 +30,8 @@ Do the same after context loss.
 - Unit/integration: `pnpm test` (vitest only, `test/unit`). One file: `pnpm vitest run test/unit/<Name>.test.ts`
 - E2E: `pnpm test:e2e` (Playwright). Owner only, see Tests.
 - GraphQL types: `pnpm gql:gen` after the schema changes (regenerates `app/graphql-env.d.ts`; commit it)
-- After finishing changes: `pnpm build` then `pnpm preview --port 3000`.
+- Always, once all changes are finished: `pnpm build` then `pnpm preview --port 3000`. If a stale preview
+  server holds port 3000, kill it first (check with `lsof -i :3000`) and start the new one. Leave `pnpm dev` alone.
 
 ## Reuse and agents
 

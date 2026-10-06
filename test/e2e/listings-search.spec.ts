@@ -83,6 +83,7 @@ test('filters by status', async ({ page }) => {
   await page.goto('/listings')
   await expect(page.getByTestId('listings-total')).toHaveText('2 active listings')
 
+  await page.getByTestId('listings-filters-toggle').click()
   await page.getByTestId('listings-facet-status').click()
   await page.getByRole('option', { name: 'Applied' }).click()
   await expect(page.getByTestId('listings-total')).toHaveText('1 active listing')

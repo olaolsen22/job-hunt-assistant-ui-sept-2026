@@ -27,8 +27,8 @@ remove it when you delete one.
   parser" checkbox sends the ad to `parseListing` instead, falling back to copy-paste on failure.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
   active option clears it. Generic over the option value type.
-- `<ListingsFilterPanel :facets v-model:sort>` — the `/listings` facet controls, sort select and clear all;
-  edits `facets` in place. Facets collapse behind a "Filters (n)" toggle below `md`.
+- `<ListingsFilterPanel :facets v-model:sort v-model:search>` — the `/listings` toolbar (search, sort, "Filters (n)"
+  toggle, clear all) and the facet panel, closed by default at every width; edits `facets` in place.
 - `<ListingsFilterCombobox v-model lookup="skills" | "locations" placeholder?>` — multi-select search over
   existing skills (by name) or locations (by id, labelled `City, Country`); no create option.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
