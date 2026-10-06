@@ -87,6 +87,9 @@ The API is a fixed contract. Adapt the UI to it.
   interpolation. Derive types with `ResultOf`; never hand-write API shapes.
 - Pinia only for state shared across pages.
 - Handle loading, empty, and error states where data loads.
+- Empty-list messages are centered both ways in their container, with a muted icon above the text, like
+  `/listings` and `/companies` (`flex flex-col items-center justify-center text-center`). In cards that stretch in a
+  grid, let the card body fill so the message sits in the middle.
 - Fetch only needed fields, avoid request waterfalls, paginate lists, lazy-load heavy components.
 - Arrow functions (`const foo = () => {}`), not `function` declarations. Comments explain why.
 - No defensive code for impossible cases; only catch errors you handle. Delete dead code.

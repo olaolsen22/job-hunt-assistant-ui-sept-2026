@@ -15,6 +15,13 @@ remove it when you delete one.
   `prose` (Tailwind typography). Use it as `<LazyAppMarkdownContent>` so both libs load only when a
   note is shown.
 - `<DashboardApiHealth>` — API health indicator on the dashboard.
+- `<DashboardWidget title icon icon-class? to? loading error empty empty-text total? @retry>` — dashboard card shell:
+  header with title, count badge and "View all" link; skeleton, error alert with Retry, or empty text, else the default slot.
+- `<DashboardRow id title company>` — one-link listing row for dashboard widgets; the default slot is the right-hand detail.
+- Dashboard widgets (`<DashboardClosingSoon>`, `Interviews`, `Offers`, `Stale`, `Pipeline`, `AppliedThisWeek`, `ToAnalyze`,
+  `FavoriteListings`, `FavoriteCompanies`) — each runs its own literal query through `useAsyncData` (client-only).
+- `<CompaniesFavoriteButton id favoritedAt>` — star toggle for a company; same optimistic behavior as the listing one.
+  Uses `@click.prevent.stop`, so it can sit inside a link row.
 - `<ListingsNameCombobox v-model lookup placeholder? countryCode?>` — debounced search over
   `companies` / `jobRoles` / `skills` / `industries` by name, or `locations` by city within `countryCode`;
   allows creating a new name; shows a "new" hint for created names and ones `useIsNewName` flags. Results are cached in `useState('name-lookups')` and filtered
@@ -106,6 +113,7 @@ remove it when you delete one.
 - `formatDate(iso)` — formats a `YYYY-MM-DD` date string as `nb-NO` medium date (`26. sep. 2026`), parsed at local
   midnight (avoids the UTC-parsing off-by-one-day bug for negative-offset zones).
 - `todayIso()` — local today as `YYYY-MM-DD` (not `toISOString()`, which is UTC).
+- `daysAgoIso(n)` — local date `n` days back as `YYYY-MM-DD`; `localDayStartIso(n)` — UTC instant of local midnight `n` days back.
 - `formatDateTime(iso)` — formats a `DateTime` instant as `nb-NO` medium date + short time, local zone.
 - `toDateTimeLocal(value = now)` — a date/ISO string as local `YYYY-MM-DDTHH:mm` for
   `<input type="datetime-local">` (send back with `new Date(value).toISOString()`).

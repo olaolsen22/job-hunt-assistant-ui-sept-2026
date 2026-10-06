@@ -1,7 +1,7 @@
 import type { ShallowRef } from 'vue'
 import type { ResultOf, TadaDocumentNode } from 'gql.tada'
 import { parse, print } from '@0no-co/graphql.web'
-import type { Language } from '~/constants/listing'
+import { APPLICATION_STATUS_OPTIONS, type Language } from '~/constants/listing'
 
 const LISTING_ITEM = graphql(`
   fragment ListingListItem on Listing {
@@ -61,7 +61,8 @@ export const measurePageSize = (grid: HTMLElement, cardHeight = CARD_HEIGHT, gap
 // The clauses never contain user input; all values travel as variables.
 // Typed like batchDocument: gql.tada can't infer a runtime document, so the result is named here.
 
-export type ListingsFilter = 'closingSoon' | 'toAnalyze' | 'archived'
+const FILTER_KEYS = ['closingSoon', 'toAnalyze', 'archived'] as const
+export type ListingsFilter = (typeof FILTER_KEYS)[number]
 export type ListingsSort = 'due' | 'newest' | 'changed'
 
 export interface ListingsFacets {
@@ -85,6 +86,17 @@ export const emptyFacets = (): ListingsFacets => ({
 // Facets with something selected, not the number of selected values.
 export const countActiveFacets = (facets: ListingsFacets) =>
   Object.values(facets).filter((v) => (Array.isArray(v) ? v.length : v)).length
+
+// The dashboard links here with ?filter=<preset>, ?status=A,B and ?favorites=1. Unknown values are
+// dropped, so a stale or hand-edited link still opens the default list.
+export const parseListingsQuery = (query: Record<string, unknown>) => {
+  const filter = FILTER_KEYS.find((key) => key === query.filter) ?? null
+  const known = APPLICATION_STATUS_OPTIONS.map((o) => o.value)
+  const statuses = String(query.status ?? '')
+    .split(',')
+    .filter((s): s is ListingListItem['status'] => (known as string[]).includes(s))
+  return { filter, statuses, favorites: query.favorites === '1' }
+}
 
 type ListingsResult = {
   listings: { items: ListingListItem[]; totalCount: number } | null
@@ -187,9 +199,11 @@ export const buildListingsQuery = (
 export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) => {
   const pageSize = ref(PHONE_PAGE_SIZE)
   const page = ref(1)
-  const filter = ref<ListingsFilter | null>(null)
+  const query = useRoute().query
+  const initial = parseListingsQuery(query)
+  const filter = ref<ListingsFilter | null>(initial.filter)
   // The companies list links here with ?search=<name>.
-  const initialSearch = String(useRoute().query.search ?? '').trim()
+  const initialSearch = String(query.search ?? '').trim()
   const search = ref(initialSearch)
   // Typing shouldn't refetch on every keystroke, so the query only sees the settled value.
   const settledSearch = ref(initialSearch)
@@ -199,7 +213,11 @@ export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) 
     timer = setTimeout(() => (settledSearch.value = value.trim()), 300)
   })
   const sort = ref<ListingsSort>('due')
-  const facets = reactive(emptyFacets())
+  const facets = reactive({
+    ...emptyFacets(),
+    statuses: initial.statuses,
+    favorites: initial.favorites
+  })
   // A different filter, search, sort or facet has different pages.
   watch([filter, settledSearch, sort, facets], () => (page.value = 1))
 

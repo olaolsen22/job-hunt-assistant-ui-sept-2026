@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { print } from '@0no-co/graphql.web'
-import { buildListingsQuery, emptyFacets, type ListingsFacets } from '~/composables/useListingsList'
+import {
+  buildListingsQuery,
+  emptyFacets,
+  parseListingsQuery,
+  type ListingsFacets
+} from '~/composables/useListingsList'
 
 const build = (facets: Partial<ListingsFacets>) => {
   const { document, variables } = buildListingsQuery(null, { ...emptyFacets(), ...facets }, 'due')
@@ -29,5 +34,21 @@ describe('buildListingsQuery', () => {
     expect(text).toContain(
       'where: {and: [{or: [{deadlineType: {neq: DATE}}, {deadlineOn: {gte: $today}}]}, {favoritedAt: {neq: null}}, {skills: {some: {skill: {name: {in: $skills}}}}}]}'
     )
+  })
+})
+
+describe('parseListingsQuery', () => {
+  it('reads a preset, statuses and favorites from the URL', () => {
+    expect(
+      parseListingsQuery({ filter: 'closingSoon', status: 'OFFER,APPLIED', favorites: '1' })
+    ).toEqual({ filter: 'closingSoon', statuses: ['OFFER', 'APPLIED'], favorites: true })
+  })
+
+  it('ignores unknown values', () => {
+    expect(parseListingsQuery({ filter: 'nope', status: 'NOPE,SAVED', favorites: 'yes' })).toEqual({
+      filter: null,
+      statuses: ['SAVED'],
+      favorites: false
+    })
   })
 })
