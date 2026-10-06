@@ -39,29 +39,11 @@ const heading = computed(() => {
 
 <template>
   <div class="space-y-6">
-    <!-- Shown while loading too, so the grid sits at the same height when its page size is measured. -->
-    <UInput
-      v-if="loading || listings.length || narrowed"
-      v-model="search"
-      icon="i-lucide-search"
-      placeholder="Search title, company, role"
-      class="w-full sm:max-w-sm"
-      data-testid="listings-search"
-    >
-      <template v-if="search" #trailing>
-        <UButton
-          icon="i-lucide-x"
-          color="neutral"
-          variant="link"
-          data-testid="listings-search-clear"
-          @click="search = ''"
-        />
-      </template>
-    </UInput>
-
-    <!-- `:facets`, not v-model: the panel edits the composable's reactive object in place. -->
+    <!-- Shown while loading too, so the grid sits at the same height when its page size is measured.
+         `:facets`, not v-model: the panel edits the composable's reactive object in place. -->
     <ListingsFilterPanel
       v-if="loading || listings.length || narrowed"
+      v-model:search="search"
       v-model:sort="sort"
       :facets="facets"
     />
