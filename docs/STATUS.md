@@ -1,10 +1,10 @@
 # Status
 
-Updated: 2026-10-06 · Last logged commit: b42ac0c
+Updated: 2026-10-06 · Last logged commit: a0a2cfa
 
 ## Pages
 
-- `/` dashboard: Urgent (closing soon, upcoming interviews, offers, stale), Progress (pipeline counts, applied this week, to analyze), Shortcuts (favorited listings, favorited companies with open listings), `ApiHealth`; one query per widget · `/login` (auth layout, guest login)
+- `/` dashboard: ten widgets (closing soon, upcoming interviews, offers, stale, pipeline, applied this week, to analyze, favorited listings, favorited companies with open listings, LLM usage today) in the user's saved order, hidden ones not mounted; "Edit dashboard" (up/down, show/hide, Reset to default, Save/Cancel); `ApiHealth`; one query per widget · `/login` (auth layout, guest login)
 - `/listings` — opens with `?filter=` (preset), `?status=A,B`, `?favorites=1` from dashboard links; toolbar (debounced search, sort, Filters toggle with active count, Clear all) + facet panel (status, skill,
   location, posting/required language, favorites; closed by default at every width), presets (closing soon, to analyze,
   archived), offset pagination
@@ -18,7 +18,7 @@ Updated: 2026-10-06 · Last logged commit: b42ac0c
 
 - `app/`: Card, ConfirmModal, MarkdownContent, MarkdownEditor
 - `companies/`: FavoriteButton
-- `dashboard/`: ApiHealth, Widget (shell), Row, ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies
+- `dashboard/`: ApiHealth, Widget (shell), Row, ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, Editor
 - `listings/`: Card, Form, Dates (server `dueOn`), Location, LocationsField, LanguagesField, SkillsField, NameCombobox,
   FilterPanel (toolbar + facets), FilterCombobox,
   ToggleGroup, FavoriteButton, AnalyzedBadge, ParseModal; application: Application, ApplyModal, DocumentPicker,
@@ -27,15 +27,15 @@ Updated: 2026-10-06 · Last logged commit: b42ac0c
 ## Stores & composables
 
 - Pinia: `stores/auth.ts`
-- Composables: useListing, useListingForm, useListingsList (presets, facets, sort, search seeded from `?search=`; runtime-built query), useMutation, useNewNames, useParsePrompt (listing, quick, company prompts)
+- Composables: useDashboardLayout, useListing, useListingForm, useListingsList (presets, facets, sort, search seeded from `?search=`; runtime-built query), useMutation, useNewNames, useParsePrompt (listing, quick, company prompts)
 - Utils: daysFromToday, formatDate, formatDateTime, toDateTimeLocal, todayIso, daysAgoIso, localDayStartIso, graphql (`gql`)
 
 ## API operations in use
 
 - REST: `/api/auth/{login,guest,logout,me}`, `/api/health`, `/api/documents/…`
-- Queries: Dashboard* (ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, CompanyOpenListings), Listings (built at runtime: preset + selected facet clauses, `$order`; counts as aliases), ListingById,
+- Queries: DashboardLayout, Dashboard* (ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, CompanyOpenListings), Listings (built at runtime: preset + selected facet clauses, `$order`; counts as aliases), ListingById,
   Company/JobRole/Skill/Industry/CitySearch, Companies (cursor-paged), CompanyParsePrompt, SkillFilterSearch, LocationFilterSearch, NewNameCheck, ListingParsePrompt, ListingQuickParsePrompt
-- Mutations: CreateListing (`previousAttempts`), QuickAddListings, CreateCompanies, UpdateListing, DeleteListing, SetListingFavorite, SetCompanyFavorite,
+- Mutations: CreateListing (`previousAttempts`), QuickAddListings, CreateCompanies, UpdateListing, DeleteListing, SetListingFavorite, SetCompanyFavorite, SaveDashboardLayout,
   SetListingArchived, UploadDocument, ApplyToListing, RecordOutcome (OFFER/ACCEPTED/REJECTED/WITHDRAWN),
   UndoStatusChange (`DuplicateListingError` → link to open listing), UpdateStatusChange, Add/Update/DeleteInterview, ParseListing
 
@@ -48,6 +48,7 @@ Updated: 2026-10-06 · Last logged commit: b42ac0c
 | AI parsing (built-in parser + copy-paste prompt)                                                    | Done                                                                               |
 | Sync with backend 2026-10-05 (ACCEPTED, no ROLLING, dueOn, search, closing soon, previous attempts) | Done                                                                               |
 | Listings filters (facets, sort, collapsible panel)                                                  | Done; toolbar rework (search, sort, collapsed panel) checked live and e2e by owner |
+| Dashboard layout editing (order + visibility)                                                       | Built; live check of edit mode pending                                             |
 | Dashboard widgets + company favorites                                                               | Built; live check (cost of Pipeline / Favorited companies queries), e2e pending    |
 | Companies (list + bulk add with preview)                                                            | Built, uncommitted; live check, e2e and visual review pending                      |
 
@@ -59,6 +60,7 @@ Updated: 2026-10-06 · Last logged commit: b42ac0c
 
 ## Decisions log
 
+- 2026-10-06 — Dashboard groups removed: with a user-chosen order they can't hold, so it is one 2-column grid (Pipeline full row). An odd gap beside Pipeline is the user's choice, not handled.
 - 2026-10-06 — Dashboard: stale = Saved, no dated deadline, posted 14-45 days ago (no expiry clause); interviews = Interviewing only; stale links to `?status=SAVED` (no age facet).
 - 2026-10-06 — Dashboard widgets use literal documents with scalar variables (no runtime builder); only a whole `ListingFilterInput` variable fails the cost check.
 - 2026-10-05 — Listings query built at runtime from fixed clauses: a `ListingFilterInput` variable fails the API cost check (HC0047).

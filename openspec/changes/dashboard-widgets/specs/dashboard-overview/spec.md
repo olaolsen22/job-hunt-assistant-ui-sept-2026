@@ -5,16 +5,28 @@ as independent widgets that each link into the full lists.
 
 ## ADDED Requirements
 
-### Requirement: Widget groups
+### Requirement: Widget order and visibility
 
-The dashboard SHALL show widgets in three groups: Urgent (Closing soon, Upcoming interviews, Offers
-to answer, Stale listings), Progress (Pipeline counts, Applied this week, To analyze) and Shortcuts
-(Favorited listings, Favorited companies). The API health indicator SHALL stay on the page.
+The dashboard SHALL show the widgets the user has marked as shown, in the user's saved order, as one
+grid with no group headings. The ten widgets are Closing soon, Upcoming interviews, Offers to answer, Stale
+listings, Pipeline counts, Applied this week, To analyze, Favorited listings, Favorited companies and LLM usage. A user who
+has never saved a layout SHALL see all ten in the default order (as listed above). The API health indicator
+SHALL stay on the page.
 
-#### Scenario: Opening the dashboard
+#### Scenario: Default dashboard
 
-- **WHEN** the user opens `/`
-- **THEN** all nine widgets and the API health indicator are shown, grouped as above
+- **WHEN** a user who has never saved a layout opens `/`
+- **THEN** all ten widgets are shown in the default order, and the API health indicator is shown
+
+#### Scenario: Saved order and visibility
+
+- **WHEN** the saved layout puts To analyze first and hides Stale listings
+- **THEN** To analyze is the first widget and Stale listings is not shown
+
+#### Scenario: Wide widget
+
+- **WHEN** Pipeline counts is shown at any position
+- **THEN** it spans the full row, and the other widgets sit two to a row on wide screens
 
 ### Requirement: Independent widget loading
 
@@ -175,3 +187,88 @@ listings SHALL still appear, saying so. It SHALL link to `/companies`.
 
 - **WHEN** no company is favorited
 - **THEN** the widget points to `/companies` to favorite one
+
+### Requirement: LLM usage widget
+
+The LLM usage widget SHALL show today's LLM request count, the input and output token totals and when the count resets
+(local time). When the API reports a daily limit it SHALL also show the remaining requests and a progress bar; without
+a limit it SHALL show only the count. The numbers cover all users of the API. It has no link out.
+
+#### Scenario: With a limit
+
+- **WHEN** 120 requests were made today and the limit is 500
+- **THEN** the widget shows 120 of 500, 380 remaining, a progress bar, the token totals and the reset time
+
+#### Scenario: No limit
+
+- **WHEN** the API reports no daily limit
+- **THEN** the widget shows the request count and tokens, without a bar or remaining count
+
+### Requirement: Hidden widgets do not load
+
+A hidden widget SHALL NOT be rendered and SHALL NOT send its queries.
+
+#### Scenario: Hiding a widget
+
+- **WHEN** Offers to answer is hidden
+- **THEN** opening `/` sends no request for offers
+
+### Requirement: Layout loading
+
+The dashboard SHALL load the saved layout before showing any widget. While it loads, a skeleton SHALL be shown.
+If it fails, an error with a retry action SHALL be shown instead of widgets. If every widget is hidden, an empty
+state SHALL say so and offer to edit the dashboard.
+
+#### Scenario: Layout request fails
+
+- **WHEN** the layout request fails
+- **THEN** the dashboard shows an error with a retry and no widgets, and the API health indicator still shows
+
+#### Scenario: Everything hidden
+
+- **WHEN** all ten widgets are hidden
+- **THEN** a centered empty message with an "Edit dashboard" action is shown instead of widgets
+
+### Requirement: Editing the dashboard
+
+An "Edit dashboard" action SHALL switch the page to an edit mode that lists all ten widgets, including hidden
+ones, in the current order. Each row SHALL let the user move the widget up or down and show or hide it. Move
+controls SHALL be disabled at the ends of the list. A "Reset to default" action SHALL set the list to the
+default order with every widget shown. Nothing is saved until the user clicks Save, including after a reset; Cancel SHALL
+discard the changes. Save SHALL send the whole list in display order, then return to the dashboard with the saved
+layout.
+
+#### Scenario: Reordering
+
+- **WHEN** the user opens edit mode, moves "To analyze" to the top and clicks Save
+- **THEN** the full layout is saved with To analyze first and the dashboard shows it first
+
+#### Scenario: Hiding and showing
+
+- **WHEN** the user hides "Stale listings" in edit mode and saves
+- **THEN** the dashboard no longer shows it, and edit mode still lists it as hidden so it can be shown again
+
+#### Scenario: Reset to default
+
+- **WHEN** the user reorders and hides widgets, clicks "Reset to default", then clicks Save
+- **THEN** the full layout is saved in the default order with all ten widgets shown
+
+#### Scenario: Reset without saving
+
+- **WHEN** the user clicks "Reset to default" and then Cancel
+- **THEN** the dashboard keeps the previously saved layout
+
+#### Scenario: Cancel
+
+- **WHEN** the user changes the order and clicks Cancel
+- **THEN** the dashboard keeps the previously saved order and visibility
+
+#### Scenario: Save is rejected
+
+- **WHEN** the API returns an error for the save
+- **THEN** its message is shown, edit mode stays open, and the user's edits are kept
+
+#### Scenario: Save fails
+
+- **WHEN** the save request fails
+- **THEN** a generic error is shown, edit mode stays open, and the user's edits are kept

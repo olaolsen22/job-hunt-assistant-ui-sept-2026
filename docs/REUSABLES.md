@@ -19,7 +19,11 @@ remove it when you delete one.
   header with title, count badge and "View all" link; skeleton, error alert with Retry, or empty text, else the default slot.
 - `<DashboardRow id title company>` — one-link listing row for dashboard widgets; the default slot is the right-hand detail.
 - Dashboard widgets (`<DashboardClosingSoon>`, `Interviews`, `Offers`, `Stale`, `Pipeline`, `AppliedThisWeek`, `ToAnalyze`,
-  `FavoriteListings`, `FavoriteCompanies`) — each runs its own literal query through `useAsyncData` (client-only).
+  `FavoriteListings`, `FavoriteCompanies`, `LlmUsage`) — each runs its own literal query through `useAsyncData` (client-only).
+- `<DashboardEditor :layout @saved @cancel>` — edit mode for the dashboard: copy of the saved layout with up/down and show/hide
+  per widget, "Reset to default" (draft only), Save sends the whole list (`saveDashboardLayout`), shows the API message and keeps the edits on failure.
+- `DASHBOARD_WIDGETS` (`constants/dashboard.ts`) — per `DashboardWidgetKind`: label, icon, component, `wide`. A `Record`, so a new
+  kind from the API fails typecheck. `useDashboardLayout()` — `{ layout, loading, error, refresh }` for `dashboardLayout`.
 - `<CompaniesFavoriteButton id favoritedAt>` — star toggle for a company; same optimistic behavior as the listing one.
   Uses `@click.prevent.stop`, so it can sit inside a link row.
 - `<ListingsNameCombobox v-model lookup placeholder? countryCode?>` — debounced search over
