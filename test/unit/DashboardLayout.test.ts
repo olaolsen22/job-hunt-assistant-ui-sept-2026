@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import IndexPage from '~/pages/index.vue'
+import { VueDraggable } from 'vue-draggable-plus'
 import Editor from '~/components/dashboard/Editor.vue'
 import type { DashboardLayout } from '~/composables/useDashboardLayout'
 
@@ -77,6 +78,14 @@ describe('Dashboard page', () => {
 describe('Dashboard editor', () => {
   const layout = layoutOf(['CLOSING_SOON', true], ['STALE_LISTINGS', true], ['PIPELINE', true])
 
+  // jsdom can't do a real pointer drag, so emit what SortableJS would: the list in its new order.
+  const moveFirstDown = async (wrapper: Awaited<ReturnType<typeof mountSuspended>>) => {
+    const list = wrapper.getComponent(VueDraggable)
+    const [first, ...rest] = list.props('modelValue') as DashboardLayout
+    list.vm.$emit('update:modelValue', [rest[0], first, ...rest.slice(1)])
+    await nextTick()
+  }
+
   it('saves the whole list in the edited order with the edited visibility', async () => {
     const inputs: unknown[] = []
     registerEndpoint('/graphql', {
@@ -91,8 +100,8 @@ describe('Dashboard editor', () => {
     })
     const wrapper = await mountSuspended(Editor, { props: { layout } })
 
-    // Move Closing soon down (it swaps with Stale listings), then hide Pipeline.
-    await wrapper.findAll('[data-testid="dashboard-editor-down"]')[0]!.trigger('click')
+    // Drag Closing soon below Stale listings, then hide Pipeline.
+    await moveFirstDown(wrapper)
     await wrapper.findAll('[data-testid="dashboard-editor-shown"]')[2]!.trigger('click')
     await wrapper.get('[data-testid="dashboard-editor-save"]').trigger('click')
 
@@ -154,7 +163,7 @@ describe('Dashboard editor', () => {
 
   it('discards the edits on cancel', async () => {
     const wrapper = await mountSuspended(Editor, { props: { layout } })
-    await wrapper.findAll('[data-testid="dashboard-editor-down"]')[0]!.trigger('click')
+    await moveFirstDown(wrapper)
     await wrapper.get('[data-testid="dashboard-editor-cancel"]').trigger('click')
 
     expect(wrapper.emitted('cancel')).toHaveLength(1)
@@ -176,7 +185,7 @@ describe('Dashboard editor', () => {
       })
     })
     const wrapper = await mountSuspended(Editor, { props: { layout } })
-    await wrapper.findAll('[data-testid="dashboard-editor-down"]')[0]!.trigger('click')
+    await moveFirstDown(wrapper)
     await wrapper.get('[data-testid="dashboard-editor-save"]').trigger('click')
 
     await vi.waitFor(() =>

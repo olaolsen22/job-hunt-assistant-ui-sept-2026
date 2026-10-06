@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { VueDraggable } from 'vue-draggable-plus'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { DASHBOARD_WIDGETS } from '~/constants/dashboard'
 import type { DashboardLayout, DashboardWidgetKind } from '~/composables/useDashboardLayout'
@@ -27,11 +28,6 @@ const SAVE_LAYOUT = graphql(`
 const draft = ref(props.layout.map((w) => ({ ...w })))
 const saving = ref(false)
 const errorMessage = ref('')
-
-const move = (index: number, by: -1 | 1) => {
-  const [item] = draft.value.splice(index, 1)
-  draft.value.splice(index + by, 0, item!)
-}
 
 // The API has no reset and no default-order field. The server's default is the enum's declaration order,
 // which DASHBOARD_WIDGETS mirrors, so a reset is just that order with everything shown. Still a draft until Save.
@@ -76,13 +72,31 @@ const save = async () => {
       data-testid="dashboard-editor-error"
     />
 
-    <ul class="divide-y divide-default">
+    <!-- Drag starts from the grip only, so the switch stays clickable and touch scrolling still works. -->
+    <VueDraggable
+      v-model="draft"
+      tag="ul"
+      handle=".drag-handle"
+      ghost-class="opacity-50"
+      :animation="150"
+      :disabled="saving"
+      class="divide-y divide-default"
+    >
       <li
-        v-for="(w, i) in draft"
+        v-for="w in draft"
         :key="w.widget"
         class="flex items-center gap-3 py-3"
         data-testid="dashboard-editor-row"
       >
+        <UButton
+          icon="i-lucide-grip-vertical"
+          color="neutral"
+          variant="ghost"
+          :disabled="saving"
+          :aria-label="`Drag ${DASHBOARD_WIDGETS[w.widget].label} to reorder`"
+          class="drag-handle cursor-grab touch-none"
+          data-testid="dashboard-editor-handle"
+        />
         <UIcon
           :name="DASHBOARD_WIDGETS[w.widget].icon"
           class="size-5 shrink-0 text-muted"
@@ -97,26 +111,8 @@ const save = async () => {
           :aria-label="`Show ${DASHBOARD_WIDGETS[w.widget].label}`"
           data-testid="dashboard-editor-shown"
         />
-        <UButton
-          icon="i-lucide-chevron-up"
-          color="neutral"
-          variant="ghost"
-          :disabled="saving || i === 0"
-          :aria-label="`Move ${DASHBOARD_WIDGETS[w.widget].label} up`"
-          data-testid="dashboard-editor-up"
-          @click="move(i, -1)"
-        />
-        <UButton
-          icon="i-lucide-chevron-down"
-          color="neutral"
-          variant="ghost"
-          :disabled="saving || i === draft.length - 1"
-          :aria-label="`Move ${DASHBOARD_WIDGETS[w.widget].label} down`"
-          data-testid="dashboard-editor-down"
-          @click="move(i, 1)"
-        />
       </li>
-    </ul>
+    </VueDraggable>
 
     <template #footer>
       <div class="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">

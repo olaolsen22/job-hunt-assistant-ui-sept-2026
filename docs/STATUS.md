@@ -4,7 +4,7 @@ Updated: 2026-10-06 · Last logged commit: a0a2cfa
 
 ## Pages
 
-- `/` dashboard: ten widgets (closing soon, upcoming interviews, offers, stale, pipeline, applied this week, to analyze, favorited listings, favorited companies with open listings, LLM usage today) in the user's saved order, hidden ones not mounted; "Edit dashboard" (up/down, show/hide, Reset to default, Save/Cancel); `ApiHealth`; one query per widget · `/login` (auth layout, guest login)
+- `/` dashboard: ten widgets (closing soon, upcoming interviews, offers, stale, pipeline, applied this week, to analyze, favorited listings, favorited companies with open listings, LLM usage today) in the user's saved order, hidden ones not mounted; "Edit dashboard" (drag by grip handle, show/hide, Reset to default, Save/Cancel); `ApiHealth`; one query per widget · `/login` (auth layout, guest login)
 - `/listings` — opens with `?filter=` (preset), `?status=A,B`, `?favorites=1` from dashboard links; toolbar (debounced search, sort, Filters toggle with active count, Clear all) + facet panel (status, skill,
   location, posting/required language, favorites; closed by default at every width), presets (closing soon, to analyze,
   archived), offset pagination
