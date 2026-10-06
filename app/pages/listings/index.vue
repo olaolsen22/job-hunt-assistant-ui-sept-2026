@@ -5,8 +5,21 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 definePageMeta({ title: 'Job listings' })
 
 const grid = useTemplateRef('grid')
-const { listings, totalCount, counts, page, pageSize, filter, search, loading, error } =
-  useListingsList(grid)
+const {
+  listings,
+  totalCount,
+  counts,
+  page,
+  pageSize,
+  filter,
+  search,
+  sort,
+  facets,
+  loading,
+  error
+} = useListingsList(grid)
+
+const narrowed = computed(() => !!(filter.value || search.value || countActiveFacets(facets)))
 
 // Clicking the active filter clears it.
 const toggle = (value: ListingsFilter) => (filter.value = filter.value === value ? null : value)
@@ -14,15 +27,13 @@ const toggle = (value: ListingsFilter) => (filter.value = filter.value === value
 const FILTERS = [
   { value: 'closingSoon', label: 'closing soon', color: 'error', icon: 'i-lucide-alarm-clock' },
   { value: 'toAnalyze', label: 'to analyze', color: 'warning', icon: 'i-lucide-clock' },
-  { value: 'active', label: 'active applications', color: 'info', icon: 'i-lucide-send' },
   { value: 'archived', label: 'archived', color: 'neutral', icon: 'i-lucide-archive' }
 ] as const
 
 const heading = computed(() => {
   const n = totalCount.value
   const adjective = filter.value === 'archived' ? 'archived' : 'active'
-  const noun = filter.value === 'active' ? 'application' : 'listing'
-  return `${n} ${adjective} ${noun}${n === 1 ? '' : 's'}`
+  return `${n} ${adjective} listing${n === 1 ? '' : 's'}`
 })
 </script>
 
@@ -30,7 +41,7 @@ const heading = computed(() => {
   <div class="space-y-6">
     <!-- Shown while loading too, so the grid sits at the same height when its page size is measured. -->
     <UInput
-      v-if="loading || listings.length || filter || search"
+      v-if="loading || listings.length || narrowed"
       v-model="search"
       icon="i-lucide-search"
       placeholder="Search title, company, role"
@@ -48,10 +59,17 @@ const heading = computed(() => {
       </template>
     </UInput>
 
+    <!-- `:facets`, not v-model: the panel edits the composable's reactive object in place. -->
+    <ListingsFilterPanel
+      v-if="loading || listings.length || narrowed"
+      v-model:sort="sort"
+      :facets="facets"
+    />
+
     <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <!-- "Active" listings because those past their deadline are filtered out server-side.
            Kept visible while a filter is on, so an empty filtered page can still clear it. -->
-      <div v-if="listings.length || filter || search" class="flex flex-wrap items-center gap-2">
+      <div v-if="listings.length || narrowed" class="flex flex-wrap items-center gap-2">
         <p class="text-lg font-semibold text-highlighted" data-testid="listings-total">
           {{ heading }}
         </p>
@@ -93,8 +111,8 @@ const heading = computed(() => {
       data-testid="listings-empty"
     >
       <UIcon name="i-lucide-inbox" class="size-10 text-muted" />
-      <p>{{ filter || search ? 'No listings match.' : 'No listings yet.' }}</p>
-      <UButton v-if="!filter && !search" to="/listings/add">Add listing</UButton>
+      <p>{{ narrowed ? 'No listings match.' : 'No listings yet.' }}</p>
+      <UButton v-if="!narrowed" to="/listings/add">Add listing</UButton>
     </div>
 
     <template v-else>

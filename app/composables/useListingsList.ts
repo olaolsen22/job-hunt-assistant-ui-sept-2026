@@ -1,5 +1,7 @@
 import type { ShallowRef } from 'vue'
-import type { ResultOf } from 'gql.tada'
+import type { ResultOf, TadaDocumentNode } from 'gql.tada'
+import { parse, print } from '@0no-co/graphql.web'
+import type { Language } from '~/constants/listing'
 
 const LISTING_ITEM = graphql(`
   fragment ListingListItem on Listing {
@@ -43,155 +45,142 @@ const GRID_GAP = 16
 // line once counts arrive (the grid is measured before any data exists).
 const RESERVED_BELOW = 120
 
-export const measurePageSize = (grid: HTMLElement) => {
+export const measurePageSize = (grid: HTMLElement, cardHeight = CARD_HEIGHT, gap = GRID_GAP) => {
   if (!window.matchMedia('(min-width: 768px)').matches) return PHONE_PAGE_SIZE
   // Counting the resolved tracks keeps this independent of the grid's breakpoint classes.
   const columns = getComputedStyle(grid).gridTemplateColumns.split(' ').length
   const available = window.innerHeight - grid.getBoundingClientRect().top - RESERVED_BELOW
-  const rows = Math.floor((available + GRID_GAP) / (CARD_HEIGHT + GRID_GAP))
+  const rows = Math.floor((available + gap) / (cardHeight + gap))
   return Math.min(Math.max(rows, 2) * columns, MAX_PAGE_SIZE)
 }
 
-// No `order` argument: the backend's default order is upcoming by due date, then expired by due
-// date, then newest added. The due date is server-computed (DATE: deadlineOn, ASAP: postedOn + 14,
-// UNSPECIFIED: postedOn + 30). Sending our own order (e.g. by deadlineType or deadlineOn) would
-// sort those raw columns instead, which is wrong: deadlineType is stored as a string and
-// deadlineOn puts nulls first.
-// Dated deadlines that have passed are still filtered out server-side; a listing stays visible
-// through its deadline day. ASAP and UNSPECIFIED listings have no deadlineOn to filter on, so an
-// "expired" one is flagged in ListingsDates instead of hidden.
-// Filters are written into the query, not sent as a ListingFilterInput variable: the API can't
-// see inside a filter variable, so its cost check prices every possible filter field and rejects it.
-// That's also why there is one near-identical query per filter: gql.tada only types literal documents.
-// The counts only feed the filter buttons; take: 1 keeps their unused pages minimal.
-const LISTING_COUNTS = graphql(`
-  fragment ListingCounts on Query {
-    toAnalyze: listings(
-      take: 1
-      search: $search
-      where: {
-        or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]
-        analyzedAt: { eq: null }
-      }
-    ) {
-      totalCount
-    }
-    active: listings(take: 1, search: $search, where: { status: { in: [APPLIED, INTERVIEWING] } }) {
-      totalCount
-    }
-    archived: listings(take: 1, archived: true, search: $search) {
-      totalCount
-    }
-    closingSoon: listings(take: 1, dueWithinDays: 7, search: $search) {
-      totalCount
-    }
-  }
-`)
+// The query is built at runtime from fixed clause strings, not written as one literal graphql()
+// document like everywhere else. A ListingFilterInput variable fails the API's cost check (HC0047:
+// it prices every possible filter field), and a null, omitted or empty `in` filters instead of
+// meaning "no filter". So a facet with nothing selected has to be left out of the query text.
+// The clauses never contain user input; all values travel as variables.
+// Typed like batchDocument: gql.tada can't infer a runtime document, so the result is named here.
 
-const LISTINGS = graphql(
-  `
-    query Listings($skip: Int, $take: Int, $today: LocalDate!, $search: String) {
-      listings(
-        skip: $skip
-        take: $take
-        search: $search
-        where: { or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }] }
-      ) {
-        items {
-          ...ListingListItem
-        }
-        totalCount
-      }
-      ...ListingCounts
-    }
-  `,
-  [LISTING_ITEM, LISTING_COUNTS]
-)
+export type ListingsFilter = 'closingSoon' | 'toAnalyze' | 'archived'
+export type ListingsSort = 'due' | 'newest' | 'changed'
 
-const LISTINGS_TO_ANALYZE = graphql(
-  `
-    query ListingsToAnalyze($skip: Int, $take: Int, $today: LocalDate!, $search: String) {
-      listings(
-        skip: $skip
-        take: $take
-        search: $search
-        where: {
-          or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]
-          analyzedAt: { eq: null }
-        }
-      ) {
-        items {
-          ...ListingListItem
-        }
-        totalCount
-      }
-      ...ListingCounts
-    }
-  `,
-  [LISTING_ITEM, LISTING_COUNTS]
-)
-
-// Active applications stay visible past their deadline, newest activity first.
-const LISTINGS_ACTIVE = graphql(
-  `
-    query ListingsActive($skip: Int, $take: Int, $today: LocalDate!, $search: String) {
-      listings(
-        skip: $skip
-        take: $take
-        search: $search
-        where: { status: { in: [APPLIED, INTERVIEWING] } }
-        order: { statusChangedAt: DESC }
-      ) {
-        items {
-          ...ListingListItem
-        }
-        totalCount
-      }
-      ...ListingCounts
-    }
-  `,
-  [LISTING_ITEM, LISTING_COUNTS]
-)
-
-const LISTINGS_ARCHIVED = graphql(
-  `
-    query ListingsArchived($skip: Int, $take: Int, $today: LocalDate!, $search: String) {
-      listings(skip: $skip, take: $take, archived: true, search: $search) {
-        items {
-          ...ListingListItem
-        }
-        totalCount
-      }
-      ...ListingCounts
-    }
-  `,
-  [LISTING_ITEM, LISTING_COUNTS]
-)
-
-// Due within 7 days (today included), in the server's default order.
-const LISTINGS_CLOSING_SOON = graphql(
-  `
-    query ListingsClosingSoon($skip: Int, $take: Int, $today: LocalDate!, $search: String) {
-      listings(skip: $skip, take: $take, dueWithinDays: 7, search: $search) {
-        items {
-          ...ListingListItem
-        }
-        totalCount
-      }
-      ...ListingCounts
-    }
-  `,
-  [LISTING_ITEM, LISTING_COUNTS]
-)
-
-const QUERIES = {
-  closingSoon: LISTINGS_CLOSING_SOON,
-  toAnalyze: LISTINGS_TO_ANALYZE,
-  active: LISTINGS_ACTIVE,
-  archived: LISTINGS_ARCHIVED
+export interface ListingsFacets {
+  favorites: boolean
+  statuses: ListingListItem['status'][]
+  skills: string[]
+  locationIds: number[]
+  postingLanguages: Language[]
+  languages: Language[]
 }
 
-export type ListingsFilter = keyof typeof QUERIES
+export const emptyFacets = (): ListingsFacets => ({
+  favorites: false,
+  statuses: [],
+  skills: [],
+  locationIds: [],
+  postingLanguages: [],
+  languages: []
+})
+
+// Facets with something selected, not the number of selected values.
+export const countActiveFacets = (facets: ListingsFacets) =>
+  Object.values(facets).filter((v) => (Array.isArray(v) ? v.length : v)).length
+
+type ListingsResult = {
+  listings: { items: ListingListItem[]; totalCount: number } | null
+} & Record<ListingsFilter, { totalCount: number } | null>
+
+// Dated deadlines that have passed are filtered out; a listing stays visible through its deadline
+// day. ASAP and UNSPECIFIED listings have no deadlineOn to filter on, so an "expired" one is
+// flagged in ListingsDates instead of hidden.
+const EXPIRY = 'or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]'
+
+// `dueWithinDays: 7` is due within 7 days (today included), expired excluded, server-side.
+const PRESETS: Record<ListingsFilter | 'none', { args: string; where: string[] }> = {
+  none: { args: '', where: [EXPIRY] },
+  toAnalyze: { args: '', where: [EXPIRY, 'analyzedAt: { eq: null }'] },
+  archived: { args: 'archived: true', where: [] },
+  closingSoon: { args: 'dueWithinDays: 7', where: [] }
+}
+
+const FACETS = {
+  statuses: { clause: 'status: { in: $statuses }', type: '[ApplicationStatus!]!' },
+  skills: { clause: 'skills: { some: { skill: { name: { in: $skills } } } }', type: '[String!]!' },
+  locationIds: {
+    clause: 'locations: { some: { locationId: { in: $locationIds } } }',
+    type: '[Int!]!'
+  },
+  postingLanguages: { clause: 'postingLanguage: { in: $postingLanguages }', type: '[Language!]!' },
+  languages: {
+    clause: 'languages: { some: { language: { in: $languages } } }',
+    type: '[Language!]!'
+  }
+} as const
+
+// No `order` for "due": the backend's default order is upcoming by due date, then expired by due
+// date, then newest added, using the server-computed due date (DATE: deadlineOn, ASAP: postedOn + 14,
+// UNSPECIFIED: postedOn + 30). dueOn itself isn't sortable, and any client `order` turns the default off.
+const ORDERS = {
+  due: undefined,
+  newest: [{ createdAt: 'DESC' }],
+  changed: [{ statusChangedAt: 'DESC' }]
+} as const
+
+export const buildListingsQuery = (
+  filter: ListingsFilter | null,
+  facets: ListingsFacets,
+  sort: ListingsSort
+) => {
+  const declarations = [
+    '$skip: Int',
+    '$take: Int',
+    '$search: String',
+    '$order: [ListingSortInput!]'
+  ]
+  const variables: Record<string, unknown> = { order: ORDERS[sort] }
+  const facetClauses = facets.favorites ? ['favoritedAt: { neq: null }'] : []
+  for (const key of Object.keys(FACETS) as (keyof typeof FACETS)[]) {
+    if (!facets[key].length) continue
+    facetClauses.push(FACETS[key].clause)
+    declarations.push(`$${key}: ${FACETS[key].type}`)
+    variables[key] = facets[key]
+  }
+  // Picking statuses is asking for those applications, so they stay visible past their deadline.
+  const withExpiry = !facets.statuses.length
+
+  const field = (preset: ListingsFilter | 'none', args: string[], selection: string) => {
+    const { args: presetArgs, where } = PRESETS[preset]
+    const clauses = [...where.filter((c) => withExpiry || c !== EXPIRY), ...facetClauses]
+    const all = [
+      ...args,
+      presetArgs,
+      clauses.length ? `where: { and: [{ ${clauses.join(' }, { ')} }] }` : ''
+    ]
+    return `listings(${all.filter(Boolean).join(', ')}) { ${selection} }`
+  }
+
+  const text = `
+    query Listings(%DECLARATIONS%) {
+      ${field(filter ?? 'none', ['skip: $skip', 'take: $take', 'search: $search', 'order: $order'], 'items { ...ListingListItem } totalCount')}
+      toAnalyze: ${field('toAnalyze', ['take: 1', 'search: $search'], 'totalCount')}
+      archived: ${field('archived', ['take: 1', 'search: $search'], 'totalCount')}
+      closingSoon: ${field('closingSoon', ['take: 1', 'search: $search'], 'totalCount')}
+    }
+    ${print(LISTING_ITEM)}
+  `
+  if (text.includes('$today')) {
+    declarations.push('$today: LocalDate!')
+    // The user's local date, not UTC: the sv-SE locale formats as YYYY-MM-DD.
+    variables.today = new Date().toLocaleDateString('sv-SE')
+  }
+  return {
+    document: parse(text.replace('%DECLARATIONS%', declarations.join(', '))) as TadaDocumentNode<
+      ListingsResult,
+      Record<string, unknown>
+    >,
+    variables
+  }
+}
 
 // Listings need the session cookie and change often; fetching client-only (server: false)
 // avoids wiring cookie forwarding into the shared `gql` util for a single, non-SSR-critical page.
@@ -199,28 +188,33 @@ export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) 
   const pageSize = ref(PHONE_PAGE_SIZE)
   const page = ref(1)
   const filter = ref<ListingsFilter | null>(null)
-  const search = ref('')
+  // The companies list links here with ?search=<name>.
+  const initialSearch = String(useRoute().query.search ?? '').trim()
+  const search = ref(initialSearch)
   // Typing shouldn't refetch on every keystroke, so the query only sees the settled value.
-  const settledSearch = ref('')
+  const settledSearch = ref(initialSearch)
   let timer: ReturnType<typeof setTimeout> | undefined
   watch(search, (value) => {
     clearTimeout(timer)
     timer = setTimeout(() => (settledSearch.value = value.trim()), 300)
   })
-  // A different filter or search has different pages.
-  watch([filter, settledSearch], () => (page.value = 1))
+  const sort = ref<ListingsSort>('due')
+  const facets = reactive(emptyFacets())
+  // A different filter, search, sort or facet has different pages.
+  watch([filter, settledSearch, sort, facets], () => (page.value = 1))
 
   const { data, status, error, refresh, execute } = useAsyncData(
     'listings',
-    () =>
-      gql(filter.value ? QUERIES[filter.value] : LISTINGS, {
+    () => {
+      const { document, variables } = buildListingsQuery(filter.value, facets, sort.value)
+      return gql(document, {
+        ...variables,
         skip: (page.value - 1) * pageSize.value,
         take: pageSize.value,
-        // The user's local date, not UTC: the sv-SE locale formats as YYYY-MM-DD.
-        today: new Date().toLocaleDateString('sv-SE'),
         search: settledSearch.value || null
-      }),
-    { watch: [page, filter, settledSearch], server: false, immediate: false }
+      })
+    },
+    { watch: [page, filter, settledSearch, sort, facets], server: false, immediate: false }
   )
 
   // The grid has to be in the DOM to be measured, so the one and only first fetch waits for mount
@@ -236,13 +230,14 @@ export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) 
     counts: computed(() => ({
       closingSoon: data.value?.closingSoon?.totalCount ?? 0,
       toAnalyze: data.value?.toAnalyze?.totalCount ?? 0,
-      active: data.value?.active?.totalCount ?? 0,
       archived: data.value?.archived?.totalCount ?? 0
     })),
     page,
     pageSize,
     filter,
     search,
+    sort,
+    facets,
     // `idle` is the moment before the first fetch starts, which should look like loading, not empty.
     loading: computed(() => status.value === 'pending' || status.value === 'idle'),
     error,
