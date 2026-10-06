@@ -23,12 +23,33 @@ const route = useRoute()
 const id = Number(route.params.id)
 
 const { listing, loading, error } = await useListing(id)
-const { state, validate, toInput, fill } = useListingForm()
+const { state, validate, toInput, fill, mergeDraft } = useListingForm()
+const { checkNewNames } = provideNewNames()
 
-// The listing loads client-side after setup, so fill the form once it arrives.
-watch(listing, (l) => l && fill(l), { immediate: true })
+const parseOpen = ref(false)
+
+// The listing loads client-side after setup, so fill the form once it arrives. The detail page's
+// "Analyze" links here with ?analyze; open the parser only after the fill, or the fill would
+// overwrite a merged parse.
+watch(
+  listing,
+  (l) => {
+    if (!l) return
+    fill(l)
+    if ('analyze' in route.query) parseOpen.value = true
+  },
+  { immediate: true }
+)
 
 const toast = useToast()
+const listingForm = useTemplateRef('listingForm')
+
+const onDraft = (draft: Record<string, unknown>) => {
+  mergeDraft(draft)
+  listingForm.value?.validate()
+  toast.add({ title: 'Form filled from the ad', color: 'success', icon: 'i-lucide-check' })
+  checkNewNames(state)
+}
 const submitting = ref(false)
 const errorMessages = ref<string[]>([])
 const confirmOpen = ref(false)
@@ -59,7 +80,7 @@ const onConfirm = async () => {
 </script>
 
 <template>
-  <div class="flex justify-center">
+  <div class="flex flex-col items-center gap-4">
     <UAlert
       v-if="error"
       color="error"
@@ -81,24 +102,39 @@ const onConfirm = async () => {
       data-testid="edit-listing-loading"
     />
 
-    <ListingsForm
-      v-else
-      v-model="state"
-      :validate="validate"
-      submit-label="Save changes"
-      :cancel-to="`/listings/${id}`"
-      data-testid="edit-listing-form"
-      @submit="confirmOpen = true"
-    >
-      <UAlert
-        v-if="errorMessages.length"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        :title="errorMessages.join(' ')"
-        data-testid="edit-listing-error"
-      />
-    </ListingsForm>
+    <template v-else>
+      <div class="flex w-full max-w-3xl justify-end">
+        <UButton
+          icon="i-lucide-sparkles"
+          color="neutral"
+          variant="subtle"
+          data-testid="parse-open"
+          @click="parseOpen = true"
+          >Paste from ad</UButton
+        >
+      </div>
+
+      <ListingsForm
+        ref="listingForm"
+        v-model="state"
+        :validate="validate"
+        submit-label="Save changes"
+        :cancel-to="`/listings/${id}`"
+        data-testid="edit-listing-form"
+        @submit="confirmOpen = true"
+      >
+        <UAlert
+          v-if="errorMessages.length"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :title="errorMessages.join(' ')"
+          data-testid="edit-listing-error"
+        />
+      </ListingsForm>
+    </template>
+
+    <ListingsParseModal v-model:open="parseOpen" @apply="onDraft" />
 
     <AppConfirmModal
       v-model:open="confirmOpen"

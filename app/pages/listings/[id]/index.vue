@@ -126,6 +126,14 @@ const labelOf = <T extends string>(
             @click="toggleArchived"
             >{{ listing.archivedAt ? 'Unarchive' : 'Archive' }}</UButton
           >
+          <UButton
+            :to="`/listings/${listing.id}/edit?analyze`"
+            icon="i-lucide-sparkles"
+            color="neutral"
+            variant="subtle"
+            data-testid="listing-analyze"
+            >Analyze</UButton
+          >
           <UButton :to="`/listings/${listing.id}/edit`" icon="i-lucide-pencil">Edit</UButton>
         </div>
       </div>

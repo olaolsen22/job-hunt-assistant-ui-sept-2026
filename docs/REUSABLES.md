@@ -34,7 +34,7 @@ remove it when you delete one.
   and Cancel/submit buttons, shared by add and edit. `v-model` is `useListingForm().state`; the
   default slot renders above the buttons (error alert). The page owns mutation, confirm, errors.
 - `<ListingsParseModal v-model:open @apply>` — paste an ad, copy the `listingParsePrompt` + ad for
-  an external AI, paste its JSON back; emits the parsed object (feed it to `fillDraft`). A "Use built-in
+  an external AI, paste its JSON back; emits the parsed object (feed it to `fillDraft` or `mergeDraft`). A "Use built-in
   parser" checkbox sends the ad to `parseListing` instead, falling back to copy-paste on failure.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
   active option clears it. Generic over the option value type.
@@ -79,9 +79,10 @@ remove it when you delete one.
 - `useMutation(onStale?)` → `{ run, loading }` — `run(async () => payload.errors)` toasts the API's
   error message (or a generic one on a network error) and resolves `true` on success; a
   `*NotFoundError` calls `onStale` to refetch.
-- `useListingForm()` → `{ state, validate, toInput, fill, fillDraft }` — listing form state, `UForm` validator,
+- `useListingForm()` → `{ state, validate, toInput, fill, fillDraft, mergeDraft }` — listing form state, `UForm` validator,
   mapping to the API's `ListingInput`, `fill(listing: ListingDetail)` to load an existing one, and
-  `fillDraft(json)` to load a parsed draft (keeps only valid values, leaves `url`). Also exports `ListingLocation`, `ListingLanguage`,
+  `fillDraft(json)` to load a parsed draft (keeps only valid values, leaves `url`), and
+  `mergeDraft(json)` to merge one into a filled form (parsed values win, saved ones stay where the parse is empty). Also exports `ListingLocation`, `ListingLanguage`,
   `ListingSkill` types.
 - `provideNewNames()` → `{ checkNewNames(state) }` / `useIsNewName()` → `(lookup, name, countryCode?) => boolean`
   — the add page checks a filled form's names in one aliased query and provides the result;

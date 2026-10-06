@@ -114,6 +114,42 @@ describe('useListingForm', () => {
     })
   })
 
+  it('merges a parsed draft into a saved listing, keeping what the parse lacks', () => {
+    const { state, mergeDraft } = useListingForm()
+    Object.assign(state, {
+      title: 'Developer',
+      seniority: 'MID',
+      description: 'Saved description',
+      url: 'https://example.com/job',
+      postedOn: '2026-09-01',
+      deadlineType: 'DATE',
+      deadlineOn: '2026-11-01',
+      locations: [{ countryCode: 'NO', city: 'Oslo' }],
+      skills: [{ name: 'Vue', level: 3, minYears: null, isRequired: true }],
+      isAnalyzed: false
+    })
+    mergeDraft({
+      title: 'Senior Frontend Developer',
+      seniority: 'SENIOR',
+      deadlineType: 'UNSPECIFIED',
+      locations: [{ countryCode: 'XX' }],
+      skills: [{ name: 'TypeScript', level: 4 }]
+    })
+
+    expect(state).toMatchObject({
+      title: 'Senior Frontend Developer',
+      seniority: 'SENIOR',
+      description: 'Saved description',
+      url: 'https://example.com/job',
+      postedOn: '2026-09-01',
+      deadlineType: 'DATE',
+      deadlineOn: '2026-11-01',
+      locations: [{ countryCode: 'NO', city: 'Oslo' }],
+      skills: [{ name: 'TypeScript', level: 4, minYears: null, isRequired: true }],
+      isAnalyzed: true
+    })
+  })
+
   it('maps a legacy ROLLING deadline in a parsed draft to ASAP', () => {
     const { state, fillDraft } = useListingForm()
     fillDraft({ title: 'Frontend Developer', deadlineType: 'ROLLING' })

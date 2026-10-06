@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-10-06 · Last logged commit: a0a2cfa
+Updated: 2026-10-06 · Last logged commit: d954083
 
 ## Pages
 
@@ -9,7 +9,7 @@ Updated: 2026-10-06 · Last logged commit: a0a2cfa
   location, posting/required language, favorites; closed by default at every width), presets (closing soon, to analyze,
   archived), offset pagination
 - `/listings/add` (full form, "Paste from ad" parser) · `/listings/quick-add` (JSON batch, one aliased `createListing` per row)
-- `/listings/[id]` (detail, application, timeline, interviews, documents) · `/listings/[id]/edit`
+- `/listings/[id]` (detail, application, timeline, interviews, documents; Analyze → edit with parser open) · `/listings/[id]/edit` ("Paste from ad" merges a parse into the saved listing; `?analyze` opens the parser)
 - `/companies` — list (name, industry, locations, listing/application counts), debounced search, numbered pager over cursors (walks forward to jump), page size like /listings (measurePageSize); rows open `/listings?search=<name>`; star toggles a company favorite
 - `/companies/add` — paste (built-in parser or copy-paste prompt) → editable preview rows (name, industry, locations) → one `createCompanies`; result cards
 - `middleware/auth.global.ts` redirects to `/login` without a session
@@ -51,15 +51,18 @@ Updated: 2026-10-06 · Last logged commit: a0a2cfa
 | Dashboard layout editing (order + visibility)                                                       | Built; live check of edit mode pending                                             |
 | Dashboard widgets + company favorites                                                               | Built; live check (cost of Pipeline / Favorited companies queries), e2e pending    |
 | Companies (list + bulk add with preview)                                                            | Built, uncommitted; live check, e2e and visual review pending                      |
+| Analyze an existing listing (parse on edit, merged)                                                 | Built, uncommitted; live check pending                                             |
 
 ## Next up
 
 - Parse queue + `onParseJobUpdated` over SSE (waiting on the backend)
 - Owner: check `/companies` and `/companies/add` live (cost check on the counts, locations repeater), run `pnpm test:e2e`, review on phone, commit (commit `listings-filters` first: both touch `useListingsList.ts`), archive `add-companies`
 - Owner: archive `listings-filters` and `rework-listings-filters-layout`
+- Owner: check Analyze / "Paste from ad" on an existing listing live, commit, archive `analyze-existing-listing`
 
 ## Decisions log
 
+- 2026-10-06 — Analyzing an existing listing merges into the edit form (parsed values win, saved ones kept where the parse is empty, URL kept); saved only on "Save changes".
 - 2026-10-06 — Dashboard groups removed: with a user-chosen order they can't hold, so it is one 2-column grid (Pipeline full row). An odd gap beside Pipeline is the user's choice, not handled.
 - 2026-10-06 — Dashboard: stale = Saved, no dated deadline, posted 14-45 days ago (no expiry clause); interviews = Interviewing only; stale links to `?status=SAVED` (no age facet).
 - 2026-10-06 — Dashboard widgets use literal documents with scalar variables (no runtime builder); only a whole `ListingFilterInput` variable fails the cost check.

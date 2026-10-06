@@ -51,6 +51,59 @@ const option = <T>(options: readonly { value: T }[], v: unknown) =>
 const int = (v: unknown, min: number, max: number) =>
   Number.isInteger(v) && (v as number) >= min && (v as number) <= max ? (v as number) : undefined
 
+// Duplicates are dropped because the skill and language rows allow one of each. No url: the draft
+// doesn't have one.
+const cleanDraft = (d: Record<string, unknown>) => {
+  const skills = list(d.skills)
+    .map((s) => ({
+      name: text(s?.name),
+      level: int(s?.level, 1, 5) ?? 3,
+      minYears: int(s?.minYears, 1, 50) ?? null,
+      isRequired: s?.isRequired !== false
+    }))
+    .filter(
+      (s, i, all) =>
+        s.name && all.findIndex((x) => x.name.toLowerCase() === s.name.toLowerCase()) === i
+    )
+  const languages: ListingLanguage[] = list(d.languages)
+    .filter(
+      (l, i, all) =>
+        option(LANGUAGE_OPTIONS, l?.language) &&
+        all.findIndex((x) => x?.language === l.language) === i
+    )
+    .map((l) => ({
+      language: l.language,
+      level: oneOf(CEFR_LEVELS, l.level),
+      isRequired: l.isRequired !== false
+    }))
+  return {
+    title: text(d.title),
+    companyName: text(d.companyName) || undefined,
+    jobRoleName: text(d.jobRoleName) || undefined,
+    seniority: option(SENIORITY_OPTIONS, d.seniority),
+    employmentType: option(EMPLOYMENT_TYPE_OPTIONS, d.employmentType),
+    schedule: option(SCHEDULE_OPTIONS, d.schedule),
+    workMode: option(WORK_MODE_OPTIONS, d.workMode),
+    description: text(d.description),
+    postedOn: isoDate(d.postedOn),
+    // Parse results saved before the backend merged ROLLING into ASAP can still say ROLLING.
+    deadlineType:
+      option(DEADLINE_TYPE_OPTIONS, d.deadlineType === 'ROLLING' ? 'ASAP' : d.deadlineType) ??
+      'UNSPECIFIED',
+    deadlineOn: isoDate(d.deadlineOn),
+    postingLanguage: option(LANGUAGE_OPTIONS, d.postingLanguage),
+    locations: list(d.locations)
+      .filter((l) => oneOf(COUNTRY_CODES, l?.countryCode))
+      .map((l) => ({ countryCode: l.countryCode, city: text(l.city) })),
+    languages,
+    skills
+  }
+}
+
+// What counts as "the parse found nothing" when merging into a saved listing.
+const isBlank = (v: unknown) =>
+  v === undefined || v === '' || v === 'UNSPECIFIED' || (Array.isArray(v) && !v.length)
+
 export const useListingForm = () => {
   const state = reactive({
     title: '',
@@ -141,56 +194,17 @@ export const useListingForm = () => {
       isAnalyzed: listing.analyzedAt != null
     })
 
-  // Leaves url alone: the draft doesn't have one. Duplicates are dropped because the skill and
-  // language rows allow one of each.
+  // A parsed ad has its details filled in, which is what "analyzed" means.
   const fillDraft = (d: Record<string, unknown>) => {
-    const skills = list(d.skills)
-      .map((s) => ({
-        name: text(s?.name),
-        level: int(s?.level, 1, 5) ?? 3,
-        minYears: int(s?.minYears, 1, 50) ?? null,
-        isRequired: s?.isRequired !== false
-      }))
-      .filter(
-        (s, i, all) =>
-          s.name && all.findIndex((x) => x.name.toLowerCase() === s.name.toLowerCase()) === i
-      )
-    const languages: ListingLanguage[] = list(d.languages)
-      .filter(
-        (l, i, all) =>
-          option(LANGUAGE_OPTIONS, l?.language) &&
-          all.findIndex((x) => x?.language === l.language) === i
-      )
-      .map((l) => ({
-        language: l.language,
-        level: oneOf(CEFR_LEVELS, l.level),
-        isRequired: l.isRequired !== false
-      }))
-    Object.assign(state, {
-      title: text(d.title),
-      companyName: text(d.companyName) || undefined,
-      jobRoleName: text(d.jobRoleName) || undefined,
-      seniority: option(SENIORITY_OPTIONS, d.seniority),
-      employmentType: option(EMPLOYMENT_TYPE_OPTIONS, d.employmentType),
-      schedule: option(SCHEDULE_OPTIONS, d.schedule),
-      workMode: option(WORK_MODE_OPTIONS, d.workMode),
-      description: text(d.description),
-      postedOn: isoDate(d.postedOn) || todayIso(),
-      // Parse results saved before the backend merged ROLLING into ASAP can still say ROLLING.
-      deadlineType:
-        option(DEADLINE_TYPE_OPTIONS, d.deadlineType === 'ROLLING' ? 'ASAP' : d.deadlineType) ??
-        'UNSPECIFIED',
-      deadlineOn: isoDate(d.deadlineOn),
-      postingLanguage: option(LANGUAGE_OPTIONS, d.postingLanguage),
-      locations: list(d.locations)
-        .filter((l) => oneOf(COUNTRY_CODES, l?.countryCode))
-        .map((l) => ({ countryCode: l.countryCode, city: text(l.city) })),
-      languages,
-      skills,
-      // A parsed ad has its details filled in, which is what "analyzed" means.
-      isAnalyzed: true
-    })
+    const draft = cleanDraft(d)
+    Object.assign(state, { ...draft, postedOn: draft.postedOn || todayIso(), isAnalyzed: true })
   }
 
-  return { state, validate, toInput, fill, fillDraft }
+  // For an existing listing: parsed values win, saved ones stay where the parse found nothing.
+  const mergeDraft = (d: Record<string, unknown>) => {
+    const found = Object.entries(cleanDraft(d)).filter(([, v]) => !isBlank(v))
+    Object.assign(state, Object.fromEntries(found), { isAnalyzed: true })
+  }
+
+  return { state, validate, toInput, fill, fillDraft, mergeDraft }
 }
