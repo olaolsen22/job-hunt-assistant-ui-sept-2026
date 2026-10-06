@@ -22,8 +22,9 @@ const item = (id: number, title: string) => ({
   jobRole: { name: 'Developer' }
 })
 
-// The query is built at runtime; the main field is the one without an alias.
-const mainArgs = (query: string) => query.match(/\n\s*listings\(([^\n]*)/)![1]
+// The query is built at runtime and printed one argument per line; the main field is the one without
+// an alias.
+const mainArgs = (query: string) => query.match(/\n\s*listings\(([^)]*)\)/)![1]
 
 test('searches listings and filters by closing soon', async ({ page }) => {
   const searches: unknown[] = []

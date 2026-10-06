@@ -37,8 +37,8 @@ test('previews a parsed company list, fixes a row and saves it in one request', 
 
   const reply = [
     { name: 'Bekk', industryName: 'Consulting', locations: [{ city: 'Oslo', countryCode: 'NO' }] },
-    // The AI couldn't name this one.
-    { name: null, industryName: null, locations: [] },
+    // The AI couldn't name this one. It has an industry, so it isn't a blank row (those are skipped).
+    { name: null, industryName: 'Retail', locations: [] },
     { name: 'Vipps', industryName: null, locations: [] }
   ]
   await page.getByTestId('companies-add-json').fill('```json\n' + JSON.stringify(reply) + '\n```')
