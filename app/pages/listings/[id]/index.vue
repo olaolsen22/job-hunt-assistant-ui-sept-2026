@@ -14,6 +14,7 @@ const route = useRoute()
 const id = Number(route.params.id)
 
 const { listing, loading, error, refresh } = await useListing(id)
+const listingsView = useListingsView()
 
 const UPDATE_LISTING = graphql(`
   mutation UpdateListing($id: Int!, $listing: ListingInput!) {
@@ -103,7 +104,7 @@ const labelOf = <T extends string>(
   <div class="flex justify-center">
     <div class="w-full max-w-3xl space-y-4 sm:space-y-6 lg:max-w-6xl">
       <div class="flex items-center justify-between gap-4">
-        <UButton to="/listings" icon="i-lucide-arrow-left" variant="ghost" color="neutral">
+        <UButton :to="listingsView" icon="i-lucide-arrow-left" variant="ghost" color="neutral">
           Back
         </UButton>
 

@@ -1,7 +1,7 @@
 import type { ShallowRef } from 'vue'
 import type { ResultOf, TadaDocumentNode } from 'gql.tada'
 import { parse, print } from '@0no-co/graphql.web'
-import { APPLICATION_STATUS_OPTIONS, type Language } from '~/constants/listing'
+import { APPLICATION_STATUS_OPTIONS, LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 
 const LISTING_ITEM = graphql(`
   fragment ListingListItem on Listing {
@@ -63,7 +63,8 @@ export const measurePageSize = (grid: HTMLElement, cardHeight = CARD_HEIGHT, gap
 
 const FILTER_KEYS = ['closingSoon', 'toAnalyze', 'archived'] as const
 export type ListingsFilter = (typeof FILTER_KEYS)[number]
-export type ListingsSort = 'due' | 'newest' | 'changed'
+const SORTS = ['due', 'newest', 'changed'] as const
+export type ListingsSort = (typeof SORTS)[number]
 
 export interface ListingsFacets {
   favorites: boolean
@@ -87,16 +88,71 @@ export const emptyFacets = (): ListingsFacets => ({
 export const countActiveFacets = (facets: ListingsFacets) =>
   Object.values(facets).filter((v) => (Array.isArray(v) ? v.length : v)).length
 
-// The dashboard links here with ?filter=<preset>, ?status=A,B and ?favorites=1. Unknown values are
-// dropped, so a stale or hand-edited link still opens the default list.
-export const parseListingsQuery = (query: Record<string, unknown>) => {
-  const filter = FILTER_KEYS.find((key) => key === query.filter) ?? null
-  const known = APPLICATION_STATUS_OPTIONS.map((o) => o.value)
-  const statuses = String(query.status ?? '')
-    .split(',')
-    .filter((s): s is ListingListItem['status'] => (known as string[]).includes(s))
-  return { filter, statuses, favorites: query.favorites === '1' }
+export interface ListingsView {
+  search: string
+  sort: ListingsSort
+  filter: ListingsFilter | null
+  facets: ListingsFacets
+  page: number
 }
+
+const list = (value: unknown) =>
+  String(value ?? '')
+    .split(',')
+    .filter(Boolean)
+const known = <T extends string>(values: readonly T[], value: unknown) =>
+  list(value).filter((v): v is T => (values as readonly string[]).includes(v))
+
+export const pageFromQuery = (value: unknown) => {
+  const page = Number(value)
+  return Number.isInteger(page) && page > 1 ? page : 1
+}
+
+// The whole view lives in the URL, so back, refresh and links restore it. The dashboard links here
+// with ?filter=<preset>, ?status=A,B and ?favorites=1, the companies list with ?search=<name>.
+// Unknown values are dropped, so a stale or hand-edited link still opens a sensible list.
+export const parseListingsQuery = (query: Record<string, unknown>): ListingsView => {
+  const languages = LANGUAGE_OPTIONS.map((o) => o.value)
+  return {
+    search: String(query.search ?? '').trim(),
+    sort: known(SORTS, query.sort)[0] ?? 'due',
+    filter: known(FILTER_KEYS, query.filter)[0] ?? null,
+    facets: {
+      favorites: query.favorites === '1',
+      statuses: known(
+        APPLICATION_STATUS_OPTIONS.map((o) => o.value),
+        query.status
+      ),
+      skills: list(query.skill),
+      locationIds: list(query.location)
+        .map(Number)
+        .filter((id) => Number.isInteger(id) && id > 0),
+      postingLanguages: known(languages, query.postingLanguage),
+      languages: known(languages, query.language)
+    },
+    page: pageFromQuery(query.page)
+  }
+}
+
+// The inverse of parseListingsQuery. Defaults are left out, so the default view is a bare /listings.
+export const toListingsQuery = ({ search, sort, filter, facets, page }: ListingsView) => {
+  const query = {
+    search,
+    sort: sort === 'due' ? '' : sort,
+    filter: filter ?? '',
+    status: facets.statuses.join(','),
+    skill: facets.skills.join(','),
+    location: facets.locationIds.join(','),
+    postingLanguage: facets.postingLanguages.join(','),
+    language: facets.languages.join(','),
+    favorites: facets.favorites ? '1' : '',
+    page: page > 1 ? String(page) : ''
+  }
+  return Object.fromEntries(Object.entries(query).filter(([, value]) => value))
+}
+
+// The last /listings URL, so the listing page's Back returns to that view even after an edit.
+export const useListingsView = () => useState('listingsView', () => '/listings')
 
 type ListingsResult = {
   listings: { items: ListingListItem[]; totalCount: number } | null
@@ -198,28 +254,43 @@ export const buildListingsQuery = (
 // avoids wiring cookie forwarding into the shared `gql` util for a single, non-SSR-critical page.
 export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) => {
   const pageSize = ref(PHONE_PAGE_SIZE)
-  const page = ref(1)
-  const query = useRoute().query
-  const initial = parseListingsQuery(query)
+  const route = useRoute()
+  const router = useRouter()
+  const initial = parseListingsQuery(route.query)
+  const page = ref(initial.page)
   const filter = ref<ListingsFilter | null>(initial.filter)
-  // The companies list links here with ?search=<name>.
-  const initialSearch = String(query.search ?? '').trim()
-  const search = ref(initialSearch)
+  const search = ref(initial.search)
   // Typing shouldn't refetch on every keystroke, so the query only sees the settled value.
-  const settledSearch = ref(initialSearch)
+  const settledSearch = ref(initial.search)
   let timer: ReturnType<typeof setTimeout> | undefined
   watch(search, (value) => {
     clearTimeout(timer)
     timer = setTimeout(() => (settledSearch.value = value.trim()), 300)
   })
-  const sort = ref<ListingsSort>('due')
-  const facets = reactive({
-    ...emptyFacets(),
-    statuses: initial.statuses,
-    favorites: initial.favorites
-  })
-  // A different filter, search, sort or facet has different pages.
+  const sort = ref<ListingsSort>(initial.sort)
+  const facets = reactive(initial.facets)
+  // A different filter, search, sort or facet has different pages. Watchers don't fire for the
+  // initial values, so a page restored from the URL survives.
   watch([filter, settledSearch, sort, facets], () => (page.value = 1))
+
+  // `replace`, not `push`: filter tweaks aren't history entries, so browser back leaves the page.
+  // A query-only change doesn't remount the page, so it never re-reads its own writes.
+  const lastView = useListingsView()
+  lastView.value = route.fullPath
+  watch([page, filter, settledSearch, sort, facets], () => {
+    const to = router.resolve({
+      path: route.path,
+      query: toListingsQuery({
+        search: settledSearch.value,
+        sort: sort.value,
+        filter: filter.value,
+        facets,
+        page: page.value
+      })
+    })
+    lastView.value = to.fullPath
+    router.replace(to)
+  })
 
   const { data, status, error, refresh, execute } = useAsyncData(
     'listings',
@@ -234,6 +305,13 @@ export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) 
     },
     { watch: [page, filter, settledSearch, sort, facets], server: false, immediate: false }
   )
+
+  // A page restored from the URL can be past the end (another screen size, listings archived since),
+  // which would show an empty list with no pager to get back.
+  watch(data, () => {
+    const last = Math.max(1, Math.ceil((data.value?.listings?.totalCount ?? 0) / pageSize.value))
+    if (page.value > last) page.value = last
+  })
 
   // The grid has to be in the DOM to be measured, so the one and only first fetch waits for mount
   // (like measuring in Vue 2's `mounted()` before kicking off the request).

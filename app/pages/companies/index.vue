@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { parse, print } from '@0no-co/graphql.web'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
-import { measurePageSize } from '~/composables/useListingsList'
+import { measurePageSize, pageFromQuery } from '~/composables/useListingsList'
 
 definePageMeta({ title: 'Companies' })
 
@@ -35,9 +35,14 @@ const COMPANIES = graphql(`
   }
 `)
 
-const search = ref('')
+// Search and page live in the URL like on /listings, so coming back from a company's listings
+// restores them.
+const route = useRoute()
+const router = useRouter()
+const initialSearch = String(route.query.search ?? '').trim()
+const search = ref(initialSearch)
 // Typing shouldn't refetch on every keystroke, so the query only sees the settled value.
-const settledSearch = ref('')
+const settledSearch = ref(initialSearch)
 const grid = useTemplateRef('grid')
 // Same rule as /listings (5 on phones, otherwise what fits the screen, max 12), measured once on mount.
 const pageSize = ref(5)
@@ -61,6 +66,16 @@ watch(search, (value) => {
   }, 300)
 })
 
+// `replace`: paging and searching aren't history entries, so browser back leaves the page.
+watch([page, settledSearch], () =>
+  router.replace({
+    query: {
+      ...(settledSearch.value && { search: settledSearch.value }),
+      ...(page.value > 1 && { page: String(page.value) })
+    }
+  })
+)
+
 // Needs the session cookie, so fetched client-only like the listings list.
 const { data, status, error, execute } = useAsyncData(
   'companies',
@@ -70,10 +85,13 @@ const { data, status, error, execute } = useAsyncData(
 
 // The grid has to be in the DOM to be measured, so the first fetch waits for mount. Row heights are
 // the rendered ones: one line from `lg` up, stacked below (CSS can't be read before rows exist).
-onMounted(() => {
+onMounted(async () => {
   const rowHeight = window.matchMedia('(min-width: 1024px)').matches ? 72 : 132
   pageSize.value = measurePageSize(grid.value!, rowHeight, 12)
-  execute()
+  // A restored page is fetched by the page watcher; page 1 (also a restored page clamped to it) isn't.
+  const initialPage = pageFromQuery(route.query.page)
+  if (initialPage > 1) await goTo(initialPage)
+  if (page.value === 1) execute()
 })
 
 const companies = computed(() => data.value?.companies?.nodes ?? [])
@@ -89,18 +107,22 @@ watch(data, () => {
 })
 
 // Jumping past the known cursors walks forward one page at a time (`first` is capped at 50 server-side,
-// so loading N pages in one request is not possible).
+// so loading N pages in one request is not possible). A page from the URL can be past the end, so the
+// walk stops at the last page.
 const goTo = async (target: number) => {
   walking.value = true
   while (cursors.value.length < target) {
-    const res = await gql(companiesQuery(), {
-      search: settledSearch.value || null,
-      after: cursors.value.at(-1) ?? null
-    })
-    cursors.value.push(res.companies!.pageInfo.endCursor!)
+    const { pageInfo } = (
+      await gql(companiesQuery(), {
+        search: settledSearch.value || null,
+        after: cursors.value.at(-1) ?? null
+      })
+    ).companies!
+    if (!pageInfo.hasNextPage) break
+    cursors.value.push(pageInfo.endCursor!)
   }
   walking.value = false
-  page.value = target
+  page.value = Math.min(target, cursors.value.length)
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
