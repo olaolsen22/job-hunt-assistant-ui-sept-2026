@@ -15,8 +15,7 @@ over SSE for LLM parse-job updates.
 
 ## Commands
 
-- Dev: `pnpm dev` (the owner runs it; don't start or stop it)
-- Lint / format: `pnpm lint`, `pnpm format`
+- Dev: `pnpm dev` (the owner runs it; don't start or stop it)- Lint / format: `pnpm lint`, `pnpm format`
 - Typecheck: `pnpm typecheck`
 - Unit tests: `pnpm test` (single file while iterating: `pnpm vitest run test/unit/<Name>.test.ts`)
 - E2E: `pnpm test:e2e` (builds prod, serves on :3100, API mocked per test, no backend needed)
@@ -81,6 +80,7 @@ over SSE for LLM parse-job updates.
   no closing offers. Code over prose.
 - Show changed snippets, not whole files.
 - Verify with `pnpm typecheck`, `pnpm lint`, and `pnpm test`. If a live check is truly needed, ask first.
+- When you are done making changes, run `pnpm build` then `pnpm preview --port 3000`.
 - After finishing a milestone or a notable feature, run `/log-progress` to update `docs/STATUS.md`.
 - The owner is a senior Vue 2 engineer, new to Vue 3 and Nuxt 4. When a Vue 3 / Nuxt 4 concept first
   comes up (Composition API, `<script setup>`, auto-imports, `useFetch`/`useAsyncData`, `useState`,
