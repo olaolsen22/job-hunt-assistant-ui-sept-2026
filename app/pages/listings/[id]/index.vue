@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import {
   EMPLOYMENT_TYPE_OPTIONS,
@@ -94,48 +95,76 @@ const toggleArchived = async () => {
   toast.add({ title: isArchived ? 'Archived' : 'Unarchived', color: 'success' })
 }
 
+// Infrequent actions live in the menu so Edit is the one obvious primary button.
+const moreItems = computed<DropdownMenuItem[]>(() => {
+  const l = listing.value
+  if (!l) return []
+  return [
+    ...(l.analyzedAt
+      ? []
+      : [
+          {
+            label: 'Mark analyzed',
+            icon: 'i-lucide-check-check',
+            onSelect: () => (markOpen.value = true)
+          }
+        ]),
+    l.archivedAt
+      ? { label: 'Unarchive', icon: 'i-lucide-archive-restore', onSelect: toggleArchived }
+      : { label: 'Archive', icon: 'i-lucide-archive', onSelect: toggleArchived }
+  ]
+})
+
+const NOT_STATED = 'Not stated'
 const labelOf = <T extends string>(
   options: readonly { label: string; value: T }[],
   value: T | null
-) => options.find((o) => o.value === value)?.label ?? 'Not stated'
+) => options.find((o) => o.value === value)?.label ?? NOT_STATED
+
+const skillsByRequirement = computed(() => {
+  const skills = listing.value?.skills ?? []
+  return [
+    { title: 'Required', skills: skills.filter((s) => s.isRequired) },
+    { title: 'Nice to have', skills: skills.filter((s) => !s.isRequired) }
+  ].filter((group) => group.skills.length)
+})
 </script>
 
 <template>
   <div class="flex justify-center">
     <div class="w-full max-w-3xl space-y-4 sm:space-y-6 lg:max-w-6xl">
-      <div class="flex items-center justify-between gap-4">
-        <UButton :to="listingsView" icon="i-lucide-arrow-left" variant="ghost" color="neutral">
+      <!-- Stacked below sm so Back never shares a line with the actions on a phone. -->
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <UButton
+          :to="listingsView"
+          icon="i-lucide-arrow-left"
+          variant="ghost"
+          color="neutral"
+          class="self-start"
+        >
           Back
         </UButton>
 
-        <div v-if="listing" class="flex flex-wrap items-center justify-end gap-2">
-          <UButton
-            v-if="!listing.analyzedAt"
-            icon="i-lucide-check-check"
-            color="neutral"
-            variant="subtle"
-            data-testid="listing-mark-analyzed"
-            @click="markOpen = true"
-            >Mark analyzed</UButton
-          >
-          <UButton
-            :icon="listing.archivedAt ? 'i-lucide-archive-restore' : 'i-lucide-archive'"
-            color="neutral"
-            variant="subtle"
-            :loading="archiving"
-            data-testid="listing-archive"
-            @click="toggleArchived"
-            >{{ listing.archivedAt ? 'Unarchive' : 'Archive' }}</UButton
-          >
+        <div v-if="listing" class="flex items-center gap-2">
           <UButton
             :to="`/listings/${listing.id}/edit?analyze`"
             icon="i-lucide-sparkles"
             color="neutral"
             variant="subtle"
             data-testid="listing-analyze"
-            >Analyze</UButton
+            >Analyze ad</UButton
           >
           <UButton :to="`/listings/${listing.id}/edit`" icon="i-lucide-pencil">Edit</UButton>
+          <UDropdownMenu :items="moreItems" :content="{ align: 'end' }">
+            <UButton
+              icon="i-lucide-ellipsis-vertical"
+              color="neutral"
+              variant="subtle"
+              aria-label="More actions"
+              :loading="archiving"
+              data-testid="listing-more"
+            />
+          </UDropdownMenu>
         </div>
       </div>
 
@@ -149,151 +178,183 @@ const labelOf = <T extends string>(
       />
 
       <!-- Only on first load: refreshes after an action keep the page (and its open modals) mounted. -->
-      <div
-        v-else-if="loading && !listing"
-        class="grid gap-4 lg:grid-cols-3"
-        data-testid="listing-loading"
-      >
-        <USkeleton class="h-96 w-full lg:col-span-2" />
+      <div v-else-if="loading && !listing" class="space-y-4" data-testid="listing-loading">
+        <USkeleton class="h-32 w-full" />
         <USkeleton class="h-40 w-full" />
-        <USkeleton class="h-32 w-full lg:col-span-3" />
+        <div class="grid gap-4 lg:grid-cols-3">
+          <USkeleton class="h-96 w-full lg:col-span-2" />
+          <USkeleton class="h-40 w-full" />
+        </div>
       </div>
 
       <template v-else-if="listing">
+        <UAlert
+          v-if="listing.archivedAt"
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-archive"
+          title="This listing is archived"
+          description="It is hidden from the default list."
+          :actions="[
+            {
+              label: 'Unarchive',
+              color: 'neutral',
+              variant: 'outline',
+              loading: archiving,
+              onClick: toggleArchived
+            }
+          ]"
+          data-testid="listing-archived-notice"
+        />
+
+        <header class="space-y-3" data-testid="listing-header">
+          <div class="flex items-start justify-between gap-2">
+            <h1 class="min-w-0 break-words text-xl font-semibold text-highlighted">
+              {{ listing.title }}
+            </h1>
+            <ListingsFavoriteButton
+              :id="listing.id"
+              :favorited-at="listing.favoritedAt"
+              size="md"
+              class="shrink-0"
+            />
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <ListingsStatusBadge :status="listing.status" prominent />
+            <ListingsAnalyzedBadge :analyzed-at="listing.analyzedAt" size="lg" />
+            <UBadge
+              v-if="listing.archivedAt"
+              color="neutral"
+              variant="subtle"
+              size="lg"
+              icon="i-lucide-archive"
+              data-testid="listing-archived"
+              >Archived</UBadge
+            >
+          </div>
+
+          <div class="space-y-2 sm:grid sm:grid-cols-2 sm:gap-x-4 sm:space-y-0">
+            <div class="space-y-2">
+              <p class="flex items-center gap-1.5 text-sm text-muted">
+                <UIcon name="i-lucide-building-2" class="size-4 shrink-0" />
+                {{ listing.company.name }}
+              </p>
+              <p
+                class="flex items-center gap-1.5 text-sm text-muted"
+                data-testid="listing-job-role"
+              >
+                <UIcon name="i-lucide-briefcase" class="size-4 shrink-0" />
+                {{ listing.jobRole.name }}
+              </p>
+              <ListingsLocation :listing="listing" />
+            </div>
+            <div class="mt-2 sm:mt-0">
+              <ListingsDates :listing="listing" />
+            </div>
+          </div>
+
+          <UButton
+            :to="listing.url"
+            target="_blank"
+            rel="noopener"
+            variant="soft"
+            color="neutral"
+            icon="i-lucide-external-link"
+            label="View ad"
+            data-testid="listing-view-ad"
+          />
+        </header>
+
         <ListingsApplication :listing="listing" @changed="refresh" />
 
         <div
           class="space-y-4 sm:space-y-6 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0"
         >
-          <AppCard title="Job" class="lg:col-span-2">
-            <div class="space-y-4">
-              <div class="flex items-start justify-between gap-2">
-                <div class="flex items-start gap-1">
-                  <h1 class="text-lg font-semibold text-highlighted">{{ listing.title }}</h1>
-                  <ListingsFavoriteButton
-                    :id="listing.id"
-                    :favorited-at="listing.favoritedAt"
-                    class="mt-0.5 shrink-0"
-                  />
-                </div>
-                <ListingsAnalyzedBadge :analyzed-at="listing.analyzedAt" class="mt-1 shrink-0" />
-              </div>
-
-              <div class="grid gap-3 sm:grid-cols-2 sm:gap-4">
-                <div class="space-y-1">
-                  <p class="text-sm font-medium text-highlighted">Company</p>
-                  <p class="text-sm text-muted">{{ listing.company.name }}</p>
-                </div>
-                <div class="space-y-1">
-                  <p class="text-sm font-medium text-highlighted">Role</p>
-                  <p class="text-sm text-muted">{{ listing.jobRole.name }}</p>
-                </div>
-
-                <div class="space-y-1 sm:col-span-2">
-                  <p class="text-sm font-medium text-highlighted">Job ad URL</p>
-                  <UButton
-                    :to="listing.url"
-                    target="_blank"
-                    rel="noopener"
-                    variant="link"
-                    size="sm"
-                    trailing-icon="i-lucide-external-link"
-                    class="max-w-full p-0"
-                  >
-                    <span class="truncate">{{ listing.url }}</span>
-                  </UButton>
-                </div>
-
-                <div class="space-y-1 sm:col-span-2">
-                  <p class="text-sm font-medium text-highlighted">Locations</p>
-                  <ListingsLocation :listing="listing" />
-                </div>
-
-                <div class="space-y-1">
-                  <p class="text-sm font-medium text-highlighted">Work mode</p>
-                  <p class="text-sm text-muted">
+          <div class="space-y-4 sm:space-y-6 lg:col-span-2">
+            <AppCard title="Details">
+              <dl class="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+                <div>
+                  <dt class="text-xs text-muted">Work mode</dt>
+                  <dd class="text-sm" :class="{ 'text-muted': !listing.workMode }">
                     {{ labelOf(WORK_MODE_OPTIONS, listing.workMode) }}
-                  </p>
+                  </dd>
                 </div>
-                <div class="space-y-1">
-                  <p class="text-sm font-medium text-highlighted">Employment type</p>
-                  <p class="text-sm text-muted">
+                <div>
+                  <dt class="text-xs text-muted">Employment type</dt>
+                  <dd class="text-sm" :class="{ 'text-muted': !listing.employmentType }">
                     {{ labelOf(EMPLOYMENT_TYPE_OPTIONS, listing.employmentType) }}
-                  </p>
+                  </dd>
                 </div>
-                <div class="space-y-1">
-                  <p class="text-sm font-medium text-highlighted">Schedule</p>
-                  <p class="text-sm text-muted">
+                <div>
+                  <dt class="text-xs text-muted">Schedule</dt>
+                  <dd class="text-sm" :class="{ 'text-muted': !listing.schedule }">
                     {{ labelOf(SCHEDULE_OPTIONS, listing.schedule) }}
-                  </p>
+                  </dd>
                 </div>
-                <div class="space-y-1">
-                  <p class="text-sm font-medium text-highlighted">Seniority</p>
-                  <p class="text-sm text-muted">
+                <div>
+                  <dt class="text-xs text-muted">Seniority</dt>
+                  <dd class="text-sm" :class="{ 'text-muted': !listing.seniority }">
                     {{ labelOf(SENIORITY_OPTIONS, listing.seniority) }}
-                  </p>
+                  </dd>
                 </div>
 
-                <div class="space-y-1 sm:col-span-2">
-                  <p class="text-sm font-medium text-highlighted">Language requirements</p>
-                  <p v-if="!listing.languages.length" class="text-sm text-muted">None required.</p>
-                  <div v-else class="flex flex-wrap gap-2">
+                <div>
+                  <dt class="text-xs text-muted">Language requirements</dt>
+                  <dd v-if="!listing.languages.length" class="text-sm text-muted">None required</dd>
+                  <dd v-else class="flex flex-wrap gap-2 pt-0.5">
                     <UBadge
                       v-for="(lang, i) in listing.languages"
                       :key="i"
-                      :color="lang.isRequired ? 'primary' : 'neutral'"
-                      :variant="lang.isRequired ? 'solid' : 'subtle'"
+                      color="neutral"
+                      variant="subtle"
                     >
                       {{ labelOf(LANGUAGE_OPTIONS, lang.language)
-                      }}{{ lang.level ? ` · ${lang.level}` : '' }}
+                      }}{{ lang.level ? ` · ${lang.level}` : ''
+                      }}{{ lang.isRequired ? ' · required' : ' · optional' }}
                     </UBadge>
-                  </div>
+                  </dd>
                 </div>
-                <div class="space-y-1 sm:col-span-2">
-                  <p class="text-sm font-medium text-highlighted">Ad language</p>
-                  <p class="text-sm text-muted">
+                <div>
+                  <dt class="text-xs text-muted">Ad language</dt>
+                  <dd class="text-sm" :class="{ 'text-muted': !listing.postingLanguage }">
                     {{ labelOf(LANGUAGE_OPTIONS, listing.postingLanguage) }}
-                  </p>
+                  </dd>
                 </div>
+              </dl>
+            </AppCard>
 
-                <ListingsDates :listing="listing" detail />
-              </div>
-            </div>
-          </AppCard>
+            <AppCard title="Summary">
+              <p v-if="listing.description" class="whitespace-pre-line text-sm">
+                {{ listing.description }}
+              </p>
+              <p v-else class="text-sm text-muted">No summary</p>
+            </AppCard>
+          </div>
 
           <AppCard title="Skills">
             <p v-if="!listing.skills.length" class="text-sm text-muted">No skills listed</p>
-            <div v-else class="divide-y divide-default">
-              <div
-                v-for="(skill, i) in listing.skills"
-                :key="i"
-                class="flex items-center justify-between gap-2 py-2"
-              >
-                <span class="font-medium">{{ skill.skill.name }}</span>
-                <div class="flex items-center gap-2">
-                  <span class="text-sm text-muted">
-                    Level {{ skill.level }}/5<template v-if="skill.minYears">
-                      · {{ skill.minYears }}+ yrs</template
-                    >
-                  </span>
-                  <UBadge
-                    :color="skill.isRequired ? 'primary' : 'neutral'"
-                    :variant="skill.isRequired ? 'solid' : 'subtle'"
+            <div v-else class="space-y-4">
+              <div v-for="group in skillsByRequirement" :key="group.title" class="space-y-1">
+                <p class="text-xs font-medium uppercase text-muted">{{ group.title }}</p>
+                <div class="divide-y divide-default">
+                  <div
+                    v-for="(skill, i) in group.skills"
+                    :key="i"
+                    class="flex items-center justify-between gap-2 py-2"
                   >
-                    {{ skill.isRequired ? 'Required' : 'Optional' }}
-                  </UBadge>
+                    <span class="min-w-0 truncate font-medium">{{ skill.skill.name }}</span>
+                    <span class="shrink-0 text-sm text-muted">
+                      Level {{ skill.level }}/5<template v-if="skill.minYears">
+                        · {{ skill.minYears }}+ yrs</template
+                      >
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
           </AppCard>
         </div>
-
-        <AppCard title="Summary">
-          <p v-if="listing.description" class="whitespace-pre-line text-sm">
-            {{ listing.description }}
-          </p>
-          <p v-else class="text-sm text-muted">No summary</p>
-        </AppCard>
 
         <AppConfirmModal
           v-model:open="markOpen"

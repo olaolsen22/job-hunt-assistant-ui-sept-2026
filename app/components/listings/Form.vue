@@ -34,7 +34,7 @@ defineExpose({ validate: () => form.value?.validate({ silent: true }) })
     class="w-full max-w-3xl space-y-4 sm:space-y-6"
     @submit="$emit('submit')"
   >
-    <AppCard title="Job">
+    <AppCard title="Details">
       <div class="grid gap-3 sm:grid-cols-2 sm:gap-4">
         <UFormField label="Job title" name="title" required class="sm:col-span-2">
           <UInput v-model="state.title" placeholder="As written in the ad" class="w-full" />
@@ -56,38 +56,46 @@ defineExpose({ validate: () => form.value?.validate({ silent: true }) })
           />
         </UFormField>
 
-        <UFormField label="Job ad URL" name="url" required class="sm:col-span-2">
+        <UFormField label="Ad link" name="url" required class="sm:col-span-2">
           <UInput v-model="state.url" type="url" placeholder="https://" class="w-full" />
         </UFormField>
 
-        <UFormField label="Locations" name="locations" class="sm:col-span-2">
-          <ListingsLocationsField v-model="state.locations" />
+        <!-- The optional selects use USelectMenu because USelect can't go back to empty once
+             a value is picked; `clear` adds the button that does. -->
+        <UFormField label="Seniority" name="seniority">
+          <USelectMenu
+            v-model="state.seniority"
+            :items="[...SENIORITY_OPTIONS]"
+            value-key="value"
+            :search-input="false"
+            clear
+            placeholder="Not stated"
+            class="w-full"
+          />
+        </UFormField>
+
+        <UFormField label="Employment type" name="employmentType">
+          <USelectMenu
+            v-model="state.employmentType"
+            :items="[...EMPLOYMENT_TYPE_OPTIONS]"
+            value-key="value"
+            :search-input="false"
+            clear
+            placeholder="Not stated"
+            class="w-full"
+          />
         </UFormField>
 
         <UFormField label="Work mode" name="workMode">
           <ListingsToggleGroup v-model="state.workMode" :options="WORK_MODE_OPTIONS" />
         </UFormField>
 
-        <UFormField label="Employment type" name="employmentType">
-          <USelect
-            v-model="state.employmentType"
-            :items="[...EMPLOYMENT_TYPE_OPTIONS]"
-            placeholder="Not stated"
-            class="w-full"
-          />
-        </UFormField>
-
         <UFormField label="Schedule" name="schedule">
           <ListingsToggleGroup v-model="state.schedule" :options="SCHEDULE_OPTIONS" />
         </UFormField>
 
-        <UFormField label="Seniority" name="seniority">
-          <USelect
-            v-model="state.seniority"
-            :items="[...SENIORITY_OPTIONS]"
-            placeholder="Not stated"
-            class="w-full"
-          />
+        <UFormField label="Locations" name="locations" class="sm:col-span-2">
+          <ListingsLocationsField v-model="state.locations" />
         </UFormField>
 
         <UFormField label="Language requirements" name="languages" class="sm:col-span-2">
@@ -95,9 +103,12 @@ defineExpose({ validate: () => form.value?.validate({ silent: true }) })
         </UFormField>
 
         <UFormField label="Ad language" help="Language the ad is written in" name="postingLanguage">
-          <USelect
+          <USelectMenu
             v-model="state.postingLanguage"
             :items="[...LANGUAGE_OPTIONS]"
+            value-key="value"
+            :search-input="false"
+            clear
             placeholder="Not stated"
             class="w-full"
           />
@@ -107,21 +118,22 @@ defineExpose({ validate: () => form.value?.validate({ silent: true }) })
           <UInput v-model="state.postedOn" type="date" :max="todayIso()" class="w-full" />
         </UFormField>
 
-        <UFormField label="Deadline" name="deadlineType">
-          <USelect
-            v-model="state.deadlineType"
-            :items="[...DEADLINE_TYPE_OPTIONS]"
-            class="w-full"
-          />
-        </UFormField>
-
-        <UFormField
-          v-if="state.deadlineType === 'DATE'"
-          label="Deadline date"
-          name="deadlineOn"
-          class="sm:col-start-2"
-        >
-          <UInput v-model="state.deadlineOn" type="date" class="w-full" />
+        <!-- Type and date are one field: the date only means something for the Date type. -->
+        <UFormField label="Deadline" name="deadlineOn">
+          <div class="flex gap-2">
+            <USelect
+              v-model="state.deadlineType"
+              :items="[...DEADLINE_TYPE_OPTIONS]"
+              :class="state.deadlineType === 'DATE' ? 'w-36 shrink-0' : 'w-full'"
+            />
+            <UInput
+              v-if="state.deadlineType === 'DATE'"
+              v-model="state.deadlineOn"
+              type="date"
+              aria-label="Deadline date"
+              class="min-w-0 flex-1"
+            />
+          </div>
         </UFormField>
       </div>
     </AppCard>
@@ -130,13 +142,13 @@ defineExpose({ validate: () => form.value?.validate({ silent: true }) })
       <ListingsSkillsField v-model="state.skills" />
     </AppCard>
 
-    <AppCard title="Summary">
-      <UFormField name="description" help="Short summary, not the full ad text">
+    <AppCard>
+      <UFormField label="Summary" name="description" help="Short summary, not the full ad text">
         <UTextarea
           v-model="state.description"
           :rows="3"
           autoresize
-          placeholder="A few sentences on the role, in your own words"
+          placeholder="The role in your own words"
           class="w-full"
         />
       </UFormField>

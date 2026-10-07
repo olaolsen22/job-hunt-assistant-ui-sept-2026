@@ -120,8 +120,11 @@ const addRows = async (reply: string) => {
 
 const parseBuiltIn = async () => {
   const reply = await parse(ad.value)
+  if ('error' in reply) {
+    toast.add({ title: reply.error, color: 'error', icon: 'i-lucide-circle-alert' })
+  }
   // Failed: show the copy-paste steps, with the text still filled in.
-  if (!reply || !(await addRows(reply))) builtIn.value = false
+  if ('error' in reply || !(await addRows(reply.result))) builtIn.value = false
 }
 
 const toast = useToast()

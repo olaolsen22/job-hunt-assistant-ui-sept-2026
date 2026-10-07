@@ -31,10 +31,12 @@ const toast = useToast()
 const parseOpen = ref(false)
 const listingForm = useTemplateRef('listingForm')
 
+const filledFromAd = ref(false)
+
 const onDraft = (draft: Record<string, unknown>) => {
   fillDraft(draft)
   listingForm.value?.validate()
-  toast.add({ title: 'Form filled from the ad', color: 'success', icon: 'i-lucide-check' })
+  filledFromAd.value = true
   checkNewNames(state)
 }
 const submitting = ref(false)
@@ -93,9 +95,22 @@ const onConfirm = async () => {
         variant="subtle"
         data-testid="parse-open"
         @click="parseOpen = true"
-        >Paste from ad</UButton
+        >Analyze ad</UButton
       >
     </div>
+
+    <UAlert
+      v-if="filledFromAd"
+      color="info"
+      variant="subtle"
+      icon="i-lucide-sparkles"
+      title="Filled from the ad"
+      description="Nothing is saved yet. Check the fields, then add the listing."
+      close
+      class="w-full max-w-3xl"
+      data-testid="filled-from-ad"
+      @update:open="filledFromAd = $event"
+    />
 
     <ListingsForm
       ref="listingForm"

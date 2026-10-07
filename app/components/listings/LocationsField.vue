@@ -27,7 +27,7 @@ const addLocation = () => locations.value.push({ countryCode: 'NO', city: '' })
           v-model="loc.city"
           lookup="locations"
           :country-code="loc.countryCode"
-          placeholder="City (empty = anywhere)"
+          placeholder="City (blank = whole country)"
           class="flex-1"
         />
         <UButton
@@ -35,6 +35,7 @@ const addLocation = () => locations.value.push({ countryCode: 'NO', city: '' })
           icon="i-lucide-x"
           color="neutral"
           variant="ghost"
+          aria-label="Remove location"
           class="shrink-0"
           @click="locations.splice(i, 1)"
         />

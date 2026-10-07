@@ -45,10 +45,12 @@ watch(
 const toast = useToast()
 const listingForm = useTemplateRef('listingForm')
 
+const filledFromAd = ref(false)
+
 const onDraft = (draft: Record<string, unknown>) => {
   mergeDraft(draft)
   listingForm.value?.validate()
-  toast.add({ title: 'Form filled from the ad', color: 'success', icon: 'i-lucide-check' })
+  filledFromAd.value = true
   checkNewNames(state)
 }
 const submitting = ref(false)
@@ -113,16 +115,48 @@ const onConfirm = async () => {
     />
 
     <template v-else>
-      <div class="flex w-full max-w-3xl justify-end">
+      <!-- Stacked below sm so Back never shares a line with Analyze ad on a phone. -->
+      <div
+        class="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <UButton
+          :to="`/listings/${id}`"
+          icon="i-lucide-arrow-left"
+          variant="ghost"
+          color="neutral"
+          class="self-start"
+          data-testid="edit-listing-back"
+          >Back</UButton
+        >
         <UButton
           icon="i-lucide-sparkles"
           color="neutral"
           variant="subtle"
+          class="self-start"
           data-testid="parse-open"
           @click="parseOpen = true"
-          >Paste from ad</UButton
+          >Analyze ad</UButton
         >
       </div>
+
+      <!-- The saved title, not the form's, so the heading doesn't change while typing. -->
+      <div class="w-full max-w-3xl">
+        <h1 class="break-words text-xl font-semibold text-highlighted">{{ listing?.title }}</h1>
+        <p class="text-sm text-muted">{{ listing?.company.name }}</p>
+      </div>
+
+      <UAlert
+        v-if="filledFromAd"
+        color="info"
+        variant="subtle"
+        icon="i-lucide-sparkles"
+        title="Filled from the ad"
+        description="Fields the ad didn’t mention kept their saved values. Nothing is saved yet; saving marks the listing analyzed."
+        close
+        class="w-full max-w-3xl"
+        data-testid="filled-from-ad"
+        @update:open="filledFromAd = $event"
+      />
 
       <ListingsForm
         ref="listingForm"

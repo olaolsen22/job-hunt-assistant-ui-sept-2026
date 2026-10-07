@@ -27,20 +27,19 @@ const outcomeOpen = ref(false)
     <div class="space-y-6">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap items-center gap-2">
-          <ListingsStatusBadge :status="listing.status" prominent />
-          <UBadge
-            v-if="listing.archivedAt"
-            color="neutral"
-            variant="subtle"
-            icon="i-lucide-archive"
-            data-testid="listing-archived"
-            >Archived</UBadge
+          <!-- The status badge is in the page header, so only what it doesn't say is here. -->
+          <span
+            v-if="listing.status === 'SAVED'"
+            class="text-sm text-muted"
+            data-testid="listing-not-applied"
+            >Not applied yet</span
           >
           <span
             v-if="listing.company.applicationCount"
             class="text-sm text-muted"
             data-testid="listing-application-count"
-            >Applied to {{ listing.company.name }} {{ listing.company.applicationCount }}×</span
+            >Applications to {{ listing.company.name }}:
+            {{ listing.company.applicationCount }}</span
           >
         </div>
 

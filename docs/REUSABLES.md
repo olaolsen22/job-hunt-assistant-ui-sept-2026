@@ -33,24 +33,26 @@ remove it when you delete one.
 - `<ListingsForm v-model :validate submit-label cancel-to @submit>` — the listing form's fields
   and Cancel/submit buttons, shared by add and edit. `v-model` is `useListingForm().state`; the
   default slot renders above the buttons (error alert). The page owns mutation, confirm, errors.
-- `<ListingsParseModal v-model:open @apply>` — paste an ad, copy the `listingParsePrompt` + ad for
-  an external AI, paste its JSON back; emits the parsed object (feed it to `fillDraft` or `mergeDraft`). A "Use built-in
-  parser" checkbox sends the ad to `parseListing` instead, falling back to copy-paste on failure.
+- `<ListingsParseModal v-model:open listingId?>` — "Analyze ad" modal with tabs: From link (only with `listingId`;
+  the API reads the saved URL), Paste ad (built-in `parseListing`, error shown in the tab) and Use your own AI (copy the
+  `listingParsePrompt` + ad, paste the JSON back). The ad text is shared between the last two. Emits `apply` with the
+  parsed object (feed it to `fillDraft` or `mergeDraft`); can't be closed while parsing.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
-  active option clears it. Generic over the option value type.
+  active option clears it. Generic over the option value type. Rule in the form: 3 or fewer options use this, more use a
+  clearable `USelectMenu` (`USelect` can't go back to empty).
 - `<ListingsFilterPanel :facets v-model:sort v-model:search>` — the `/listings` toolbar (search, sort, "Filters (n)"
   toggle, clear all) and the facet panel, closed by default at every width; edits `facets` in place.
 - `<ListingsFilterCombobox v-model lookup="skills" | "locations" placeholder?>` — multi-select search over
   existing skills (by name) or locations (by id, labelled `City, Country`); no create option.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
-- `<ListingsSkillsField v-model>` — skill search + `{ name, level, isRequired }[]` rows.
+- `<ListingsSkillsField v-model>` — `{ name, level, minYears?, isRequired }[]` rows (two lines on phones, column headers from `sm`) + skill search below.
 - `<ListingsLanguagesField v-model>` — `{ language, level?, isRequired }[]` rows, one per language.
 - `<ListingsCard listing>` — plain `UCard` for one `ListingListItem`, stacked mobile-first: title
   (links to `/listings/{id}`) + `<ListingsFavoriteButton>` on one row, `<ListingsAnalyzedBadge>` on
   its own row below, then company, location `<ListingsLocation>`, `<ListingsDates>`, and a labelled
-  "View posting" external link button.
-- `<ListingsFavoriteButton id favoritedAt>` — star toggle button; owns its optimistic state and
-  the `setListingFavorite` mutation. Used by `<ListingsCard>` and the listing detail page.
+  "View ad" external link button.
+- `<ListingsFavoriteButton id favoritedAt size?>` — star toggle button (`size` `xs` default, `md` in the detail header);
+  owns its optimistic state and the `setListingFavorite` mutation. Used by `<ListingsCard>` and the listing detail page.
 - `<ListingsAnalyzedBadge analyzedAt>` — "Analyzed" / "To analyze" badge. Used by `<ListingsCard>`
   and the listing detail page.
 - `<ListingsStatusBadge status>` — application status badge (colors in `APPLICATION_STATUS_OPTIONS`).
@@ -68,7 +70,7 @@ remove it when you delete one.
 - `<ListingsDocumentPicker v-model:document-id v-model:file label documents>` — pick an uploaded
   document or a new PDF (uploaded by the caller on submit); used twice by `<ListingsApplyModal>`.
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
-- `<ListingsDates listing>` — labelled posted and deadline lines, posted colored by days ago, deadline
+- `<ListingsDates listing>` — posted and deadline lines with icons (card and detail header), posted colored by days ago, deadline
   colored by days left to the server's `dueOn` (ASAP/Not stated show `due ~date`, or "likely filled" once past).
 
 ## Composables (`app/composables/`)
@@ -90,8 +92,8 @@ remove it when you delete one.
   flagged. Also exports `NameLookup`.
 - `useParsePrompt(name)` → `{ instructions, copied, load, copy(posting), parsing, parse(posting) }` — fetches
   `listingParsePrompt`, `listingQuickParsePrompt` or `companyParsePrompt` and copies it + `<posting>` text
-  for an external AI. `parse()` runs the built-in parser (`parseListing`, FULL, QUICK or COMPANIES by `name`) and returns the
-  JSON reply, or `undefined` after a toast. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).
+  for an external AI. `parse()` runs the built-in parser (`parseListing`, FULL, QUICK or COMPANIES by `name`) and returns
+  `{ result }` (the JSON reply) or `{ error }` for the caller to show; it doesn't toast. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).
 - `useListingsList(grid)` → `{ listings, totalCount, counts, page, pageSize, filter, search, sort, facets, loading, error, refresh }` —
   `search` (bound to an input; starts as `?search=` from the URL, which the companies list links with) is debounced 300 ms and applies to the list and every count. `filter`
   (`'closingSoon' | 'toAnalyze' | 'archived' | null`, `ListingsFilter`) is the preset; `facets` (reactive

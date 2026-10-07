@@ -18,4 +18,11 @@ describe('SkillsField', () => {
     expect(skills).toEqual([{ name: 'Vue', level: 3, isRequired: true }])
     expect(wrapper.findAll('[data-testid="skill-row"]')).toHaveLength(1)
   })
+
+  it('labels each remove button with its skill', async () => {
+    const skills = reactive<ListingSkill[]>([{ name: 'Vue', level: 3, isRequired: true }])
+    const wrapper = await mountSuspended(SkillsField, { props: { modelValue: skills } })
+
+    expect(wrapper.get('[aria-label="Remove Vue"]').exists()).toBe(true)
+  })
 })

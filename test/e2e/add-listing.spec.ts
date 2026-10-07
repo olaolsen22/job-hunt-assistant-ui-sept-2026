@@ -26,7 +26,7 @@ test('adds a listing and returns to the list', async ({ page }) => {
   await page.getByRole('option', { name: 'Acme', exact: true }).click()
   await page.getByRole('combobox', { name: 'Role' }).click()
   await page.getByRole('option', { name: 'Developer', exact: true }).click()
-  await page.getByLabel('Job ad URL').fill('https://example.com/job')
+  await page.getByLabel('Ad link').fill('https://example.com/job')
   await page.getByRole('button', { name: 'Add listing' }).click()
   await page.getByTestId('confirm-modal-confirm').click()
 

@@ -32,7 +32,7 @@ const { listing } = defineProps<{ listing: ListingListItem }>()
             variant="soft"
             color="neutral"
             icon="i-lucide-external-link"
-            label="View posting"
+            label="View ad"
             class="relative z-10 hidden md:inline-flex"
           />
         </div>
@@ -70,7 +70,7 @@ const { listing } = defineProps<{ listing: ListingListItem }>()
         variant="soft"
         color="neutral"
         icon="i-lucide-external-link"
-        label="View posting"
+        label="View ad"
         class="relative z-10 md:hidden"
       />
     </div>

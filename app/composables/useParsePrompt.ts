@@ -93,10 +93,10 @@ export const useParsePrompt = (name: PromptName) => {
     setTimeout(() => (copied.value = false), 1500)
   }
 
-  // The server adds the prompt, so only the ad goes up. Returns the AI's JSON reply, or undefined
-  // after a toast so the caller can fall back to copy-paste.
+  // The server adds the prompt, so only the ad goes up. Returns the AI's JSON reply, or the error
+  // for the caller to show (inline in the modal, a toast elsewhere) before falling back to copy-paste.
   const parsing = ref(false)
-  const parse = async (posting: string) => {
+  const parse = async (posting: string): Promise<{ result: string } | { error: string }> => {
     parsing.value = true
     try {
       const { parseListing } = await gql(PARSE_LISTING, {
@@ -104,14 +104,10 @@ export const useParsePrompt = (name: PromptName) => {
         mode: PARSE_MODES[name]
       })
       const { parseJob, errors } = parseListing
-      if (parseJob?.status === 'SUCCEEDED' && parseJob.result) return parseJob.result
-      toast.add({
-        title: errors?.[0]?.message ?? parseJob?.error ?? ERROR_MESSAGES.generic,
-        color: 'error',
-        icon: 'i-lucide-circle-alert'
-      })
+      if (parseJob?.status === 'SUCCEEDED' && parseJob.result) return { result: parseJob.result }
+      return { error: errors?.[0]?.message ?? parseJob?.error ?? ERROR_MESSAGES.generic }
     } catch {
-      toast.add({ title: ERROR_MESSAGES.generic, color: 'error', icon: 'i-lucide-circle-alert' })
+      return { error: ERROR_MESSAGES.generic }
     } finally {
       parsing.value = false
     }
@@ -120,7 +116,9 @@ export const useParsePrompt = (name: PromptName) => {
   // The API fetches the saved listing's own URL (10-25 s). Failures are expected (login walls, JS-only pages), so
   // they come back for the modal to show next to the paste fallback instead of as a toast.
   const parsingUrl = ref(false)
-  const parseFromUrl = async (listingId: number) => {
+  const parseFromUrl = async (
+    listingId: number
+  ): Promise<{ result: string } | { error: string }> => {
     parsingUrl.value = true
     try {
       const { parseListingFromUrl } = await gql(PARSE_LISTING_FROM_URL, { listingId })

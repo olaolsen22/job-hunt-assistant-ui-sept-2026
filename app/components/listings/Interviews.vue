@@ -67,6 +67,7 @@ const remove = async () => {
       <UButton
         v-if="canAdd"
         size="sm"
+        color="neutral"
         variant="subtle"
         icon="i-lucide-plus"
         data-testid="interview-add"

@@ -1,20 +1,5 @@
 <script setup lang="ts">
-const USAGE = graphql(`
-  query DashboardLlmUsage {
-    llmUsageToday {
-      requests
-      inputTokens
-      outputTokens
-      requestsLimit
-      remainingRequests
-      resetsAt
-    }
-  }
-`)
-
-const { data, status, error, refresh } = useAsyncData('dashboard-llm-usage', () => gql(USAGE), {
-  server: false
-})
+const { data, status, error, refresh } = useLlmUsage()
 const usage = computed(() => data.value?.llmUsageToday)
 const tokens = new Intl.NumberFormat()
 </script>

@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
-const { id, favoritedAt: initialFavoritedAt } = defineProps<{
+const {
+  id,
+  favoritedAt: initialFavoritedAt,
+  size = 'xs'
+} = defineProps<{
   id: number
   favoritedAt: string | null
+  // The detail header uses a bigger tap target than the list card.
+  size?: 'xs' | 'md'
 }>()
 
 const SET_LISTING_FAVORITE = graphql(`
@@ -56,7 +62,7 @@ const toggleFavorite = async () => {
 
 <template>
   <UButton
-    size="xs"
+    :size="size"
     variant="ghost"
     :color="favoritedAt ? 'warning' : 'neutral'"
     :disabled="saving"
