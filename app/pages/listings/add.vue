@@ -74,7 +74,7 @@ const onConfirm = async () => {
           }
         : { title: 'Listing added', color: 'success', icon: 'i-lucide-check' }
     )
-    await navigateTo('/listings')
+    await navigateTo('/listings', { replace: true })
   } catch {
     confirmOpen.value = false
     errorMessages.value = [ERROR_MESSAGES.generic]

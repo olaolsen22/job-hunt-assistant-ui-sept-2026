@@ -8,7 +8,8 @@ const json = ref('')
 const jsonError = ref('')
 const builtIn = ref(false)
 
-watch(open, (isOpen) => isOpen && load())
+// immediate: the edit page can mount this already open (?analyze), and a watcher alone would miss that.
+watch(open, (isOpen) => isOpen && load(), { immediate: true })
 
 watch(json, () => (jsonError.value = ''))
 

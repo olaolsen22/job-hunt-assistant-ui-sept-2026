@@ -20,6 +20,7 @@ const UPDATE_LISTING = graphql(`
 `)
 
 const route = useRoute()
+const router = useRouter()
 const id = Number(route.params.id)
 
 const { listing, loading, error } = await useListing(id)
@@ -68,8 +69,17 @@ const onConfirm = async () => {
       return
     }
     clearNuxtState('name-lookups')
+    // The detail page shares this key and mounts before this page unmounts, so it would reuse the
+    // pre-edit data instead of fetching.
+    await refreshNuxtData(`listing-${id}`)
     toast.add({ title: 'Listing saved', color: 'success', icon: 'i-lucide-check' })
-    await navigateTo(`/listings/${id}`)
+    // Opened from the detail page: step back to that entry. Pushing or replacing would leave a second
+    // copy of the detail page in history, so Back would need two presses to reach the list.
+    if (router.options.history.state.back === `/listings/${id}`) {
+      router.back()
+    } else {
+      await navigateTo(`/listings/${id}`, { replace: true })
+    }
   } catch {
     confirmOpen.value = false
     errorMessages.value = [ERROR_MESSAGES.generic]
