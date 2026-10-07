@@ -2,7 +2,12 @@
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ apply: [draft: Record<string, unknown>] }>()
 
-const { instructions, copied, load, copy, parsing, parse } = useParsePrompt('listingParsePrompt')
+// listingId: set on the edit page. Automatic parsing reads the saved listing's URL on the API side,
+// so it only exists for saved listings.
+const props = defineProps<{ listingId?: number }>()
+
+const { instructions, copied, load, copy, parsing, parse, parsingUrl, parseFromUrl } =
+  useParsePrompt('listingParsePrompt')
 const ad = ref('')
 const json = ref('')
 const jsonError = ref('')
@@ -12,6 +17,9 @@ const builtIn = ref(false)
 watch(open, (isOpen) => isOpen && load(), { immediate: true })
 
 watch(json, () => (jsonError.value = ''))
+
+const urlError = ref('')
+watch(open, () => (urlError.value = ''))
 
 const apply = (reply: string) => {
   // AIs often wrap the JSON in a code fence or a sentence, so take the outermost object.
@@ -28,6 +36,13 @@ const apply = (reply: string) => {
   json.value = ''
   open.value = false
   return true
+}
+
+const parseUrl = async () => {
+  urlError.value = ''
+  const { result, error } = await parseFromUrl(props.listingId!)
+  if (result && apply(result)) return
+  urlError.value = error ?? 'That doesn’t look like valid JSON.'
 }
 
 const parseBuiltIn = async () => {
@@ -49,6 +64,29 @@ const parseBuiltIn = async () => {
   >
     <template #body>
       <div class="space-y-6">
+        <div v-if="listingId" class="space-y-3">
+          <UButton
+            icon="i-lucide-link"
+            :loading="parsingUrl"
+            data-testid="parse-url"
+            @click="parseUrl"
+            >Parse automatically</UButton
+          >
+          <p class="text-sm text-muted">
+            Fetches the ad from the listing’s saved link and merges it into the form. Takes up to 25
+            seconds. Some sites can’t be read; paste the ad below instead.
+          </p>
+          <UAlert
+            v-if="urlError"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :title="urlError"
+            data-testid="parse-url-error"
+          />
+          <USeparator />
+        </div>
+
         <div class="space-y-3">
           <UCheckbox v-model="builtIn" label="Use built-in parser" data-testid="parse-builtin" />
           <UFormField :label="builtIn ? 'Paste the ad' : '1. Paste the ad'">

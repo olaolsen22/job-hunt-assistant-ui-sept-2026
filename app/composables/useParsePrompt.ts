@@ -51,6 +51,24 @@ const PARSE_LISTING = graphql(`
   }
 `)
 
+const PARSE_LISTING_FROM_URL = graphql(`
+  mutation ParseListingFromUrl($listingId: Int!) {
+    parseListingFromUrl(input: { listingId: $listingId }) {
+      parseJob {
+        status
+        result
+        error
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
 // Call load() before the user can click copy: browsers can refuse a clipboard write that follows
 // an await, so the instructions must already be here.
 export const useParsePrompt = (name: PromptName) => {
@@ -99,5 +117,22 @@ export const useParsePrompt = (name: PromptName) => {
     }
   }
 
-  return { instructions, copied, load, copy, parsing, parse }
+  // The API fetches the saved listing's own URL (10-25 s). Failures are expected (login walls, JS-only pages), so
+  // they come back for the modal to show next to the paste fallback instead of as a toast.
+  const parsingUrl = ref(false)
+  const parseFromUrl = async (listingId: number) => {
+    parsingUrl.value = true
+    try {
+      const { parseListingFromUrl } = await gql(PARSE_LISTING_FROM_URL, { listingId })
+      const { parseJob, errors } = parseListingFromUrl
+      if (parseJob?.status === 'SUCCEEDED' && parseJob.result) return { result: parseJob.result }
+      return { error: errors?.[0]?.message ?? parseJob?.error ?? ERROR_MESSAGES.generic }
+    } catch {
+      return { error: ERROR_MESSAGES.generic }
+    } finally {
+      parsingUrl.value = false
+    }
+  }
+
+  return { instructions, copied, load, copy, parsing, parse, parsingUrl, parseFromUrl }
 }

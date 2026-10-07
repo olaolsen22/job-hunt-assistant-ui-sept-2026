@@ -144,7 +144,7 @@ const onConfirm = async () => {
       </ListingsForm>
     </template>
 
-    <ListingsParseModal v-model:open="parseOpen" @apply="onDraft" />
+    <ListingsParseModal v-model:open="parseOpen" :listing-id="id" @apply="onDraft" />
 
     <AppConfirmModal
       v-model:open="confirmOpen"
