@@ -113,7 +113,7 @@ The API is a fixed contract. Adapt the UI to it.
 
 - Commit only when asked. Review the diff and leave out unrelated changes.
 - Format: short natural subject saying why (from the owner's prompt), blank line, concise bullets of what
-  changed. No long descriptions, inflated claims, or attribution footers.
+  changed. No long descriptions or inflated claims. End with the `Co-Authored-By` footer.
 
 ```
 Make saved jobs easier to scan
@@ -121,6 +121,8 @@ Make saved jobs easier to scan
 - Add status filters
 - Reuse the existing job card
 - Test filter behavior
+
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 ## Working rules
