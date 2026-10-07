@@ -82,7 +82,7 @@ const total = computed(() => data.value?.total ?? 0)
         <p v-if="!c.open.length" class="text-sm text-muted">No open listings</p>
         <ul v-else class="ml-3 divide-y divide-default border-l border-default pl-3">
           <li v-for="l in c.open.slice(0, MAX_PER_COMPANY)" :key="l.id">
-            <DashboardRow :id="l.id" :title="l.title" :company="c.name">
+            <DashboardRow :id="l.id" :title="l.title" :subtitle="c.name">
               {{ formatDate(l.dueOn) }}
             </DashboardRow>
           </li>

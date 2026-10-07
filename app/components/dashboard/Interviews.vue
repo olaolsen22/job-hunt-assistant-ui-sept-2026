@@ -54,7 +54,11 @@ const rows = computed(() => {
   >
     <ul class="divide-y divide-default">
       <li v-for="r in rows" :key="r.key">
-        <DashboardRow :id="r.listing.id" :title="r.listing.title" :company="r.listing.company.name">
+        <DashboardRow
+          :id="r.listing.id"
+          :title="r.listing.title"
+          :subtitle="r.listing.company.name"
+        >
           {{ formatDateTime(r.scheduledAt) }}
         </DashboardRow>
       </li>

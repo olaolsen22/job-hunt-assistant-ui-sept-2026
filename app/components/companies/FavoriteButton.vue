@@ -1,9 +1,15 @@
 <script setup lang="ts">
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
-const { id, favoritedAt: initialFavoritedAt } = defineProps<{
+const {
+  id,
+  favoritedAt: initialFavoritedAt,
+  size = 'xs'
+} = defineProps<{
   id: number
   favoritedAt: string | null
+  // The company page header uses a bigger tap target than the list row.
+  size?: 'xs' | 'md'
 }>()
 
 const SET_COMPANY_FAVORITE = graphql(`
@@ -55,16 +61,15 @@ const toggleFavorite = async () => {
 </script>
 
 <template>
-  <!-- The row is a <NuxtLink>: .prevent stops the anchor navigating, .stop keeps the router link's own click handler out of it. -->
   <UButton
-    size="xs"
+    :size="size"
     variant="ghost"
     :color="favoritedAt ? 'warning' : 'neutral'"
     :disabled="saving"
     :aria-label="favoritedAt ? 'Remove from favorites' : 'Add to favorites'"
     :aria-pressed="!!favoritedAt"
     data-testid="company-favorite"
-    @click.prevent.stop="toggleFavorite"
+    @click="toggleFavorite"
   >
     <!-- Same inline-SVG star as the listing button: Lucide has no filled star and the CSS-mask mode ignores `fill`. -->
     <UIcon

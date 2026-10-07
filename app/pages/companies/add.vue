@@ -160,9 +160,6 @@ const onSave = async () => {
 }
 
 const removeRow = (row: Row) => state.rows.splice(state.rows.indexOf(row), 1)
-
-const places = (r: Row) =>
-  r.locations.map((l) => (l.city ? `${l.city}, ${l.countryCode}` : l.countryCode)).join(' · ')
 </script>
 
 <template>
@@ -291,7 +288,7 @@ const places = (r: Row) =>
               Already existed, left unchanged
             </p>
             <p v-else-if="row.industryName || row.locations.length" class="text-sm text-muted">
-              {{ [row.industryName, places(row)].filter(Boolean).join(' · ') }}
+              {{ [row.industryName, formatPlaces(row.locations)].filter(Boolean).join(' · ') }}
             </p>
           </div>
         </div>

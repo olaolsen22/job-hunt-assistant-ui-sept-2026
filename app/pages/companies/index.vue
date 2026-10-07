@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { parse, print } from '@0no-co/graphql.web'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
-import { measurePageSize, pageFromQuery } from '~/composables/useListingsList'
+import { measurePageSize, pageFromQuery, useCompaniesView } from '~/composables/useListingsList'
 
 definePageMeta({ title: 'Companies' })
 
@@ -16,6 +16,7 @@ const COMPANIES = graphql(`
         listingCount
         applicationCount
         favoritedAt
+        avoidedAt
         industry {
           name
         }
@@ -35,7 +36,7 @@ const COMPANIES = graphql(`
   }
 `)
 
-// Search and page live in the URL like on /listings, so coming back from a company's listings
+// Search, Hide avoided and page live in the URL like on /listings, so coming back from a company
 // restores them.
 const route = useRoute()
 const router = useRouter()
@@ -43,11 +44,17 @@ const initialSearch = String(route.query.search ?? '').trim()
 const search = ref(initialSearch)
 // Typing shouldn't refetch on every keystroke, so the query only sees the settled value.
 const settledSearch = ref(initialSearch)
+const hideAvoided = ref(route.query.hideAvoided === '1')
 const grid = useTemplateRef('grid')
 // Same rule as /listings (5 on phones, otherwise what fits the screen, max 12), measured once on mount.
 const pageSize = ref(5)
-const companiesQuery = () =>
-  parse(print(COMPANIES).replace('first: 20', `first: ${pageSize.value}`)) as typeof COMPANIES
+// `where` is spliced in as literal text too: a filter-input variable trips the same cost check.
+const companiesQuery = () => {
+  let source = print(COMPANIES).replace('first: 20', `first: ${pageSize.value}`)
+  if (hideAvoided.value)
+    source = source.replace('order:', 'where: { avoidedAt: { eq: null } }, order:')
+  return parse(source) as typeof COMPANIES
+}
 const page = ref(1)
 // `cursors[p - 1]` is the `after` cursor of page p. The API only pages by cursor (no skip), so
 // numbered pages are possible only for pages whose cursor we already know.
@@ -66,21 +73,34 @@ watch(search, (value) => {
   }, 300)
 })
 
-// `replace`: paging and searching aren't history entries, so browser back leaves the page.
-watch([page, settledSearch], () =>
-  router.replace({
+// Same tick as the toggle, or the refetch would pair the filter with an old cursor.
+watch(hideAvoided, () => {
+  cursors.value = [null]
+  page.value = 1
+})
+
+// `replace`: paging and filtering aren't history entries, so browser back leaves the page.
+// The company page's Back returns to the last of these URLs.
+const lastView = useCompaniesView()
+lastView.value = route.fullPath
+watch([page, settledSearch, hideAvoided], () => {
+  const to = router.resolve({
+    path: route.path,
     query: {
       ...(settledSearch.value && { search: settledSearch.value }),
+      ...(hideAvoided.value && { hideAvoided: '1' }),
       ...(page.value > 1 && { page: String(page.value) })
     }
   })
-)
+  lastView.value = to.fullPath
+  router.replace(to)
+})
 
 // Needs the session cookie, so fetched client-only like the listings list.
 const { data, status, error, execute } = useAsyncData(
   'companies',
   () => gql(companiesQuery(), { search: settledSearch.value || null, after: after.value }),
-  { watch: [page, settledSearch], server: false, immediate: false }
+  { watch: [page, settledSearch, hideAvoided], server: false, immediate: false }
 )
 
 // The grid has to be in the DOM to be measured, so the first fetch waits for mount. Row heights are
@@ -126,10 +146,6 @@ const goTo = async (target: number) => {
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
-const places = (c: (typeof companies.value)[number]) =>
-  c.locations
-    .map(({ location: l }) => (l.city ? `${l.city}, ${l.countryCode}` : l.countryCode))
-    .join(' · ')
 </script>
 
 <template>
@@ -164,13 +180,25 @@ const places = (c: (typeof companies.value)[number]) =>
       </UButton>
     </div>
 
-    <p
-      v-if="companies.length || search"
-      class="text-lg font-semibold text-highlighted"
-      data-testid="companies-total"
+    <div
+      v-if="companies.length || search || hideAvoided"
+      class="flex items-center justify-between gap-2"
     >
-      {{ totalCount }} {{ totalCount === 1 ? 'company' : 'companies' }}
-    </p>
+      <p class="text-lg font-semibold text-highlighted" data-testid="companies-total">
+        {{ totalCount }} {{ totalCount === 1 ? 'company' : 'companies' }}
+      </p>
+      <UButton
+        size="sm"
+        color="neutral"
+        :variant="hideAvoided ? 'solid' : 'subtle'"
+        icon="i-lucide-eye-off"
+        :aria-pressed="hideAvoided"
+        data-testid="companies-hide-avoided"
+        @click="hideAvoided = !hideAvoided"
+      >
+        Hide avoided
+      </UButton>
+    </div>
 
     <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />
 
@@ -180,8 +208,8 @@ const places = (c: (typeof companies.value)[number]) =>
       data-testid="companies-empty"
     >
       <UIcon name="i-lucide-building-2" class="size-10 text-muted" />
-      <p>{{ search ? 'No companies match.' : 'No companies yet.' }}</p>
-      <UButton v-if="!search" to="/companies/add">Add companies</UButton>
+      <p>{{ search || hideAvoided ? 'No companies match.' : 'No companies yet.' }}</p>
+      <UButton v-if="!search && !hideAvoided" to="/companies/add">Add companies</UButton>
     </div>
 
     <template v-else>
@@ -189,46 +217,56 @@ const places = (c: (typeof companies.value)[number]) =>
         <template v-if="loading && companies.length === 0">
           <USkeleton v-for="i in pageSize" :key="i" class="h-20 w-full lg:h-16" />
         </template>
-        <NuxtLink
+        <UCard
           v-for="c in companies"
           v-else
           :key="c.id"
-          :to="{ path: '/listings', query: { search: c.name } }"
-          class="block"
+          class="relative transition hover:bg-elevated"
+          data-testid="companies-row"
         >
-          <UCard class="transition hover:bg-elevated" data-testid="companies-row">
-            <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-6">
-              <div class="min-w-0 lg:flex-1">
-                <p class="truncate font-medium text-highlighted">{{ c.name }}</p>
-                <p v-if="c.industry" class="truncate text-sm text-muted">{{ c.industry.name }}</p>
-              </div>
-              <p
-                v-if="c.locations.length"
-                class="flex min-w-0 items-center gap-1 text-sm text-muted lg:flex-1"
+          <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-6">
+            <div class="min-w-0 lg:flex-1">
+              <!-- The ::after overlay stretches the link over the card (like ListingsCard), so the
+                   favorite button isn't nested inside an <a>. -->
+              <NuxtLink
+                :to="`/companies/${c.id}`"
+                class="block truncate font-medium text-highlighted after:absolute after:inset-0"
+                data-testid="companies-row-link"
+                >{{ c.name }}</NuxtLink
               >
-                <UIcon name="i-lucide-map-pin" class="size-4 shrink-0" />
-                <span class="truncate">{{ places(c) }}</span>
-              </p>
-              <div class="flex shrink-0 items-center gap-2">
-                <CompaniesFavoriteButton :id="c.id" :favorited-at="c.favoritedAt" />
-                <UBadge
-                  color="neutral"
-                  variant="subtle"
-                  icon="i-lucide-briefcase"
-                  data-testid="companies-row-listings"
-                  >{{ plural(c.listingCount, 'listing') }}</UBadge
-                >
-                <UBadge
-                  color="neutral"
-                  variant="subtle"
-                  icon="i-lucide-send"
-                  data-testid="companies-row-applications"
-                  >{{ plural(c.applicationCount, 'application') }}</UBadge
-                >
-              </div>
+              <p v-if="c.industry" class="truncate text-sm text-muted">{{ c.industry.name }}</p>
             </div>
-          </UCard>
-        </NuxtLink>
+            <p
+              v-if="c.locations.length"
+              class="flex min-w-0 items-center gap-1 text-sm text-muted lg:flex-1"
+            >
+              <UIcon name="i-lucide-map-pin" class="size-4 shrink-0" />
+              <span class="truncate">{{ formatPlaces(c.locations.map((l) => l.location)) }}</span>
+            </p>
+            <div class="flex shrink-0 items-center gap-2">
+              <CompaniesAvoidedBadge v-if="c.avoidedAt" />
+              <CompaniesFavoriteButton
+                :id="c.id"
+                :favorited-at="c.favoritedAt"
+                class="relative z-10"
+              />
+              <UBadge
+                color="neutral"
+                variant="subtle"
+                icon="i-lucide-briefcase"
+                data-testid="companies-row-listings"
+                >{{ plural(c.listingCount, 'listing') }}</UBadge
+              >
+              <UBadge
+                color="neutral"
+                variant="subtle"
+                icon="i-lucide-send"
+                data-testid="companies-row-applications"
+                >{{ plural(c.applicationCount, 'application') }}</UBadge
+              >
+            </div>
+          </div>
+        </UCard>
       </div>
 
       <!-- UPagination still renders a lone "1" with disabled arrows when everything fits on one page. -->

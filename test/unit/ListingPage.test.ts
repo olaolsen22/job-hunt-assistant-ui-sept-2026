@@ -8,7 +8,7 @@ registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', r
 const listing = {
   id: 5,
   title: 'Frontend Developer',
-  company: { name: 'Acme', applicationCount: 0 },
+  company: { id: 3, name: 'Acme', applicationCount: 0, avoidedAt: null as string | null },
   jobRole: { name: 'Developer' },
   seniority: null,
   employmentType: null,
@@ -36,10 +36,10 @@ const listing = {
   ]
 }
 
-const mountPage = async () => {
+const mountPage = async (overrides: Partial<typeof listing> = {}) => {
   registerEndpoint('/graphql', {
     method: 'POST',
-    handler: () => ({ data: { listingById: listing } })
+    handler: () => ({ data: { listingById: { ...listing, ...overrides } } })
   })
   const wrapper = await mountSuspended(ListingPage, {
     route: '/listings/5',
@@ -58,6 +58,17 @@ describe('Listing page', () => {
     expect(header.text()).toContain('Frontend Developer')
     expect(header.get('[data-testid="listing-status"]').text()).toBe('Saved')
     expect(header.get('[data-testid="listing-analyzed"]').text()).toBe('To analyze')
+    expect(header.find('[data-testid="company-avoided"]').exists()).toBe(false)
+    expect(header.get('[data-testid="listing-company"]').attributes('href')).toBe('/companies/3')
+    wrapper.unmount()
+  })
+
+  it('badges a listing whose company is avoided', async () => {
+    const wrapper = await mountPage({
+      company: { ...listing.company, avoidedAt: '2026-10-07T10:00:00Z' }
+    })
+
+    expect(wrapper.get('[data-testid="company-avoided"]').text()).toBe('Avoided company')
     wrapper.unmount()
   })
 

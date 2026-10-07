@@ -39,7 +39,7 @@ const total = computed(() => data.value?.listings?.totalCount ?? 0)
   >
     <ul class="divide-y divide-default">
       <li v-for="l in items" :key="l.id">
-        <DashboardRow :id="l.id" :title="l.title" :company="l.company.name">
+        <DashboardRow :id="l.id" :title="l.title" :subtitle="l.company.name">
           <ListingsStatusBadge :status="l.status" />
         </DashboardRow>
       </li>

@@ -3,10 +3,12 @@ import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import CompaniesPage from '~/pages/companies/index.vue'
+import { useCompaniesView } from '~/composables/useListingsList'
 
-const company = (id: number, name: string) => ({
+const company = (id: number, name: string, avoidedAt: string | null = null) => ({
   id,
   name,
+  avoidedAt,
   listingCount: 3,
   applicationCount: 1,
   industry: { name: 'Consulting' },
@@ -102,7 +104,62 @@ describe('Companies list', () => {
     await vi.waitFor(() => expect(pager().exists() && pager().props('page')).toBe(2))
 
     expect(afters).toEqual([null, 'c1', 'c1'])
-    expect(useRouter().currentRoute.value.query).toEqual({ page: '2' })
+    // The URL is written by a watcher after the page settles.
+    await vi.waitFor(() => expect(useRouter().currentRoute.value.query).toEqual({ page: '2' }))
+    wrapper.unmount()
+  })
+
+  it('links rows to the company page and badges avoided companies', async () => {
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: () => ({
+        data: {
+          companies: {
+            nodes: [company(1, 'Bekk'), company(2, 'Vipps', '2026-10-07T10:00:00Z')],
+            pageInfo: { hasNextPage: false, endCursor: 'c2' },
+            totalCount: 2
+          }
+        }
+      })
+    })
+    const wrapper = await mountSuspended(CompaniesPage)
+    await vi.waitFor(() => expect(wrapper.findAll('[data-testid="companies-row"]')).toHaveLength(2))
+
+    const [bekk, vipps] = wrapper.findAll('[data-testid="companies-row"]')
+    expect(bekk!.get('[data-testid="companies-row-link"]').attributes('href')).toBe('/companies/1')
+    expect(bekk!.find('[data-testid="company-avoided"]').exists()).toBe(false)
+    expect(vipps!.get('[data-testid="company-avoided"]').text()).toBe('Avoided')
+    wrapper.unmount()
+  })
+
+  it('filters avoided companies out server-side when Hide avoided is on', async () => {
+    const queries: string[] = []
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: async (event) => {
+        queries.push((await readBody(event)).query)
+        return {
+          data: {
+            companies: {
+              nodes: [company(1, 'Bekk')],
+              pageInfo: { hasNextPage: false, endCursor: 'c1' },
+              totalCount: 1
+            }
+          }
+        }
+      }
+    })
+    const wrapper = await mountSuspended(CompaniesPage, { route: '/companies' })
+    await vi.waitFor(() => expect(queries).toHaveLength(1))
+    expect(queries[0]).not.toMatch(/avoidedAt: \{/)
+
+    await wrapper.get('[data-testid="companies-hide-avoided"]').trigger('click')
+
+    await vi.waitFor(() => expect(queries.at(-1)).toMatch(/avoidedAt: \{\s*eq: null\s*\}/))
+    await vi.waitFor(() =>
+      expect(useRouter().currentRoute.value.query).toEqual({ hideAvoided: '1' })
+    )
+    expect(useCompaniesView().value).toBe('/companies?hideAvoided=1')
     wrapper.unmount()
   })
 })

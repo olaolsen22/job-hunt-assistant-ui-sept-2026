@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ id: number; title: string; company: string }>()
+defineProps<{ id: number; title: string; subtitle: string }>()
 </script>
 
 <template>
@@ -11,7 +11,7 @@ defineProps<{ id: number; title: string; company: string }>()
   >
     <div class="min-w-0 flex-1">
       <p class="truncate font-medium text-highlighted">{{ title }}</p>
-      <p class="truncate text-sm text-muted">{{ company }}</p>
+      <p class="truncate text-sm text-muted">{{ subtitle }}</p>
     </div>
     <div class="shrink-0 text-right text-sm text-muted"><slot /></div>
   </NuxtLink>

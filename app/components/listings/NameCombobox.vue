@@ -2,7 +2,13 @@
 import type { NameLookup as Lookup } from '~/composables/useNewNames'
 
 // countryCode is only for `locations`: cities are suggested within the picked country.
-const props = defineProps<{ lookup: Lookup; placeholder?: string; countryCode?: string }>()
+const props = defineProps<{
+  lookup: Lookup
+  placeholder?: string
+  countryCode?: string
+  // Optional fields (the industry on the company edit page) need a way back to empty.
+  clear?: boolean
+}>()
 const model = defineModel<string>()
 
 const PAGE_SIZE = 20
@@ -160,6 +166,7 @@ const search = async (q: string) => {
       :items="menuItems"
       :loading="loading"
       :placeholder="placeholder"
+      :clear="clear"
       ignore-filter
       open-on-focus
       :create-item="{ position: 'top', when: 'always' }"

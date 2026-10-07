@@ -41,6 +41,7 @@ const { listing } = defineProps<{ listing: ListingListItem }>()
       <div class="flex flex-wrap gap-2">
         <ListingsStatusBadge :status="listing.status" />
         <ListingsAnalyzedBadge :analyzed-at="listing.analyzedAt" />
+        <CompaniesAvoidedBadge v-if="listing.company.avoidedAt" label="Avoided company" />
         <UBadge
           color="neutral"
           variant="subtle"

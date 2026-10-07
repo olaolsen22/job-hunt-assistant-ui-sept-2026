@@ -17,16 +17,18 @@ remove it when you delete one.
 - `<DashboardApiHealth>` — API health indicator on the dashboard.
 - `<DashboardWidget title icon icon-class? to? loading error empty empty-text total? @retry>` — dashboard card shell:
   header with title, count badge and "View all" link; skeleton, error alert with Retry, or empty text, else the default slot.
-- `<DashboardRow id title company>` — one-link listing row for dashboard widgets; the default slot is the right-hand detail.
+- `<DashboardRow id title subtitle>` — one-link listing row (dashboard widgets, company positions); the default slot is the right-hand detail.
 - Dashboard widgets (`<DashboardClosingSoon>`, `Interviews`, `Offers`, `Stale`, `Pipeline`, `AppliedThisWeek`, `ToAnalyze`,
   `FavoriteListings`, `FavoriteCompanies`, `LlmUsage`) — each runs its own literal query through `useAsyncData` (client-only).
 - `<DashboardEditor :layout @saved @cancel>` — edit mode for the dashboard: copy of the saved layout with up/down and show/hide
   per widget, "Reset to default" (draft only), Save sends the whole list (`saveDashboardLayout`), shows the API message and keeps the edits on failure.
 - `DASHBOARD_WIDGETS` (`constants/dashboard.ts`) — per `DashboardWidgetKind`: label, icon, component, `wide`. A `Record`, so a new
   kind from the API fails typecheck. `useDashboardLayout()` — `{ layout, loading, error, refresh }` for `dashboardLayout`.
-- `<CompaniesFavoriteButton id favoritedAt>` — star toggle for a company; same optimistic behavior as the listing one.
+- `<CompaniesFavoriteButton id favoritedAt size?>` — star toggle for a company; same optimistic behavior as the listing one.
+- `<CompaniesAvoidedBadge label?>` — warning badge for an avoided company; "Avoided" on company surfaces, `label="Avoided company"` on listing ones.
+- `<CompaniesNotesModal v-model:open companyId notes @saved>` — edits a company's Markdown notes; shows the API error inline.
   Uses `@click.prevent.stop`, so it can sit inside a link row.
-- `<ListingsNameCombobox v-model lookup placeholder? countryCode?>` — debounced search over
+- `<ListingsNameCombobox v-model lookup placeholder? countryCode? clear?>` — debounced search over
   `companies` / `jobRoles` / `skills` / `industries` by name, or `locations` by city within `countryCode`;
   allows creating a new name; shows a "new" hint for created names and ones `useIsNewName` flags. Results are cached in `useState('name-lookups')` and filtered
   locally; clear it with `clearNuxtState('name-lookups')` after a save that can create names.
@@ -119,6 +121,8 @@ remove it when you delete one.
 - `batchDocument<Item>(source)` — untyped runtime-built doc (one alias per item); caller names each alias's type.
 - `formatDate(iso)` — formats a `YYYY-MM-DD` date string as `nb-NO` medium date (`26. sep. 2026`), parsed at local
   midnight (avoids the UTC-parsing off-by-one-day bug for negative-offset zones).
+- `formatLocation(location)` — one `{ city?, countryCode }` as `Oslo, Norway` (country name from `COUNTRY_OPTIONS`); used by `ListingsLocation` and the company page.
+- `formatPlaces(locations)` — a company's `{ city?, countryCode }[]` as `Oslo, NO · SE`.
 - `todayIso()` — local today as `YYYY-MM-DD` (not `toISOString()`, which is UTC).
 - `daysAgoIso(n)` — local date `n` days back as `YYYY-MM-DD`; `localDayStartIso(n)` — UTC instant of local midnight `n` days back.
 - `formatDateTime(iso)` — formats a `DateTime` instant as `nb-NO` medium date + short time, local zone.

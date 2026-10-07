@@ -232,13 +232,20 @@ const skillsByRequirement = computed(() => {
               data-testid="listing-archived"
               >Archived</UBadge
             >
+            <CompaniesAvoidedBadge
+              v-if="listing.company.avoidedAt"
+              label="Avoided company"
+              size="lg"
+            />
           </div>
 
           <div class="space-y-2 sm:grid sm:grid-cols-2 sm:gap-x-4 sm:space-y-0">
             <div class="space-y-2">
               <p class="flex items-center gap-1.5 text-sm text-muted">
                 <UIcon name="i-lucide-building-2" class="size-4 shrink-0" />
-                {{ listing.company.name }}
+                <ULink :to="`/companies/${listing.company.id}`" data-testid="listing-company">{{
+                  listing.company.name
+                }}</ULink>
               </p>
               <p
                 class="flex items-center gap-1.5 text-sm text-muted"

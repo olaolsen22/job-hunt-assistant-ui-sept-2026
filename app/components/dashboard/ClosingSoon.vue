@@ -44,7 +44,7 @@ const color = (dueOn: string) => (daysFromToday(dueOn) <= 2 ? 'warning' : 'neutr
   >
     <ul class="divide-y divide-default">
       <li v-for="l in items" :key="l.id">
-        <DashboardRow :id="l.id" :title="l.title" :company="l.company.name">
+        <DashboardRow :id="l.id" :title="l.title" :subtitle="l.company.name">
           <UBadge :color="color(l.dueOn)" variant="subtle">{{ formatDate(l.dueOn) }}</UBadge>
         </DashboardRow>
       </li>

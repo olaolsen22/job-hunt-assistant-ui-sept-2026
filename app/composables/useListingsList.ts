@@ -9,6 +9,7 @@ const LISTING_ITEM = graphql(`
     title
     company {
       name
+      avoidedAt
     }
     locations {
       location {
@@ -153,6 +154,8 @@ export const toListingsQuery = ({ search, sort, filter, facets, page }: Listings
 
 // The last /listings URL, so the listing page's Back returns to that view even after an edit.
 export const useListingsView = () => useState('listingsView', () => '/listings')
+// Same for /companies, read by the company page's Back.
+export const useCompaniesView = () => useState('companiesView', () => '/companies')
 
 type ListingsResult = {
   listings: { items: ListingListItem[]; totalCount: number } | null

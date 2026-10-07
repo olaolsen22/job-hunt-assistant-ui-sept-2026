@@ -6,8 +6,10 @@ const LISTING = graphql(`
       id
       title
       company {
+        id
         name
         applicationCount
+        avoidedAt
       }
       jobRole {
         name
