@@ -74,7 +74,14 @@ export interface ListingsFacets {
   locationIds: number[]
   postingLanguages: Language[]
   languages: Language[]
+  // Posted-date range as YYYY-MM-DD, either end optional.
+  postedFrom: string
+  postedTo: string
+  dueWithinDays: number | null
 }
+
+export const DUE_WITHIN_OPTIONS = [3, 7, 14, 30] as const
+const CLOSING_SOON_DAYS = 7
 
 export const emptyFacets = (): ListingsFacets => ({
   favorites: false,
@@ -82,12 +89,16 @@ export const emptyFacets = (): ListingsFacets => ({
   skills: [],
   locationIds: [],
   postingLanguages: [],
-  languages: []
+  languages: [],
+  postedFrom: '',
+  postedTo: '',
+  dueWithinDays: null
 })
 
-// Facets with something selected, not the number of selected values.
-export const countActiveFacets = (facets: ListingsFacets) =>
-  Object.values(facets).filter((v) => (Array.isArray(v) ? v.length : v)).length
+// Facets with something selected, not the number of selected values. The posted range is one facet.
+export const countActiveFacets = ({ postedFrom, postedTo, ...rest }: ListingsFacets) =>
+  Object.values(rest).filter((v) => (Array.isArray(v) ? v.length : v)).length +
+  (postedFrom || postedTo ? 1 : 0)
 
 export interface ListingsView {
   search: string
@@ -103,6 +114,8 @@ const list = (value: unknown) =>
     .filter(Boolean)
 const known = <T extends string>(values: readonly T[], value: unknown) =>
   list(value).filter((v): v is T => (values as readonly string[]).includes(v))
+
+const isoDate = (value: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(value)) ? String(value) : '')
 
 export const pageFromQuery = (value: unknown) => {
   const page = Number(value)
@@ -129,7 +142,10 @@ export const parseListingsQuery = (query: Record<string, unknown>): ListingsView
         .map(Number)
         .filter((id) => Number.isInteger(id) && id > 0),
       postingLanguages: known(languages, query.postingLanguage),
-      languages: known(languages, query.language)
+      languages: known(languages, query.language),
+      postedFrom: isoDate(query.postedFrom),
+      postedTo: isoDate(query.postedTo),
+      dueWithinDays: Number(known(DUE_WITHIN_OPTIONS.map(String), query.due)[0]) || null
     },
     page: pageFromQuery(query.page)
   }
@@ -146,6 +162,9 @@ export const toListingsQuery = ({ search, sort, filter, facets, page }: Listings
     location: facets.locationIds.join(','),
     postingLanguage: facets.postingLanguages.join(','),
     language: facets.languages.join(','),
+    postedFrom: facets.postedFrom,
+    postedTo: facets.postedTo,
+    due: facets.dueWithinDays ? String(facets.dueWithinDays) : '',
     favorites: facets.favorites ? '1' : '',
     page: page > 1 ? String(page) : ''
   }
@@ -167,11 +186,12 @@ type ListingsResult = {
 const EXPIRY = 'or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]'
 
 // `dueWithinDays: 7` is due within 7 days (today included), expired excluded, server-side.
+// closingSoon's window is added in `field`, because the Due within facet can narrow it.
 const PRESETS: Record<ListingsFilter | 'none', { args: string; where: string[] }> = {
   none: { args: '', where: [EXPIRY] },
   toAnalyze: { args: '', where: [EXPIRY, 'analyzedAt: { eq: null }'] },
   archived: { args: 'archived: true', where: [] },
-  closingSoon: { args: 'dueWithinDays: 7', where: [] }
+  closingSoon: { args: '', where: [] }
 }
 
 const FACETS = {
@@ -210,6 +230,19 @@ export const buildListingsQuery = (
   ]
   const variables: Record<string, unknown> = { order: ORDERS[sort] }
   const facetClauses = facets.favorites ? ['favoritedAt: { neq: null }'] : []
+  const posted = [
+    facets.postedFrom && 'gte: $postedFrom',
+    facets.postedTo && 'lte: $postedTo'
+  ].filter(Boolean)
+  if (posted.length) facetClauses.push(`postedOn: { ${posted.join(', ')} }`)
+  if (facets.postedFrom) {
+    declarations.push('$postedFrom: LocalDate!')
+    variables.postedFrom = facets.postedFrom
+  }
+  if (facets.postedTo) {
+    declarations.push('$postedTo: LocalDate!')
+    variables.postedTo = facets.postedTo
+  }
   for (const key of Object.keys(FACETS) as (keyof typeof FACETS)[]) {
     if (!facets[key].length) continue
     facetClauses.push(FACETS[key].clause)
@@ -222,9 +255,15 @@ export const buildListingsQuery = (
   const field = (preset: ListingsFilter | 'none', args: string[], selection: string) => {
     const { args: presetArgs, where } = PRESETS[preset]
     const clauses = [...where.filter((c) => withExpiry || c !== EXPIRY), ...facetClauses]
+    // Both windows start today, so with closing soon active the narrower one is the intersection.
+    const days =
+      preset === 'closingSoon'
+        ? Math.min(CLOSING_SOON_DAYS, facets.dueWithinDays ?? CLOSING_SOON_DAYS)
+        : facets.dueWithinDays
     const all = [
       ...args,
       presetArgs,
+      days ? `dueWithinDays: ${days}` : '',
       clauses.length ? `where: { and: [{ ${clauses.join(' }, { ')} }] }` : ''
     ]
     return `listings(${all.filter(Boolean).join(', ')}) { ${selection} }`

@@ -27,7 +27,10 @@ describe('listings URL query', () => {
         skills: ['Vue', 'TypeScript'],
         locationIds: [3, 7],
         postingLanguages: ['NORWEGIAN'],
-        languages: ['ENGLISH']
+        languages: ['ENGLISH'],
+        postedFrom: '2026-10-01',
+        postedTo: '2026-10-07',
+        dueWithinDays: 14
       },
       page: 2
     })
@@ -53,6 +56,8 @@ describe('listings URL query', () => {
         language: 'KLINGON',
         location: 'x,4',
         favorites: 'yes',
+        postedFrom: 'yesterday',
+        due: '5',
         page: '-2'
       })
     ).toEqual(view({ facets: { ...emptyFacets(), statuses: ['SAVED'], locationIds: [4] } }))

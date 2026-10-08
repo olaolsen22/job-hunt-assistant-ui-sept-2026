@@ -10,7 +10,8 @@ useHead({ title })
 const items: NavigationMenuItem[] = [
   { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/' },
   { label: 'Job listings', icon: 'i-lucide-file-text', to: '/listings' },
-  { label: 'Companies', icon: 'i-lucide-building-2', to: '/companies' }
+  { label: 'Companies', icon: 'i-lucide-building-2', to: '/companies' },
+  { label: 'Profile', icon: 'i-lucide-user-round', to: '/profile' }
 ]
 
 const colorMode = useColorMode()
@@ -30,6 +31,7 @@ const displayName = computed(() => (auth.user?.role === 'Guest' ? 'Guest' : auth
 
 const userItems = computed<DropdownMenuItem[][]>(() => [
   [{ label: displayName.value, type: 'label' }],
+  [{ label: 'Profile', icon: 'i-lucide-user-round', to: '/profile' }],
   [{ label: 'Log out', icon: 'i-lucide-log-out', onSelect: logout }]
 ])
 

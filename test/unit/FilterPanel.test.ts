@@ -19,4 +19,19 @@ describe('FilterPanel', () => {
     await wrapper.get('[data-testid="listings-filters-toggle"]').trigger('click')
     expect(wrapper.find('[data-testid="listings-facet-status"]').exists()).toBe(true)
   })
+
+  it('counts the posted range once and shows the date inputs', async () => {
+    const wrapper = await mountSuspended(FilterPanel, {
+      props: {
+        facets: { ...emptyFacets(), postedFrom: '2026-10-01', postedTo: '2026-10-07' },
+        sort: 'due',
+        search: ''
+      }
+    })
+    expect(wrapper.get('[data-testid="listings-filters-toggle"]').text()).toContain('1')
+    await wrapper.get('[data-testid="listings-filters-toggle"]').trigger('click')
+    const from = wrapper.get('[data-testid="listings-facet-postedFrom"]')
+    expect((from.element as HTMLInputElement).value).toBe('2026-10-01')
+    expect(wrapper.find('[data-testid="listings-facet-due"]').exists()).toBe(true)
+  })
 })

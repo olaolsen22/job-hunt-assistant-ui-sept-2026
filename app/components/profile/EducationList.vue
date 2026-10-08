@@ -1,0 +1,94 @@
+<script setup lang="ts">
+import type { ProfileEducation } from '~/composables/useProfile'
+
+defineProps<{ educations: readonly ProfileEducation[] }>()
+const emit = defineEmits<{ changed: [] }>()
+
+const DELETE_EDUCATION = graphql(`
+  mutation DeleteProfileEducation($input: DeleteProfileEducationInput!) {
+    deleteProfileEducation(input: $input) {
+      id
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
+const formOpen = ref(false)
+const editing = ref<ProfileEducation | null>(null)
+const deleting = ref<ProfileEducation | null>(null)
+const deleteOpen = computed({
+  get: () => !!deleting.value,
+  set: (value) => {
+    if (!value) deleting.value = null
+  }
+})
+
+const openForm = (entry: ProfileEducation | null) => {
+  editing.value = entry
+  formOpen.value = true
+}
+
+const { run, loading } = useMutation(() => emit('changed'))
+
+const remove = async () => {
+  const id = deleting.value!.id
+  const ok = await run(async () => {
+    const { deleteProfileEducation } = await gql(DELETE_EDUCATION, { input: { id } })
+    return deleteProfileEducation.errors
+  })
+  deleting.value = null
+  if (ok) emit('changed')
+}
+</script>
+
+<template>
+  <ProfileSection
+    title="Education"
+    icon="i-lucide-graduation-cap"
+    testid="profile-education"
+    :empty="!educations.length"
+    empty-message="No education yet."
+    add-label="Add education"
+    @add="openForm(null)"
+  >
+    <ul class="divide-y divide-default">
+      <ProfileEntry
+        v-for="e in educations"
+        :key="e.id"
+        kind="EDUCATION"
+        :entry-id="e.id"
+        :title="e.school"
+        :subtitle="[e.degree, e.field].filter(Boolean).join(', ')"
+        :dates="
+          [
+            formatMonthRange(e.startMonth, e.endMonth, 'Present'),
+            e.location && formatLocation(e.location)
+          ]
+            .filter(Boolean)
+            .join(' · ')
+        "
+        :bullets="e.bullets"
+        @edit="openForm(e)"
+        @delete="deleting = e"
+        @changed="emit('changed')"
+      >
+      </ProfileEntry>
+    </ul>
+  </ProfileSection>
+
+  <!-- Outside the section: its body isn't rendered while the section is empty. -->
+  <ProfileEducationModal v-model:open="formOpen" :education="editing" @changed="emit('changed')" />
+  <AppConfirmModal
+    v-model:open="deleteOpen"
+    title="Delete this education?"
+    :description="deleting ? `${deleting.school}, with its bullets.` : undefined"
+    confirm-label="Delete"
+    :loading="loading"
+    @confirm="remove"
+  />
+</template>

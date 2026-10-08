@@ -40,6 +40,16 @@ export const LANGUAGE_OPTIONS = [
 
 export const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const
 
+// Labelled, so the closed select reads on its own; the API doesn't define what each level means.
+export const SKILL_LEVELS = [1, 2, 3, 4, 5].map((n) => ({ label: `Level ${n}`, value: n }))
+
+export const LINK_KIND_OPTIONS = [
+  { label: 'GitHub', value: 'GITHUB', icon: 'i-lucide-github' },
+  { label: 'LinkedIn', value: 'LINKEDIN', icon: 'i-lucide-linkedin' },
+  { label: 'Portfolio', value: 'PORTFOLIO', icon: 'i-lucide-briefcase-business' },
+  { label: 'Other', value: 'OTHER', icon: 'i-lucide-link' }
+] as const
+
 export type Seniority = (typeof SENIORITY_OPTIONS)[number]['value']
 export type EmploymentType = (typeof EMPLOYMENT_TYPE_OPTIONS)[number]['value']
 export type Schedule = (typeof SCHEDULE_OPTIONS)[number]['value']

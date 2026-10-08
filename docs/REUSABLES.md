@@ -5,7 +5,10 @@ remove it when you delete one.
 
 ## Components (`app/components/`)
 
-- `<AppCard title?>` — `UCard` with an optional `h2` header. Default wrapper for page sections.
+- `<AppCard title?>` — `UCard` with an optional `h2` header and an `actions` slot beside it (right-aligned; the
+  header shows when either is given). Default wrapper for page sections.
+- `<AppMonthField v-model disabled?>` — month `USelect` + year `UInputNumber`; model is `'YYYY-MM-01' | null`
+  and is `null` whenever either part is empty. Used by every dated profile entry.
 - `<AppConfirmModal v-model:open title description? confirm-label? loading? disabled? @confirm>` — confirm
   dialog with Cancel / confirm buttons; not dismissible while `loading`. The default slot is the
   body, so form modals (`<ListingsApplyModal>` etc.) wrap it too.
@@ -71,6 +74,14 @@ remove it when you delete one.
   mutation and emit `changed`.
 - `<ListingsDocumentPicker v-model:document-id v-model:file label documents>` — pick an uploaded
   document or a new PDF (uploaded by the caller on submit); used twice by `<ListingsApplyModal>`.
+- `/profile` (`pages/profile.vue`, data from `useProfile()`) is built from `<Profile…>` components, which own their
+  mutations and emit `changed` (page refetches) or `saved` (Basics/Preferences return the whole profile):
+  `<ProfileSection title icon testid empty empty-message add-label @add>` (card with a centered empty state; header
+  Add when filled, `actions` slot to override), `<ProfileEntry kind entry-id title subtitle? dates? bullets>` (an
+  entry row with edit/delete + `<ProfileBullets kind entry-id bullets>`: add/edit/delete/drag-reorder, max 20),
+  `<ProfileNamesField v-model lookup?>` (name chips; combobox with `lookup`, free text without, used for hobbies), `<ProfileLocationField v-model:country-code v-model:city>` (country + city, city reset on country change), `<ProfileReferenceList>`/`<ProfileReferenceModal>` (drag-reorder via `moveProfileReference`), the four `…List` + `…Modal` pairs (Experience,
+  Education, Certification, Project), `<ProfileSkillList>`/`<ProfileSkillModal>`, `<ProfileLanguageList>` (inline
+  levels), `<ProfilePreferencesCard>` (+ target locations via `saveLocation`) and `<ProfileBasicsModal>`.
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
 - `<ListingsDates listing>` — posted and deadline lines with icons (card and detail header), posted colored by days ago, deadline
   colored by days left to the server's `dueOn` (ASAP/Not stated show `due ~date`, or "likely filled" once past).
@@ -96,6 +107,9 @@ remove it when you delete one.
   `listingParsePrompt`, `listingQuickParsePrompt` or `companyParsePrompt` and copies it + `<posting>` text
   for an external AI. `parse()` runs the built-in parser (`parseListing`, FULL, QUICK or COMPANIES by `name`) and returns
   `{ result }` (the JSON reply) or `{ error }` for the caller to show; it doesn't toast. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).
+- `useProfile()` → `{ profile, loading, error, refresh }` (key `profile`, client-only). Exports `PROFILE_FIELDS`
+  (the fragment the full-replace mutations also select), `PROFILE` and `ProfileData` / `ProfileExperience` /
+  `ProfileEducation` / `ProfileCertification` / `ProfileProject` / `ProfileSkill` / `ProfileLanguage` / `ProfileBullet`.
 - `useListingsList(grid)` → `{ listings, totalCount, counts, page, pageSize, filter, search, sort, facets, loading, error, refresh }` —
   `search` (bound to an input; starts as `?search=` from the URL, which the companies list links with) is debounced 300 ms and applies to the list and every count. `filter`
   (`'closingSoon' | 'toAnalyze' | 'archived' | null`, `ListingsFilter`) is the preset; `facets` (reactive
@@ -128,11 +142,14 @@ remove it when you delete one.
 - `formatDateTime(iso)` — formats a `DateTime` instant as `nb-NO` medium date + short time, local zone.
 - `toDateTimeLocal(value = now)` — a date/ISO string as local `YYYY-MM-DDTHH:mm` for
   `<input type="datetime-local">` (send back with `new Date(value).toISOString()`).
+- `locationInput(countryCode?, city?)` — a form's country + city as `LocationInput` (`null` without a country).
+- `formatMonth(iso)` — `YYYY-MM-DD` as `nb-NO` short month + year; `formatMonthRange(start, end, openLabel?)`
+  ("Mar 2020 – Present"; no `openLabel` shows just the start); `formatYears(months)` ("2.5 yrs", "<1 yr", "" for 0).
 - `daysFromToday(iso)` — whole days from local today to a `YYYY-MM-DD` date; negative if past.
 
 ## Constants (`app/constants/`, import explicitly)
 
 - `countries.ts` — `COUNTRY_CODES`, `COUNTRY_OPTIONS` (`{ label, value }`, sorted by English name).
 - `listing.ts` — `*_OPTIONS` for the listing enums (`APPLICATION_STATUS_OPTIONS` also carries each
-  status's badge color; `Outcome` is `OUTCOME_OPTIONS`' value type), `CEFR_LEVELS`, and their value types.
+  status's badge color; `Outcome` is `OUTCOME_OPTIONS`' value type), `CEFR_LEVELS`, `SKILL_LEVELS` (`{ label: 'Level n', value: n }`), `LINK_KIND_OPTIONS` (profile link kinds with icon), and their value types.
 - `errorMessages.ts` — `ERROR_MESSAGES` for user-facing errors.

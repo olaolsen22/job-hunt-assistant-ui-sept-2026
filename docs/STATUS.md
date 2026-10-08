@@ -1,24 +1,27 @@
 # Status
 
-Updated: 2026-10-07 · Last logged commit: 8f91c5e
+Updated: 2026-10-08 · Last logged commit: 56cb4b1
 
 ## Pages
 
 - `/` dashboard: ten widgets (closing soon, upcoming interviews, offers, stale, pipeline, applied this week, to analyze, favorited listings, favorited companies with open listings, LLM usage today) in the user's saved order, hidden ones not mounted; "Edit dashboard" (drag by grip handle, show/hide, Reset to default, Save/Cancel); `ApiHealth`; one query per widget · `/login` (auth layout, guest login)
 - `/listings` — whole view (search, sort, preset, facets, page) in the URL query via `router.replace`, so back/refresh restore it; dashboard links use `?filter=`, `?status=`, `?favorites=1`; toolbar (debounced search, sort, Filters toggle with active count, Clear all) + facet panel (status, skill,
-  location, posting/required language, favorites; closed by default at every width), presets (closing soon, to analyze,
+  location, posting/required language, posted from/to, due within, favorites; closed by default at every width), presets (closing soon, to analyze,
   archived), offset pagination
 - `/listings/add` (full form, "Analyze ad" parser modal, dismissible filled-from-ad notice) · `/listings/quick-add` (JSON batch, one aliased `createListing` per row)
 - `/listings/[id]` — Back (own row below `sm`) + Analyze ad / Edit / More (⋮: Mark analyzed with confirm, Archive/Unarchive); header (title, favorite, status/analyzed/archived badges, company, role, locations, dates, View ad), archived notice, application, timeline, interviews, documents, Details `dl`, Summary, Skills grouped Required / Nice to have
 - `/listings/[id]/edit` — Back + Analyze ad toolbar, saved title heading, form (Details, Skills, Summary) with "Save changes?" confirm; Analyze ad merges a parse into the saved listing (`?analyze` opens it); filled-from-ad notice
 - `/companies` — list (name, industry, locations, listing/application counts), debounced search, numbered pager over cursors (walks forward to jump, stops at the last page); search and page in the URL, page size like /listings (measurePageSize); rows open `/listings?search=<name>`; star toggles a company favorite
 - `/companies/add` — paste (built-in parser or copy-paste prompt) → editable preview rows (name, industry, locations) → one `createCompanies`; result cards
+- `/companies/[id]` — company page (stats, positions incl. archived, Locations card, notes, Avoid / Stop avoiding) · `/companies/[id]/edit` — name, industry, locations
+- `/profile` — one `profile` query shown as cards: header (name, headline, contact, links; Basics modal), Summary (Markdown), Preferences (+ target locations via `saveLocation`), Experience, Projects, Education, Certifications (modal add/edit, confirmed delete, inline drag-reorderable plain-text bullets), Skills (level, derived years), Languages (inline levels), References (drag-reorder), Hobbies; links have a kind, header shows date of birth / nationality / work authorization, entries have a location; sidebar + user menu link
 - `middleware/auth.global.ts` redirects to `/login` without a session
 
 ## Components (`app/components`)
 
-- `app/`: Card, ConfirmModal, MarkdownContent, MarkdownEditor
-- `companies/`: FavoriteButton
+- `app/`: Card (`actions` slot), MonthField, ConfirmModal, MarkdownContent, MarkdownEditor
+- `companies/`: FavoriteButton, AvoidedBadge, NotesModal
+- `profile/`: LocationField, ReferenceList/Modal, Section, Entry, Bullets, NamesField, BasicsModal, PreferencesCard/Modal, Experience/Education/Certification/Project List + Modal, SkillList/Modal, LanguageList
 - `dashboard/`: ApiHealth, Widget (shell), Row, ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, Editor
 - `listings/`: Card, Form, Dates (server `dueOn`), Location, LocationsField, LanguagesField, SkillsField, NameCombobox,
   FilterPanel (toolbar + facets), FilterCombobox,
@@ -28,17 +31,18 @@ Updated: 2026-10-07 · Last logged commit: 8f91c5e
 ## Stores & composables
 
 - Pinia: `stores/auth.ts`
-- Composables: useDashboardLayout, useListing, useListingForm, useLlmUsage, useListingsList (presets, facets, sort, search, page ↔ URL query; `useListingsView` last list URL; runtime-built query), useMutation, useNewNames, useParsePrompt (listing, quick, company prompts; `parse` / `parseFromUrl` return `{ result }` or `{ error }`)
-- Utils: daysFromToday, formatDate, formatDateTime, toDateTimeLocal, todayIso, daysAgoIso, localDayStartIso, graphql (`gql`)
+- Composables: useDashboardLayout, useListing, useListingForm, useLlmUsage, useListingsList (presets, facets, sort, search, page ↔ URL query; `useListingsView` last list URL; runtime-built query), useMutation, useNewNames, useProfile (`PROFILE_FIELDS`, entry types), useParsePrompt (listing, quick, company prompts; `parse` / `parseFromUrl` return `{ result }` or `{ error }`)
+- Utils: formatMonth / formatMonthRange / formatYears, daysFromToday, formatDate, formatDateTime, toDateTimeLocal, todayIso, daysAgoIso, localDayStartIso, graphql (`gql`)
 
 ## API operations in use
 
 - REST: `/api/auth/{login,guest,logout,me}`, `/api/health`, `/api/documents/…`
-- Queries: DashboardLayout, Dashboard* (ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, CompanyOpenListings), Listings (built at runtime: preset + selected facet clauses, `$order`; counts as aliases), ListingById,
+- Queries: DashboardLayout, Profile, Dashboard* (ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, CompanyOpenListings), Listings (built at runtime: preset + selected facet clauses, `$order`; counts as aliases), ListingById,
   Company/JobRole/Skill/Industry/CitySearch, Companies (cursor-paged), CompanyParsePrompt, SkillFilterSearch, LocationFilterSearch, NewNameCheck, ListingParsePrompt, ListingQuickParsePrompt
 - Mutations: CreateListing (`previousAttempts`), QuickAddListings, CreateCompanies, UpdateListing, DeleteListing, SetListingFavorite, SetCompanyFavorite, SaveDashboardLayout,
   SetListingArchived, UploadDocument, ApplyToListing, RecordOutcome (OFFER/ACCEPTED/REJECTED/WITHDRAWN),
-  UndoStatusChange (`DuplicateListingError` → link to open listing), UpdateStatusChange, Add/Update/DeleteInterview, ParseListing, ParseListingFromUrl
+  UndoStatusChange (`DuplicateListingError` → link to open listing), UpdateStatusChange, Add/Update/DeleteInterview, ParseListing, ParseListingFromUrl, SetCompanyAvoided, SetCompanyNotes, SaveLocation,
+  UpdateProfile, UpdateProfilePreferences, Add/Update/DeleteProfile{Experience,Education,Certification,Project}, Add/Update/Move/DeleteProfileBullet, Add/Update/Move/DeleteProfileReference, SetProfileSkill, RemoveProfileSkill, SetProfileLanguage, RemoveProfileLanguage
 
 ## Milestones
 
@@ -55,6 +59,7 @@ Updated: 2026-10-07 · Last logged commit: 8f91c5e
 | Analyze an existing listing (parse on edit, merged, parse from saved link)                          | Committed; live check pending                                                      |
 | Listing page UX (header, toolbar, form fields, Analyze ad tabs)                                     | Built, uncommitted; live check (mobile + desktop) pending                          |
 | List views kept in the URL (listings, companies)                                                    | Built, uncommitted; live check pending                                             |
+| Profile page (`profile-page`)                                                                       | Built, uncommitted; unit-tested, live check and `profile` query cost check pending |
 
 ## Next up
 
@@ -63,10 +68,12 @@ Updated: 2026-10-07 · Last logged commit: 8f91c5e
 - Owner: archive `listings-filters` and `rework-listings-filters-layout`
 - Owner: check Analyze / "Paste from ad" on an existing listing live, archive `analyze-existing-listing`
 - Owner: check `listing-page-ux` live at phone and desktop width (toolbar, header, form rows, clearable selects, Analyze ad tabs), commit, archive
+- Owner: check `/profile` live (all sections, phone + desktop, query cost against the real API), then `/opsx:archive profile-page`
 - Owner: check `list-view-in-url` live (filter → open listing → back / Back button; companies page 2 → row → back), commit, archive
 
 ## Decisions log
 
+- 2026-10-08 — Profile: one page and query, edits in modals; Basics/Preferences swap in the returned profile, everything else refetches. Bullets are plain text, edited inline. Months use a custom select + year field (native month input is a text box in desktop Firefox/Safari).
 - 2026-10-07 — Listing page: Edit is the only solid primary action; Analyze ad is neutral subtle, rarely used actions sit in a More menu. Optional selects use clearable `USelectMenu`; the edit save keeps its confirm.
 - 2026-10-06 — Analyzing an existing listing merges into the edit form (parsed values win, saved ones kept where the parse is empty, URL kept); saved only on "Save changes".
 - 2026-10-06 — Dashboard groups removed: with a user-chosen order they can't hold, so it is one 2-column grid (Pipeline full row). An odd gap beside Pipeline is the user's choice, not handled.

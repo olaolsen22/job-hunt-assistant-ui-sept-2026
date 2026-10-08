@@ -1,10 +1,8 @@
 <script setup lang="ts">
+import { SKILL_LEVELS } from '~/constants/listing'
 import type { ListingSkill } from '~/composables/useListingForm'
 
 const skills = defineModel<ListingSkill[]>({ required: true })
-
-// Labelled, so the closed select reads on its own; the API doesn't define what each level means.
-const SKILL_LEVELS = [1, 2, 3, 4, 5].map((n) => ({ label: `Level ${n}`, value: n }))
 
 const isNewName = useIsNewName()
 

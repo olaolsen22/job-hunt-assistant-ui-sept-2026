@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import type { ListingsFacets, ListingsSort } from '~/composables/useListingsList'
+import {
+  DUE_WITHIN_OPTIONS,
+  type ListingsFacets,
+  type ListingsSort
+} from '~/composables/useListingsList'
 import { APPLICATION_STATUS_OPTIONS, LANGUAGE_OPTIONS } from '~/constants/listing'
 
 const facets = defineModel<ListingsFacets>('facets', { required: true })
@@ -10,6 +14,12 @@ const SORT_OPTIONS = [
   { label: 'Due date', value: 'due' },
   { label: 'Newest added', value: 'newest' },
   { label: 'Recently changed', value: 'changed' }
+]
+
+// USelect can't hold null, so "Any" is a sentinel that maps back to null.
+const DUE_ITEMS = [
+  { label: 'Due: any time', value: 0 },
+  ...DUE_WITHIN_OPTIONS.map((days) => ({ label: `Due within ${days} days`, value: days }))
 ]
 
 const activeCount = computed(() => countActiveFacets(facets.value))
@@ -107,6 +117,30 @@ const open = ref(false)
         :search-input="false"
         data-testid="listings-facet-requiredLanguage"
       />
+      <USelect
+        :model-value="facets.dueWithinDays ?? 0"
+        :items="DUE_ITEMS"
+        data-testid="listings-facet-due"
+        @update:model-value="facets.dueWithinDays = $event || null"
+      />
+      <UFormField label="Posted from">
+        <UInput
+          v-model="facets.postedFrom"
+          type="date"
+          :max="facets.postedTo || undefined"
+          class="w-full"
+          data-testid="listings-facet-postedFrom"
+        />
+      </UFormField>
+      <UFormField label="Posted to">
+        <UInput
+          v-model="facets.postedTo"
+          type="date"
+          :min="facets.postedFrom || undefined"
+          class="w-full"
+          data-testid="listings-facet-postedTo"
+        />
+      </UFormField>
       <USwitch
         v-model="facets.favorites"
         label="Favorites only"

@@ -1,0 +1,98 @@
+<script setup lang="ts">
+import type { ProfileProject } from '~/composables/useProfile'
+
+defineProps<{ projects: readonly ProfileProject[] }>()
+const emit = defineEmits<{ changed: [] }>()
+
+const DELETE_PROJECT = graphql(`
+  mutation DeleteProfileProject($input: DeleteProfileProjectInput!) {
+    deleteProfileProject(input: $input) {
+      id
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
+const formOpen = ref(false)
+const editing = ref<ProfileProject | null>(null)
+const deleting = ref<ProfileProject | null>(null)
+const deleteOpen = computed({
+  get: () => !!deleting.value,
+  set: (value) => {
+    if (!value) deleting.value = null
+  }
+})
+
+const openForm = (entry: ProfileProject | null) => {
+  editing.value = entry
+  formOpen.value = true
+}
+
+const { run, loading } = useMutation(() => emit('changed'))
+
+const remove = async () => {
+  const id = deleting.value!.id
+  const ok = await run(async () => {
+    const { deleteProfileProject } = await gql(DELETE_PROJECT, { input: { id } })
+    return deleteProfileProject.errors
+  })
+  deleting.value = null
+  if (ok) emit('changed')
+}
+</script>
+
+<template>
+  <ProfileSection
+    title="Projects"
+    icon="i-lucide-folder-git-2"
+    testid="profile-projects"
+    :empty="!projects.length"
+    empty-message="No projects yet."
+    add-label="Add project"
+    @add="openForm(null)"
+  >
+    <ul class="divide-y divide-default">
+      <ProfileEntry
+        v-for="e in projects"
+        :key="e.id"
+        kind="PROJECT"
+        :entry-id="e.id"
+        :title="e.name"
+        :dates="
+          [formatMonthRange(e.startMonth, e.endMonth), e.location && formatLocation(e.location)]
+            .filter(Boolean)
+            .join(' · ')
+        "
+        :bullets="e.bullets"
+        @edit="openForm(e)"
+        @delete="deleting = e"
+        @changed="emit('changed')"
+      >
+        <p v-if="e.url" class="text-sm">
+          <ULink :to="e.url" target="_blank" class="break-all text-primary">{{ e.url }}</ULink>
+        </p>
+        <div v-if="e.skills.length" class="mt-1 flex flex-wrap gap-1">
+          <UBadge v-for="s in e.skills" :key="s.id" color="neutral" variant="subtle" size="sm">{{
+            s.name
+          }}</UBadge>
+        </div>
+      </ProfileEntry>
+    </ul>
+  </ProfileSection>
+
+  <!-- Outside the section: its body isn't rendered while the section is empty. -->
+  <ProfileProjectModal v-model:open="formOpen" :project="editing" @changed="emit('changed')" />
+  <AppConfirmModal
+    v-model:open="deleteOpen"
+    title="Delete this project?"
+    :description="deleting ? `${deleting.name}, with its bullets.` : undefined"
+    confirm-label="Delete"
+    :loading="loading"
+    @confirm="remove"
+  />
+</template>

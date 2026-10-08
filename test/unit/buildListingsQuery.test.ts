@@ -31,3 +31,33 @@ describe('buildListingsQuery', () => {
     )
   })
 })
+
+describe('date facets', () => {
+  it('filters on the posted range and keeps the expiry clause', () => {
+    const { text, variables } = build({ postedFrom: '2026-10-01', postedTo: '2026-10-07' })
+    expect(text).toContain('postedOn: {gte: $postedFrom, lte: $postedTo}')
+    expect(text).toContain('$today')
+    expect(variables).toMatchObject({ postedFrom: '2026-10-01', postedTo: '2026-10-07' })
+  })
+
+  it('sends only the posted end that is set', () => {
+    const { text, variables } = build({ postedFrom: '2026-10-01' })
+    expect(text).toContain('postedOn: {gte: $postedFrom}')
+    expect(variables).not.toHaveProperty('postedTo')
+  })
+
+  it('adds dueWithinDays to the list and the counts, narrowing closing soon', () => {
+    const { text } = build({ dueWithinDays: 3 })
+    expect(text).toContain('closingSoon: listings(take: 1, search: $search, dueWithinDays: 3')
+    expect(text.match(/dueWithinDays: 3/g)).toHaveLength(4)
+    expect(build({ dueWithinDays: 14 }).text).toContain(
+      'closingSoon: listings(take: 1, search: $search, dueWithinDays: 7'
+    )
+  })
+
+  it('leaves both out when unset', () => {
+    const { text } = build({})
+    expect(text).not.toContain('postedOn: {')
+    expect(text.match(/dueWithinDays/g)).toHaveLength(1)
+  })
+})
