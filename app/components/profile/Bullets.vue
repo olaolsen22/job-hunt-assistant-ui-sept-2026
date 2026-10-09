@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { VueDraggable } from 'vue-draggable-plus'
-import type { ProfileBullet } from '~/composables/useProfile'
+import { BULLET_FIELDS, type ProfileBullet } from '~/composables/useProfile'
 
 const props = defineProps<{
   kind: 'EXPERIENCE' | 'EDUCATION' | 'CERTIFICATION' | 'PROJECT'
@@ -10,6 +10,8 @@ const props = defineProps<{
 const emit = defineEmits<{ changed: [] }>()
 
 const MAX_BULLETS = 20
+
+const { translating } = useProfileTranslation()
 
 const ADD_BULLET = graphql(`
   mutation AddProfileBullet($input: AddProfileBulletInput!) {
@@ -43,23 +45,24 @@ const UPDATE_BULLET = graphql(`
   }
 `)
 
-const MOVE_BULLET = graphql(`
-  mutation MoveProfileBullet($input: MoveProfileBulletInput!) {
-    moveProfileBullet(input: $input) {
-      bullets {
-        id
-        text
-        position
-      }
-      errors {
-        __typename
-        ... on Error {
-          message
+const MOVE_BULLET = graphql(
+  `
+    mutation MoveProfileBullet($input: MoveProfileBulletInput!) {
+      moveProfileBullet(input: $input) {
+        bullets {
+          ...BulletFields
+        }
+        errors {
+          __typename
+          ... on Error {
+            message
+          }
         }
       }
     }
-  }
-`)
+  `,
+  [BULLET_FIELDS]
+)
 
 const DELETE_BULLET = graphql(`
   mutation DeleteProfileBullet($input: DeleteProfileBulletInput!) {
@@ -145,99 +148,109 @@ const move = async ({ oldIndex, newIndex }: { oldIndex?: number; newIndex?: numb
 
 <template>
   <div class="mt-2 space-y-1" data-testid="profile-bullets">
-    <VueDraggable
-      v-model="items"
-      tag="ul"
-      handle=".drag-handle"
-      ghost-class="opacity-50"
-      :animation="150"
-      :disabled="loading || editingId !== undefined"
-      class="space-y-1"
-      @update="move"
-    >
-      <li
-        v-for="b in items"
-        :key="b.id"
-        class="flex items-start gap-1"
-        data-testid="profile-bullet"
-      >
-        <UButton
-          icon="i-lucide-grip-vertical"
-          color="neutral"
-          variant="ghost"
-          size="xs"
-          :aria-label="`Drag ${b.text} to reorder`"
-          class="drag-handle shrink-0 cursor-grab touch-none"
-        />
-        <form
-          v-if="editingId === b.id"
-          class="flex min-w-0 flex-1 items-center gap-1"
-          @submit.prevent="saveEdit"
-        >
-          <UInput
-            v-model="editText"
-            size="sm"
-            aria-label="Bullet text"
-            class="min-w-0 flex-1"
-            data-testid="profile-bullet-input"
-          />
-          <UButton
-            type="submit"
-            size="xs"
-            :loading="loading"
-            :disabled="!editText.trim()"
-            data-testid="profile-bullet-save"
-            >Save</UButton
-          >
-          <UButton size="xs" color="neutral" variant="ghost" @click="editingId = undefined"
-            >Cancel</UButton
-          >
-        </form>
-        <template v-else>
-          <span class="min-w-0 flex-1 break-words py-0.5 text-sm">{{ b.text }}</span>
-          <UButton
-            icon="i-lucide-pencil"
-            color="neutral"
-            variant="ghost"
-            size="xs"
-            :aria-label="`Edit ${b.text}`"
-            data-testid="profile-bullet-edit"
-            @click="startEdit(b)"
-          />
-          <UButton
-            icon="i-lucide-trash-2"
-            color="neutral"
-            variant="ghost"
-            size="xs"
-            :aria-label="`Delete ${b.text}`"
-            :disabled="loading"
-            @click="remove(b)"
-          />
-        </template>
+    <!-- Translating: the original is read-only, so no drag, edit or delete next to the translation. -->
+    <ul v-if="translating" class="space-y-2">
+      <li v-for="b in bullets" :key="b.id" data-testid="profile-bullet">
+        <span class="block break-words text-sm">{{ b.text }}</span>
+        <ProfileBulletTranslation :bullet="b" @changed="emit('changed')" />
       </li>
-    </VueDraggable>
+    </ul>
 
-    <form class="flex items-center gap-1" @submit.prevent="add">
-      <UInput
-        v-model="newText"
-        size="sm"
-        placeholder="Add a bullet"
-        aria-label="New bullet"
-        :disabled="items.length >= MAX_BULLETS"
-        class="min-w-0 flex-1"
-        data-testid="profile-bullet-new"
-      />
-      <UButton
-        type="submit"
-        icon="i-lucide-plus"
-        size="sm"
-        color="neutral"
-        variant="subtle"
-        :loading="loading"
-        :disabled="items.length >= MAX_BULLETS || !newText.trim()"
-        aria-label="Add bullet"
-        data-testid="profile-bullet-add"
-      />
-    </form>
+    <template v-else>
+      <VueDraggable
+        v-model="items"
+        tag="ul"
+        handle=".drag-handle"
+        ghost-class="opacity-50"
+        :animation="150"
+        :disabled="loading || editingId !== undefined"
+        class="space-y-1"
+        @update="move"
+      >
+        <li
+          v-for="b in items"
+          :key="b.id"
+          class="flex items-start gap-1"
+          data-testid="profile-bullet"
+        >
+          <UButton
+            icon="i-lucide-grip-vertical"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            :aria-label="`Drag ${b.text} to reorder`"
+            class="drag-handle shrink-0 cursor-grab touch-none"
+          />
+          <form
+            v-if="editingId === b.id"
+            class="flex min-w-0 flex-1 items-center gap-1"
+            @submit.prevent="saveEdit"
+          >
+            <UInput
+              v-model="editText"
+              size="sm"
+              aria-label="Bullet text"
+              class="min-w-0 flex-1"
+              data-testid="profile-bullet-input"
+            />
+            <UButton
+              type="submit"
+              size="xs"
+              :loading="loading"
+              :disabled="!editText.trim()"
+              data-testid="profile-bullet-save"
+              >Save</UButton
+            >
+            <UButton size="xs" color="neutral" variant="ghost" @click="editingId = undefined"
+              >Cancel</UButton
+            >
+          </form>
+          <template v-else>
+            <span class="min-w-0 flex-1 break-words py-0.5 text-sm">{{ b.text }}</span>
+            <UButton
+              icon="i-lucide-pencil"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              :aria-label="`Edit ${b.text}`"
+              data-testid="profile-bullet-edit"
+              @click="startEdit(b)"
+            />
+            <UButton
+              icon="i-lucide-trash-2"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              :aria-label="`Delete ${b.text}`"
+              :disabled="loading"
+              @click="remove(b)"
+            />
+          </template>
+        </li>
+      </VueDraggable>
+
+      <form class="flex items-center gap-1" @submit.prevent="add">
+        <UInput
+          v-model="newText"
+          size="sm"
+          placeholder="Add a bullet"
+          aria-label="New bullet"
+          :disabled="items.length >= MAX_BULLETS"
+          class="min-w-0 flex-1"
+          data-testid="profile-bullet-new"
+        />
+        <UButton
+          type="submit"
+          icon="i-lucide-plus"
+          size="sm"
+          color="neutral"
+          variant="subtle"
+          :loading="loading"
+          :disabled="items.length >= MAX_BULLETS || !newText.trim()"
+          aria-label="Add bullet"
+          data-testid="profile-bullet-add"
+        />
+      </form>
+    </template>
   </div>
 </template>

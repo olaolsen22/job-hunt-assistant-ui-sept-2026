@@ -13,6 +13,8 @@ registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', r
 
 const emptyProfile = {
   id: 1,
+  contentLanguage: 'NORWEGIAN',
+  translations: [] as Record<string, unknown>[],
   fullName: null,
   headline: null,
   summary: null,
@@ -40,7 +42,12 @@ const emptyProfile = {
   languages: []
 }
 
-const bullet = (id: number, text: string, position: number) => ({ id, text, position })
+const bullet = (id: number, text: string, position: number) => ({
+  id,
+  text,
+  position,
+  translations: [] as Record<string, unknown>[]
+})
 
 const filledProfile = {
   ...emptyProfile,
@@ -626,6 +633,201 @@ describe('ProfilePage references, hobbies and links', () => {
         email: null,
         phone: null,
         note: null
+      })
+    )
+    wrapper.unmount()
+  })
+})
+
+describe('ProfilePage translations', () => {
+  const tr = (over: Record<string, unknown> = {}) => ({
+    id: 900,
+    language: 'ENGLISH',
+    text: 'Led a team',
+    sourceText: 'Ledet et team',
+    isMachine: false,
+    isStale: false,
+    ...over
+  })
+  const withTranslation = (translation?: Record<string, unknown>) => ({
+    ...filledProfile,
+    contentLanguage: 'NORWEGIAN',
+    experiences: [
+      {
+        ...filledProfile.experiences[0]!,
+        bullets: [
+          { ...bullet(100, 'Ledet et team', 0), translations: translation ? [translation] : [] }
+        ]
+      }
+    ]
+  })
+  const bulletTr = '[data-testid="profile-bullet-translation"]'
+
+  const startTranslating = async (wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']) => {
+    await wrapper.get('[data-testid="profile-translate-toggle"]').trigger('click')
+    await flushPromises()
+  }
+
+  it('adds a bullet translation in the language that is not the content language', async () => {
+    const { wrapper, requests } = await mountPage(withTranslation(), (body) =>
+      body.query.includes('setProfileBulletTranslation(')
+        ? { setProfileBulletTranslation: { profileBulletTranslation: { id: 1 }, errors: null } }
+        : undefined
+    )
+    await startTranslating(wrapper)
+
+    await wrapper.get('[data-testid="profile-bullet-translation-add"]').trigger('click')
+    setInputIn(wrapper, '[data-testid="profile-bullet-translation-input"]', ' Led a team ')
+    await flushPromises()
+    await wrapper.get(`${bulletTr} form`).trigger('submit')
+
+    await vi.waitFor(() =>
+      expect(
+        requests.find((r) => r.query.includes('setProfileBulletTranslation('))!.variables.input
+      ).toEqual({ bulletId: 100, language: 'ENGLISH', text: 'Led a team', isMachine: false })
+    )
+    wrapper.unmount()
+  })
+
+  it('shows stale and machine badges only when flagged', async () => {
+    const { wrapper } = await mountPage(withTranslation(tr()))
+    await startTranslating(wrapper)
+    expect(wrapper.find('[data-testid="profile-bullet-translation-stale"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="profile-bullet-translation-machine"]').exists()).toBe(false)
+    wrapper.unmount()
+
+    const flagged = await mountPage(withTranslation(tr({ isStale: true, isMachine: true })))
+    await startTranslating(flagged.wrapper)
+    expect(flagged.wrapper.find('[data-testid="profile-bullet-translation-stale"]').exists()).toBe(
+      true
+    )
+    expect(
+      flagged.wrapper.find('[data-testid="profile-bullet-translation-machine"]').exists()
+    ).toBe(true)
+    await flagged.wrapper.get('[data-testid="profile-bullet-translation-changes"]').trigger('click')
+    expect(flagged.wrapper.get('[data-testid="profile-bullet-translation-diff"]').text()).toContain(
+      'Ledet et team'
+    )
+    flagged.wrapper.unmount()
+  })
+
+  it('keeps the draft when the API rejects the translation', async () => {
+    const { wrapper, requests } = await mountPage(withTranslation(), (body) =>
+      body.query.includes('setProfileBulletTranslation(')
+        ? {
+            setProfileBulletTranslation: {
+              profileBulletTranslation: null,
+              errors: [{ __typename: 'InvalidProfileError', message: 'Too long' }]
+            }
+          }
+        : undefined
+    )
+    await startTranslating(wrapper)
+    await wrapper.get('[data-testid="profile-bullet-translation-add"]').trigger('click')
+    setInputIn(wrapper, '[data-testid="profile-bullet-translation-input"]', 'Led')
+    await flushPromises()
+    await wrapper.get(`${bulletTr} form`).trigger('submit')
+    await flushPromises()
+
+    expect(
+      (wrapper.get('[data-testid="profile-bullet-translation-input"]').element as HTMLInputElement)
+        .value
+    ).toBe('Led')
+    expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('refetches when a translation no longer exists', async () => {
+    const { wrapper, requests } = await mountPage(withTranslation(tr()), (body) =>
+      body.query.includes('deleteProfileBulletTranslation(')
+        ? {
+            deleteProfileBulletTranslation: {
+              id: null,
+              errors: [{ __typename: 'ProfileEntryNotFoundError', message: 'Gone' }]
+            }
+          }
+        : undefined
+    )
+    await startTranslating(wrapper)
+    await wrapper.get('[data-testid="profile-bullet-translation-delete"]').trigger('click')
+
+    await vi.waitFor(() =>
+      expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(2)
+    )
+    expect(
+      requests.find((r) => r.query.includes('deleteProfileBulletTranslation('))!.variables.input
+    ).toEqual({ id: 900 })
+    wrapper.unmount()
+  })
+
+  it('disables the content language once a translation exists', async () => {
+    const { wrapper } = await mountPage(withTranslation(tr()))
+    expect(wrapper.getComponent(USelect).props('disabled')).toBe(true)
+    expect(wrapper.get('[data-testid="profile-content-language-hint"]').text()).toContain(
+      'Delete all translations'
+    )
+    wrapper.unmount()
+  })
+
+  it('changes the content language and refetches', async () => {
+    const { wrapper, requests } = await mountPage(withTranslation(), (body) =>
+      body.query.includes('setProfileContentLanguage(')
+        ? { setProfileContentLanguage: { profile: { contentLanguage: 'ENGLISH' }, errors: null } }
+        : undefined
+    )
+    const select = wrapper.get('[data-testid="profile-content-language"]')
+    expect(wrapper.getComponent(USelect).props('disabled')).toBe(false)
+    wrapper.getComponent(USelect).vm.$emit('update:modelValue', 'ENGLISH')
+
+    await vi.waitFor(() =>
+      expect(
+        requests.find((r) => r.query.includes('setProfileContentLanguage('))!.variables.input
+      ).toEqual({ language: 'ENGLISH' })
+    )
+    await vi.waitFor(() =>
+      expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(2)
+    )
+    expect(select.exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('sends both headline and summary when only one was edited', async () => {
+    const profile = {
+      ...withTranslation(),
+      translations: [
+        {
+          id: 1,
+          language: 'ENGLISH',
+          headline: 'Engineer EN',
+          summary: 'Summary EN',
+          sourceHeadline: 'Engineer',
+          sourceSummary: 'Writes **code**',
+          isMachine: false,
+          isHeadlineStale: false,
+          isSummaryStale: false
+        }
+      ]
+    }
+    const { wrapper, requests } = await mountPage(profile, (body) =>
+      body.query.includes('setProfileTranslation(')
+        ? { setProfileTranslation: { profileTranslation: { id: 1 }, errors: null } }
+        : undefined
+    )
+    await startTranslating(wrapper)
+    await wrapper.get('[data-testid="profile-translation-edit"]').trigger('click')
+    await flushPromises()
+    setInput('profile-translation-headline-input', 'Engineer II')
+    await flushPromises()
+    clickConfirm()
+
+    await vi.waitFor(() =>
+      expect(
+        requests.find((r) => r.query.includes('setProfileTranslation('))!.variables.input
+      ).toEqual({
+        language: 'ENGLISH',
+        headline: 'Engineer II',
+        summary: 'Summary EN',
+        isMachine: false
       })
     )
     wrapper.unmount()

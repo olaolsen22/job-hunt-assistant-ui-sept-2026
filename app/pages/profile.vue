@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LINK_KIND_OPTIONS } from '~/constants/listing'
+import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 import type { ProfileData } from '~/composables/useProfile'
 
 definePageMeta({ title: 'Profile' })
@@ -8,6 +9,61 @@ definePageMeta({ title: 'Profile' })
 const { profile, loading, error, refresh } = useProfile()
 
 const basicsOpen = ref(false)
+
+const SET_CONTENT_LANGUAGE = graphql(`
+  mutation SetProfileContentLanguage($input: SetProfileContentLanguageInput!) {
+    setProfileContentLanguage(input: $input) {
+      profile {
+        contentLanguage
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
+// The translation is always in the language the profile isn't written in.
+const translating = ref(false)
+const target = computed<Language>(() =>
+  profile.value?.contentLanguage === 'ENGLISH' ? 'NORWEGIAN' : 'ENGLISH'
+)
+provideProfileTranslation({ translating, target })
+const targetLabel = computed(() => LANGUAGE_OPTIONS.find((o) => o.value === target.value)!.label)
+
+const bulletsOf = (p: ProfileData) => [
+  ...p.experiences.flatMap((e) => e.bullets),
+  ...p.educations.flatMap((e) => e.bullets),
+  ...p.certifications.flatMap((e) => e.bullets),
+  ...p.projects.flatMap((e) => e.bullets)
+]
+const hasTranslations = computed(
+  () =>
+    !!profile.value &&
+    (profile.value.translations.length > 0 ||
+      bulletsOf(profile.value).some((b) => b.translations.length > 0))
+)
+const staleCount = computed(() => {
+  const p = profile.value
+  if (!p) return 0
+  return (
+    p.translations.filter((t) => t.isHeadlineStale || t.isSummaryStale).length +
+    bulletsOf(p).filter((b) => b.translations.some((t) => t.isStale)).length
+  )
+})
+
+const { run: runLanguage, loading: languageLoading } = useMutation(() => refresh())
+const changeContentLanguage = async (language: Language) => {
+  const ok = await runLanguage(async () => {
+    const { setProfileContentLanguage } = await gql(SET_CONTENT_LANGUAGE, { input: { language } })
+    return setProfileContentLanguage.errors
+  })
+  // Text may now be read in the other language, so refetch rather than patch.
+  if (ok) await refresh()
+}
 
 const kindOf = (kind: string) => LINK_KIND_OPTIONS.find((o) => o.value === kind)!
 
@@ -79,6 +135,36 @@ const contact = computed(() => {
             >
           </div>
 
+          <div class="flex flex-wrap items-center gap-2" data-testid="profile-translation-controls">
+            <USelect
+              :model-value="profile.contentLanguage"
+              :items="[...LANGUAGE_OPTIONS]"
+              :disabled="hasTranslations || languageLoading"
+              aria-label="Content language"
+              size="sm"
+              class="w-36"
+              data-testid="profile-content-language"
+              @update:model-value="changeContentLanguage"
+            />
+            <span
+              v-if="hasTranslations"
+              class="text-sm text-muted"
+              data-testid="profile-content-language-hint"
+              >Delete all translations before changing the content language.</span
+            >
+            <UChip :show="!translating && staleCount > 0" color="warning" inset>
+              <UButton
+                icon="i-lucide-languages"
+                color="neutral"
+                :variant="translating ? 'solid' : 'subtle'"
+                size="sm"
+                data-testid="profile-translate-toggle"
+                @click="translating = !translating"
+                >{{ translating ? 'Done translating' : `Translate to ${targetLabel}` }}</UButton
+              >
+            </UChip>
+          </div>
+
           <ul v-if="contact.length" class="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <li
               v-for="row in contact"
@@ -130,6 +216,12 @@ const contact = computed(() => {
                 />
               </template>
               <LazyAppMarkdownContent v-if="profile.summary" :source="profile.summary" />
+              <ProfileTranslationBlock
+                v-if="translating"
+                :profile="profile"
+                class="mt-3"
+                @changed="refresh"
+              />
             </ProfileSection>
 
             <ProfileExperienceList :experiences="profile.experiences" @changed="refresh" />
