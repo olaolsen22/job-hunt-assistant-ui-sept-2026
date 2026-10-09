@@ -135,7 +135,7 @@ const onConfirm = async () => {
           class="self-start"
           data-testid="parse-open"
           @click="parseOpen = true"
-          >Analyze ad</UButton
+          >{{ listing?.analyzedAt ? 'Re-analyze ad' : 'Analyze ad' }}</UButton
         >
       </div>
 

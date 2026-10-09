@@ -152,7 +152,7 @@ const skillsByRequirement = computed(() => {
             color="neutral"
             variant="subtle"
             data-testid="listing-analyze"
-            >Analyze ad</UButton
+            >{{ listing.analyzedAt ? 'Re-analyze ad' : 'Analyze ad' }}</UButton
           >
           <UButton :to="`/listings/${listing.id}/edit`" icon="i-lucide-pencil">Edit</UButton>
           <UDropdownMenu :items="moreItems" :content="{ align: 'end' }">
@@ -339,28 +339,44 @@ const skillsByRequirement = computed(() => {
             </AppCard>
           </div>
 
-          <AppCard title="Skills">
-            <p v-if="!listing.skills.length" class="text-sm text-muted">No skills listed</p>
-            <div v-else class="space-y-4">
-              <div v-for="group in skillsByRequirement" :key="group.title" class="space-y-1">
-                <p class="text-xs font-medium uppercase text-muted">{{ group.title }}</p>
-                <div class="divide-y divide-default">
-                  <div
-                    v-for="(skill, i) in group.skills"
-                    :key="i"
-                    class="flex items-center justify-between gap-2 py-2"
-                  >
-                    <span class="min-w-0 truncate font-medium">{{ skill.skill.name }}</span>
-                    <span class="shrink-0 text-sm text-muted">
-                      Level {{ skill.level }}/5<template v-if="skill.minYears">
-                        · {{ skill.minYears }}+ yrs</template
-                      >
-                    </span>
+          <div class="space-y-4 sm:space-y-6">
+            <AppCard title="Skills">
+              <p v-if="!listing.skills.length" class="text-sm text-muted">No skills listed</p>
+              <div v-else class="space-y-4">
+                <div v-for="group in skillsByRequirement" :key="group.title" class="space-y-1">
+                  <p class="text-xs font-medium uppercase text-muted">{{ group.title }}</p>
+                  <div class="divide-y divide-default">
+                    <div
+                      v-for="(skill, i) in group.skills"
+                      :key="i"
+                      class="flex items-center justify-between gap-2 py-2"
+                    >
+                      <span class="min-w-0 truncate font-medium">{{ skill.skill.name }}</span>
+                      <span class="shrink-0 text-sm text-muted">
+                        Level {{ skill.level }}/5<template v-if="skill.minYears">
+                          · {{ skill.minYears }}+ yrs</template
+                        >
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </AppCard>
+            </AppCard>
+
+            <AppCard v-if="listing.contacts.length" title="Contacts">
+              <template #actions>
+                <UButton
+                  :to="`/companies/${listing.company.id}`"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  trailing-icon="i-lucide-arrow-right"
+                  >Manage</UButton
+                >
+              </template>
+              <CompaniesContactList :contacts="listing.contacts.map(({ contact }) => contact)" />
+            </AppCard>
+          </div>
         </div>
 
         <AppConfirmModal
