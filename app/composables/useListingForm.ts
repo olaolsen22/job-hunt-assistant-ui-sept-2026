@@ -31,6 +31,14 @@ export interface ListingLanguage {
   isRequired: boolean
 }
 
+export interface ListingContact {
+  name: string
+  title: string | null
+  email: string | null
+  phone: string | null
+  url: string | null
+}
+
 export interface ListingSkill {
   name: string
   level: number
@@ -76,6 +84,19 @@ const cleanDraft = (d: Record<string, unknown>) => {
       level: oneOf(CEFR_LEVELS, l.level),
       isRequired: l.isRequired !== false
     }))
+  // Matched by name in the company on save, so one row per name.
+  const contacts: ListingContact[] = list(d.contacts)
+    .map((c) => ({
+      name: text(c?.name),
+      title: text(c?.title) || null,
+      email: text(c?.email) || null,
+      phone: text(c?.phone) || null,
+      url: text(c?.url) || null
+    }))
+    .filter(
+      (c, i, all) =>
+        c.name && all.findIndex((x) => x.name.toLowerCase() === c.name.toLowerCase()) === i
+    )
   return {
     title: text(d.title),
     companyName: text(d.companyName) || undefined,
@@ -96,7 +117,8 @@ const cleanDraft = (d: Record<string, unknown>) => {
       .filter((l) => oneOf(COUNTRY_CODES, l?.countryCode))
       .map((l) => ({ countryCode: l.countryCode, city: text(l.city) })),
     languages,
-    skills
+    skills,
+    contacts
   }
 }
 
@@ -123,6 +145,7 @@ export const useListingForm = () => {
     locations: [{ countryCode: 'NO', city: '' }] as ListingLocation[],
     languages: [] as ListingLanguage[],
     skills: [] as ListingSkill[],
+    contacts: [] as ListingContact[],
     isAnalyzed: false
   })
 
@@ -166,7 +189,17 @@ export const useListingForm = () => {
     languages: state.languages.map((l) => ({ ...l, level: l.level ?? null })),
     skills: state.skills.map((s) => ({ ...s, minYears: s.minYears ?? null })),
     // updateListing replaces the whole listing, so leaving this out would clear the marker.
-    isAnalyzed: state.isAnalyzed
+    isAnalyzed: state.isAnalyzed,
+    // Always sent, so a removed row unlinks that contact. Blank rows are dropped.
+    contacts: state.contacts
+      .filter((c) => c.name.trim())
+      .map((c) => ({
+        name: c.name.trim(),
+        title: orNull(c.title ?? ''),
+        email: orNull(c.email ?? ''),
+        phone: orNull(c.phone ?? ''),
+        url: orNull(c.url ?? '')
+      }))
   })
 
   // Inverse of toInput: the API's nulls become the form's empty values.
@@ -191,19 +224,36 @@ export const useListingForm = () => {
       })),
       languages: listing.languages.map((l) => ({ ...l, level: l.level ?? undefined })),
       skills: listing.skills.map(({ skill, ...rest }) => ({ ...rest, name: skill.name })),
-      isAnalyzed: listing.analyzedAt != null
+      isAnalyzed: listing.analyzedAt != null,
+      contacts: listing.contacts.map(({ contact: { name, title, email, phone, url } }) => ({
+        name,
+        title,
+        email,
+        phone,
+        url
+      }))
     })
 
   // A parsed ad has its details filled in, which is what "analyzed" means.
   const fillDraft = (d: Record<string, unknown>) => {
     const draft = cleanDraft(d)
-    Object.assign(state, { ...draft, postedOn: draft.postedOn || todayIso(), isAnalyzed: true })
+    Object.assign(state, {
+      ...draft,
+      postedOn: draft.postedOn || todayIso(),
+      isAnalyzed: true
+    })
   }
 
   // For an existing listing: parsed values win, saved ones stay where the parse found nothing.
+  // Contacts are added rather than replaced, since the user may have linked some by hand.
   const mergeDraft = (d: Record<string, unknown>) => {
-    const found = Object.entries(cleanDraft(d)).filter(([, v]) => !isBlank(v))
-    Object.assign(state, Object.fromEntries(found), { isAnalyzed: true })
+    const { contacts, ...draft } = cleanDraft(d)
+    const found = Object.entries(draft).filter(([, v]) => !isBlank(v))
+    const known = new Set(state.contacts.map((c) => c.name.trim().toLowerCase()))
+    Object.assign(state, Object.fromEntries(found), {
+      contacts: [...state.contacts, ...contacts.filter((c) => !known.has(c.name.toLowerCase()))],
+      isAnalyzed: true
+    })
   }
 
   return { state, validate, toInput, fill, fillDraft, mergeDraft }

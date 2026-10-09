@@ -1,74 +1,82 @@
 import type { ResultOf } from 'gql.tada'
 
-const LISTING = graphql(`
-  query ListingById($id: Int!) {
-    listingById(id: $id) {
-      id
-      title
-      company {
-        id
-        name
-        applicationCount
-        avoidedAt
-      }
-      jobRole {
-        name
-      }
-      seniority
-      employmentType
-      schedule
-      workMode
-      description
-      url
-      postedOn
-      deadlineType
-      deadlineOn
-      dueOn
-      postingLanguage
-      favoritedAt
-      analyzedAt
-      archivedAt
-      status
-      statusHistory(order: { id: ASC }) {
-        id
-        status
-        occurredAt
-        note
-      }
-      interviews(order: { scheduledAt: ASC }) {
+const LISTING = graphql(
+  `
+    query ListingById($id: Int!) {
+      listingById(id: $id) {
         id
         title
-        scheduledAt
-        notes
-      }
-      documents {
-        id
-        kind
-        fileName
-        sentAt
-      }
-      locations {
-        location {
-          city
-          countryCode
+        company {
+          id
+          name
+          applicationCount
+          avoidedAt
         }
-      }
-      languages {
-        language
-        level
-        isRequired
-      }
-      skills {
-        skill {
+        jobRole {
           name
         }
-        level
-        minYears
-        isRequired
+        seniority
+        employmentType
+        schedule
+        workMode
+        description
+        url
+        postedOn
+        deadlineType
+        deadlineOn
+        dueOn
+        postingLanguage
+        favoritedAt
+        analyzedAt
+        archivedAt
+        status
+        statusHistory(order: { id: ASC }) {
+          id
+          status
+          occurredAt
+          note
+        }
+        interviews(order: { scheduledAt: ASC }) {
+          id
+          title
+          scheduledAt
+          notes
+        }
+        documents {
+          id
+          kind
+          fileName
+          sentAt
+        }
+        locations {
+          location {
+            city
+            countryCode
+          }
+        }
+        languages {
+          language
+          level
+          isRequired
+        }
+        skills {
+          skill {
+            name
+          }
+          level
+          minYears
+          isRequired
+        }
+        contacts {
+          contact {
+            ...ContactFields
+          }
+        }
       }
     }
-  }
-`)
+  `,
+  [CONTACT_FIELDS]
+)
 
 export type ListingDetail = NonNullable<ResultOf<typeof LISTING>['listingById']>
 

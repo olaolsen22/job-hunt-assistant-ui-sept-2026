@@ -30,6 +30,9 @@ remove it when you delete one.
 - `<CompaniesFavoriteButton id favoritedAt size?>` — star toggle for a company; same optimistic behavior as the listing one.
 - `<CompaniesAvoidedBadge label?>` — warning badge for an avoided company; "Avoided" on company surfaces, `label="Avoided company"` on listing ones.
 - `<CompaniesNotesModal v-model:open companyId notes @saved>` — edits a company's Markdown notes; shows the API error inline.
+- `<CompaniesContactList contacts editable? @edit @delete>` — contact rows (title, mailto/tel/link buttons, Markdown notes); edit/delete only when `editable`. Used on the company and listing pages.
+- `<ListingsContactsField v-model>` — listing form rows for linked contacts (name, title, email, phone, link).
+- `<CompaniesContactModal v-model:open companyId contact @changed>` — add (`contact: null`) or replace a contact via `addContact`/`updateContact`; API errors as toasts.
   Uses `@click.prevent.stop`, so it can sit inside a link row.
 - `<ListingsNameCombobox v-model lookup placeholder? countryCode? clear?>` — debounced search over
   `companies` / `jobRoles` / `skills` / `industries` by name, or `locations` by city within `countryCode`;
@@ -38,7 +41,7 @@ remove it when you delete one.
 - `<ListingsForm v-model :validate submit-label cancel-to @submit>` — the listing form's fields
   and Cancel/submit buttons, shared by add and edit. `v-model` is `useListingForm().state`; the
   default slot renders above the buttons (error alert). The page owns mutation, confirm, errors.
-- `<ListingsParseModal v-model:open listingId?>` — "Analyze ad" modal with tabs: From link (only with `listingId`;
+- `<ListingsParseModal v-model:open listingId? url? @apply(draft, url?)>` — "Analyze ad" modal with tabs: From link (only with `listingId`;
   the API reads the saved URL), Paste ad (built-in `parseListing`, error shown in the tab) and Use your own AI (copy the
   `listingParsePrompt` + ad, paste the JSON back). The ad text is shared between the last two. Emits `apply` with the
   parsed object (feed it to `fillDraft` or `mergeDraft`); can't be closed while parsing.
@@ -72,7 +75,7 @@ remove it when you delete one.
 - `<ListingsApplyModal>`, `<ListingsOutcomeModal>`, `<ListingsStatusChangeModal>`,
   `<ListingsInterviewModal>` — `v-model:open` form modals (on `<AppConfirmModal>`) that own their
   mutation and emit `changed`.
-- `<ListingsDocumentPicker v-model:document-id v-model:file label documents>` — pick an uploaded
+- `<ListingsDocumentPicker v-model:document-id v-model:file label documents required? help?>` — pick an uploaded
   document or a new PDF (uploaded by the caller on submit); used twice by `<ListingsApplyModal>`.
 - `/profile` (`pages/profile.vue`, data from `useProfile()`) is built from `<Profile…>` components, which own their
   mutations and emit `changed` (page refetches) or `saved` (Basics/Preferences return the whole profile):
@@ -82,12 +85,16 @@ remove it when you delete one.
   `<ProfileNamesField v-model lookup?>` (name chips; combobox with `lookup`, free text without, used for hobbies), `<ProfileLocationField v-model:country-code v-model:city>` (country + city, city reset on country change), `<ProfileReferenceList>`/`<ProfileReferenceModal>` (drag-reorder via `moveProfileReference`), the four `…List` + `…Modal` pairs (Experience,
   Education, Certification, Project), `<ProfileSkillList>`/`<ProfileSkillModal>`, `<ProfileLanguageList>` (inline
   levels), `<ProfilePreferencesCard>` (+ target locations via `saveLocation`) and `<ProfileBasicsModal>`.
+  Translations mode: the page provides `{ translating, target }` (`provideProfileTranslation`); `<ProfileBullets>` then
+  renders `<ProfileBulletTranslation :bullet>` per bullet and the Summary card shows `<ProfileTranslationBlock :profile>`
+  (headline + summary in the language that isn't `contentLanguage`; stale/machine badges).
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
 - `<ListingsDates listing>` — posted and deadline lines with icons (card and detail header), posted colored by days ago, deadline
   colored by days left to the server's `dueOn` (ASAP/Not stated show `due ~date`, or "likely filled" once past).
 
 ## Composables (`app/composables/`)
 
+- `CONTACT_FIELDS` fragment + `CompanyContact` type (`composables/contactFields.ts`) — contact shape for company and listing queries.
 - `useListing(id)` → `{ listing, loading, error, refresh }` — client-only `listingById` query with every
   field (key `listing-${id}`), incl. application status, history, interviews and documents, for the
   detail and edit pages. Also exports `ListingDetail`.
@@ -103,12 +110,12 @@ remove it when you delete one.
   — the add page checks a filled form's names in one aliased query and provides the result;
   `NameCombobox` and `SkillsField` inject it to flag names the API doesn't know. No provider = nothing
   flagged. Also exports `NameLookup`.
-- `useParsePrompt(name)` → `{ instructions, copied, load, copy(posting), parsing, parse(posting) }` — fetches
+- `useParsePrompt(name)` → `{ instructions, copied, load, copy(posting), parsing, parse(posting), parsingUrl, parseFromUrl(listingId), parsingNewUrl, parseNewUrl(url) }` — fetches
   `listingParsePrompt`, `listingQuickParsePrompt` or `companyParsePrompt` and copies it + `<posting>` text
   for an external AI. `parse()` runs the built-in parser (`parseListing`, FULL, QUICK or COMPANIES by `name`) and returns
   `{ result }` (the JSON reply) or `{ error }` for the caller to show; it doesn't toast. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).
 - `useProfile()` → `{ profile, loading, error, refresh }` (key `profile`, client-only). Exports `PROFILE_FIELDS`
-  (the fragment the full-replace mutations also select), `PROFILE` and `ProfileData` / `ProfileExperience` /
+  (the fragment the full-replace mutations also select), `BULLET_FIELDS` (also used by `moveProfileBullet`), `PROFILE` and `ProfileData` / `ProfileExperience` /
   `ProfileEducation` / `ProfileCertification` / `ProfileProject` / `ProfileSkill` / `ProfileLanguage` / `ProfileBullet`.
 - `useListingsList(grid)` → `{ listings, totalCount, counts, page, pageSize, filter, search, sort, facets, loading, error, refresh }` —
   `search` (bound to an input; starts as `?search=` from the URL, which the companies list links with) is debounced 300 ms and applies to the list and every count. `filter`

@@ -70,7 +70,20 @@ describe('useListingForm', () => {
       analyzedAt: '2026-09-20T10:00:00Z',
       locations: [{ location: { city: null, countryCode: 'SE' } }],
       languages: [{ language: 'NORWEGIAN', level: null, isRequired: true }],
-      skills: [{ skill: { name: 'Vue' }, level: 4, minYears: 2, isRequired: false }]
+      skills: [{ skill: { name: 'Vue' }, level: 4, minYears: 2, isRequired: false }],
+      contacts: [
+        {
+          contact: {
+            id: 5,
+            name: 'Kari',
+            title: null,
+            email: 'kari@acme.no',
+            phone: null,
+            url: null,
+            notes: 'Met at a meetup'
+          }
+        }
+      ]
     })
 
     expect(state.companyName).toBe('Acme')
@@ -83,6 +96,7 @@ describe('useListingForm', () => {
       locations: [{ countryCode: 'SE', city: null }],
       languages: [{ language: 'NORWEGIAN', level: null, isRequired: true }],
       skills: [{ name: 'Vue', level: 4, minYears: 2, isRequired: false }],
+      contacts: [{ name: 'Kari', title: null, email: 'kari@acme.no', phone: null, url: null }],
       isAnalyzed: true
     })
   })
@@ -155,5 +169,31 @@ describe('useListingForm', () => {
     fillDraft({ title: 'Frontend Developer', deadlineType: 'ROLLING' })
 
     expect(state.deadlineType).toBe('ASAP')
+  })
+
+  it('cleans parsed contacts and drops blank rows', () => {
+    const { state, toInput, fillDraft } = useListingForm()
+    fillDraft({
+      title: 'Frontend Developer',
+      contacts: [
+        { name: ' Kari ', email: 'kari@acme.no', phone: '' },
+        { name: 'kari', title: 'Recruiter' },
+        { email: 'no-name@acme.no' }
+      ]
+    })
+    fillRequired(state)
+    state.contacts.push({ name: ' ', title: null, email: null, phone: null, url: null })
+
+    expect(toInput().contacts).toEqual([
+      { name: 'Kari', title: null, email: 'kari@acme.no', phone: null, url: null }
+    ])
+  })
+
+  it('adds parsed contacts to the saved ones on merge', () => {
+    const { state, mergeDraft } = useListingForm()
+    state.contacts = [{ name: 'Kari', title: null, email: null, phone: null, url: null }]
+    mergeDraft({ contacts: [{ name: 'KARI', email: 'k@acme.no' }, { name: 'Ola' }] })
+
+    expect(state.contacts.map((c) => c.name)).toEqual(['Kari', 'Ola'])
   })
 })

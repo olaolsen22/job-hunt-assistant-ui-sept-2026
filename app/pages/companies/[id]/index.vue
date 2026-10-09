@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { ResultOf } from 'gql.tada'
+import type { CompanyContact } from '~/composables/contactFields'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Company' })
@@ -13,58 +14,77 @@ const companiesView = useCompaniesView()
 // the same request to avoid a waterfall; archived ones need their own field (`archived: true`).
 // `take: 50` is a literal like the other lists (the cost check rejects a variable), and far more
 // than one company ever gets.
-const COMPANY_PAGE = graphql(`
-  query CompanyPage($id: Int!) {
-    companies(where: { id: { eq: $id } }, first: 1) {
-      nodes {
-        id
-        name
-        favoritedAt
-        avoidedAt
-        notes
-        applicationCount
-        industry {
+const COMPANY_PAGE = graphql(
+  `
+    query CompanyPage($id: Int!) {
+      companies(where: { id: { eq: $id } }, first: 1) {
+        nodes {
+          id
           name
+          favoritedAt
+          avoidedAt
+          notes
+          applicationCount
+          contacts {
+            ...ContactFields
+          }
+          industry {
+            name
+          }
+          locations {
+            location {
+              id
+              city
+              countryCode
+              isTarget
+            }
+          }
         }
-        locations {
-          location {
-            id
-            city
-            countryCode
-            isTarget
+      }
+      open: listings(take: 50, where: { companyId: { eq: $id } }) {
+        items {
+          id
+          title
+          status
+          archivedAt
+          jobRole {
+            name
+          }
+          locations {
+            location {
+              id
+            }
+          }
+        }
+      }
+      archived: listings(take: 50, archived: true, where: { companyId: { eq: $id } }) {
+        items {
+          id
+          title
+          status
+          archivedAt
+          jobRole {
+            name
+          }
+          locations {
+            location {
+              id
+            }
           }
         }
       }
     }
-    open: listings(take: 50, where: { companyId: { eq: $id } }) {
-      items {
-        id
-        title
-        status
-        archivedAt
-        jobRole {
-          name
-        }
-        locations {
-          location {
-            id
-          }
-        }
-      }
-    }
-    archived: listings(take: 50, archived: true, where: { companyId: { eq: $id } }) {
-      items {
-        id
-        title
-        status
-        archivedAt
-        jobRole {
-          name
-        }
-        locations {
-          location {
-            id
-          }
+  `,
+  [CONTACT_FIELDS]
+)
+
+const DELETE_CONTACT = graphql(`
+  mutation DeleteContact($input: DeleteContactInput!) {
+    deleteContact(input: $input) {
+      errors {
+        __typename
+        ... on Error {
+          message
         }
       }
     }
@@ -158,6 +178,35 @@ const setAvoided = async (isAvoided: boolean) => {
   if (!ok) return
   await refresh()
   toast.add({ title: isAvoided ? 'Company avoided' : 'No longer avoided', color: 'success' })
+}
+
+const contacts = computed(() =>
+  [...(company.value?.contacts ?? [])].sort((a, b) => a.name.localeCompare(b.name))
+)
+const contactFormOpen = ref(false)
+const editingContact = ref<CompanyContact | null>(null)
+const deletingContact = ref<CompanyContact | null>(null)
+const deleteContactOpen = computed({
+  get: () => deletingContact.value != null,
+  set: (isOpen) => {
+    if (!isOpen) deletingContact.value = null
+  }
+})
+const { run: runDeleteContact, loading: deletingContactLoading } = useMutation(refresh)
+
+const openContactForm = (contact: CompanyContact | null) => {
+  editingContact.value = contact
+  contactFormOpen.value = true
+}
+
+const deleteContact = async () => {
+  const contact = deletingContact.value!
+  const ok = await runDeleteContact(async () => {
+    const { deleteContact } = await gql(DELETE_CONTACT, { input: { id: contact.id } })
+    return deleteContact.errors
+  })
+  deletingContact.value = null
+  if (ok) await refresh()
 }
 
 // Avoiding is rare, so it lives in the menu and Edit stays the one primary button.
@@ -312,6 +361,44 @@ const moreItems = computed<DropdownMenuItem[]>(() =>
           </AppCard>
 
           <div class="space-y-4">
+            <AppCard title="Contacts">
+              <template #actions>
+                <UButton
+                  v-if="contacts.length"
+                  icon="i-lucide-user-plus"
+                  color="neutral"
+                  variant="subtle"
+                  size="sm"
+                  data-testid="contact-add"
+                  @click="openContactForm(null)"
+                  >Add</UButton
+                >
+              </template>
+              <CompaniesContactList
+                v-if="contacts.length"
+                :contacts="contacts"
+                editable
+                @edit="openContactForm"
+                @delete="deletingContact = $event"
+              />
+              <div
+                v-else
+                class="flex flex-col items-center justify-center gap-3 py-6 text-center"
+                data-testid="contacts-empty"
+              >
+                <UIcon name="i-lucide-users" class="size-10 text-muted" />
+                <p>No contacts yet.</p>
+                <UButton
+                  color="neutral"
+                  variant="subtle"
+                  icon="i-lucide-user-plus"
+                  data-testid="contact-add"
+                  @click="openContactForm(null)"
+                  >Add contact</UButton
+                >
+              </div>
+            </AppCard>
+
             <AppCard title="Locations">
               <ul v-if="locations.length" class="space-y-2" data-testid="company-locations">
                 <li
@@ -400,6 +487,26 @@ const moreItems = computed<DropdownMenuItem[]>(() =>
           :company-id="company.id"
           :notes="company.notes"
           @saved="refresh"
+        />
+
+        <CompaniesContactModal
+          v-model:open="contactFormOpen"
+          :company-id="company.id"
+          :contact="editingContact"
+          @changed="refresh"
+        />
+
+        <AppConfirmModal
+          v-model:open="deleteContactOpen"
+          title="Delete this contact?"
+          :description="
+            deletingContact
+              ? `${deletingContact.name}. Listings linked to them are kept.`
+              : undefined
+          "
+          confirm-label="Delete"
+          :loading="deletingContactLoading"
+          @confirm="deleteContact"
         />
 
         <AppConfirmModal

@@ -33,7 +33,8 @@ const baseCompany = {
   notes: null as string | null,
   applicationCount: 2,
   industry: { name: 'Consulting' },
-  locations: [location(1, 'Oslo', 'NO')]
+  locations: [location(1, 'Oslo', 'NO')],
+  contacts: [] as Record<string, unknown>[]
 }
 
 type Request = { query: string; variables: Record<string, unknown> }
@@ -51,6 +52,11 @@ const mountPage = async (overrides: Partial<typeof baseCompany> = {}, found = tr
       if (body.query.includes('setCompanyAvoided')) {
         company.avoidedAt = input!.isAvoided ? '2026-10-07T10:00:00Z' : null
         return { data: { setCompanyAvoided: { company: { id: 3 }, errors: null } } }
+      }
+      if (body.query.includes('addContact')) {
+        const contact = input!.contact as Record<string, unknown>
+        company.contacts = [...company.contacts, { id: 9, notes: null, ...contact }]
+        return { data: { addContact: { contact: { id: 9 }, errors: null } } }
       }
       if (body.query.includes('setCompanyNotes')) {
         company.notes = String(input!.notes).trim() || null
@@ -190,6 +196,55 @@ describe('Company page', () => {
     expect(requests.find((r) => r.query.includes('setCompanyAvoided'))!.variables.input).toEqual({
       id: 3,
       isAvoided: true
+    })
+    wrapper.unmount()
+  })
+
+  it('shows contacts with links and Markdown notes', async () => {
+    const { wrapper } = await mountPage({
+      contacts: [
+        {
+          id: 5,
+          name: 'Kari Nordmann',
+          title: 'Recruiter',
+          email: 'kari@acme.no',
+          phone: null,
+          url: null,
+          notes: 'Prefers **email**'
+        }
+      ]
+    })
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="contact"] strong').exists()).toBe(true)
+    )
+
+    const contact = wrapper.get('[data-testid="contact"]')
+    expect(contact.text()).toContain('Kari Nordmann')
+    expect(contact.find('a[href="mailto:kari@acme.no"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('adds a contact from the dialog', async () => {
+    const { wrapper, requests } = await mountPage()
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="contacts-empty"]').exists()).toBe(true)
+    )
+
+    await wrapper.get('[data-testid="contact-add"]').trigger('click')
+    await flushPromises()
+    // UInput puts the test id on the <input> itself or on its wrapper.
+    const input = document.body.querySelector<HTMLInputElement>(
+      'input[data-testid="contact-name"], [data-testid="contact-name"] input'
+    )!
+    input.value = ' Kari '
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
+
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="contact"]').text()).toContain('Kari'))
+    expect(requests.find((r) => r.query.includes('addContact'))!.variables.input).toEqual({
+      companyId: 3,
+      contact: { name: 'Kari', title: null, email: null, phone: null, url: null, notes: null }
     })
     wrapper.unmount()
   })
