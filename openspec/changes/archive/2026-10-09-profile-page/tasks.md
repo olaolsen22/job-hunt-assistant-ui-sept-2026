@@ -43,7 +43,7 @@
 
 - [x] 7.1 Update `.claude/state/ui-inventory.md` (profile page, components, `useProfile`, `AppMonthField`, `formatMonth`, `AppCard` actions slot, `SKILL_LEVELS`) and `docs/REUSABLES.md` for the new shared pieces
 - [x] 7.2 Run `pnpm typecheck`, `pnpm lint`, `pnpm format:check` and `pnpm test`; all pass (E2E not run)
-- [ ] 7.3 `pnpm build`, then `pnpm preview --port 3000` (kill a stale preview on 3000 first); ask the owner before a live UI check, otherwise report the UI as unverified, and check the `profile` query cost against the real API once
+- [x] 7.3 `pnpm build`, then `pnpm preview --port 3000` (kill a stale preview on 3000 first); ask the owner before a live UI check, otherwise report the UI as unverified, and check the `profile` query cost against the real API once
 - [x] 7.4 Run `/log-progress` to update `docs/STATUS.md`
 
 ## 8. Schema update (added after the API changed)

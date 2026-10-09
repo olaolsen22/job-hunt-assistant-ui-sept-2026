@@ -8,4 +8,4 @@
 ## 2. Checks
 
 - [x] 2.1 Run the new tests, `pnpm lint` and `pnpm typecheck`; all pass (E2E not run)
-- [ ] 2.2 Owner live check: filter, open a listing, edit, save, press Back, and land on the filtered list
+- [x] 2.2 Owner live check: filter, open a listing, edit, save, press Back, and land on the filtered list

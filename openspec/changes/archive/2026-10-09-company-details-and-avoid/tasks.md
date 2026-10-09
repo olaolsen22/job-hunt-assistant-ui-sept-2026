@@ -31,4 +31,4 @@
 
 - [x] 6.1 Update `.claude/state/ui-inventory.md` (company pages, `useCompaniesView`, `DashboardRow` `subtitle`, MarkdownContent/MarkdownEditor descriptions) and `docs/REUSABLES.md` where props changed
 - [x] 6.2 Run `pnpm typecheck`, `pnpm lint` and `pnpm test`; all pass (E2E not run)
-- [ ] 6.3 `pnpm build` + `pnpm preview --port 3000`, ask the owner for a live check, then `/log-progress`
+- [x] 6.3 `pnpm build` + `pnpm preview --port 3000`, ask the owner for a live check, then `/log-progress`

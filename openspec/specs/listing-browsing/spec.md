@@ -78,7 +78,7 @@ The page SHALL offer the presets "closing soon", "to analyze" and "archived", ea
 
 ### Requirement: Facet filters
 
-The page SHALL offer these facets: favorites only (toggle), status (multi), skill (multi), location (multi), posting language (multi) and required language (multi). Posting language is the language the ad is written in; required language is a language the job asks for. Facets apply together with AND. Within one multi facet, a listing matches if it has any of the selected values. A facet with nothing selected SHALL NOT restrict the list. Changing a facet SHALL go back to page 1.
+The page SHALL offer these facets: favorites only (toggle), status (multi), skill (multi), location (multi), posting language (multi), required language (multi), posted date and due within. Posting language is the language the ad is written in; required language is a language the job asks for. Facets apply together with AND. Within one multi facet, a listing matches if it has any of the selected values. A facet with nothing selected SHALL NOT restrict the list. Changing a facet SHALL go back to page 1.
 
 #### Scenario: Favorites only
 
@@ -202,9 +202,10 @@ When any facet is active, the toolbar SHALL offer a way to clear all facets at o
 
 ### Requirement: Starting state from the URL
 
-`/listings` SHALL accept a preset, statuses and the favorites facet in the URL and apply them when
-the page opens, so other pages can link to a filtered list. Unknown values SHALL be ignored. The
-applied filters SHALL behave exactly as if the user had picked them in the page.
+`/listings` SHALL accept the search, sort, preset, every facet and the page number in the URL and
+apply them when the page opens, so other pages can link to a filtered list and a returning user
+gets the same view. Unknown values SHALL be ignored. The applied state SHALL behave exactly as if
+the user had picked it in the page.
 
 #### Scenario: Opening with a preset
 
@@ -221,7 +222,101 @@ applied filters SHALL behave exactly as if the user had picked them in the page.
 - **WHEN** the user opens `/listings` with the favorites facet in the URL
 - **THEN** only favorited listings are shown
 
+#### Scenario: Opening with search, sort, other facets and a page
+
+- **WHEN** the user opens `/listings` with a search, the "Newest added" sort, a skill, a location, a posting language, a required language and page 2 in the URL
+- **THEN** the search box, sort dropdown and facets show those values, the Filters toggle counts the active facets, and page 2 of that list is shown
+
+#### Scenario: Page past the end
+
+- **WHEN** the URL names a page beyond the last page of that list
+- **THEN** the last page is shown
+
 #### Scenario: Unknown value
 
-- **WHEN** the URL names a preset or status that does not exist
-- **THEN** it is ignored and the default list is shown
+- **WHEN** the URL names a preset, status, sort or language that does not exist, or a page that is not a positive number
+- **THEN** that value is ignored and its default is used
+
+### Requirement: View kept in the URL
+
+Whenever the user changes the search (after its debounce), sort, preset, a facet or the page on
+`/listings`, the URL SHALL be updated to describe the current view, without adding a browser
+history entry. Values at their default (empty search, "Due date", no preset, empty facets, page 1)
+SHALL be left out of the URL.
+
+#### Scenario: Back from a listing
+
+- **WHEN** the user filters, moves to page 2, opens a listing and presses the browser back button
+- **THEN** `/listings` shows the same search, sort, preset, facets and page as before
+
+#### Scenario: Refresh
+
+- **WHEN** the user refreshes `/listings` after changing the view
+- **THEN** the same view is shown
+
+#### Scenario: No extra history entries
+
+- **WHEN** the user changes several filters and then presses the browser back button
+- **THEN** the browser leaves `/listings` for the previous page instead of stepping back through the filter changes
+
+#### Scenario: Default view
+
+- **WHEN** every control is at its default and the list is on page 1
+- **THEN** the URL is `/listings` with no query
+
+### Requirement: Back from a listing returns to the list view
+
+The listing page's "Back" button SHALL lead to the last `/listings` view the user had in this
+session, including its query. With no earlier visit in the session it SHALL lead to `/listings`.
+
+#### Scenario: Back button after editing
+
+- **WHEN** the user opens a listing from a filtered `/listings`, edits and saves it, then clicks "Back"
+- **THEN** `/listings` opens with the same filters and page as before
+
+#### Scenario: Opened directly
+
+- **WHEN** the user opens a listing's URL directly and clicks "Back"
+- **THEN** `/listings` opens with its default view
+
+### Requirement: Posted date filter
+
+The panel SHALL offer "From" and "To" date inputs on the posted date. Each is optional and both ends are inclusive. The filter SHALL NOT remove the default exclusion of listings past their deadline.
+
+#### Scenario: Range
+
+- **WHEN** the user sets From 1 Oct and To 7 Oct
+- **THEN** only listings posted from 1 Oct through 7 Oct are shown
+
+#### Scenario: One end
+
+- **WHEN** the user sets only From
+- **THEN** listings posted on or after that date are shown
+
+### Requirement: Due within filter
+
+The panel SHALL offer a "Due within" select with Any, 3, 7, 14 and 30 days. A value shows listings whose server due date (`dueOn`) is between today and that many days ahead, today included, expired ones excluded. ASAP and Not stated listings match through their computed due date. With "closing soon" also active, both apply, so the narrower window decides.
+
+#### Scenario: Not stated listing
+
+- **WHEN** a Not stated listing has `dueOn` 10 days from today
+- **THEN** it is shown under "Due within 14 days" and hidden under "Due within 7 days"
+
+#### Scenario: With closing soon
+
+- **WHEN** "closing soon" is active and the user picks "Due within 3 days"
+- **THEN** only listings due within 3 days are shown
+
+### Requirement: Date filters in the URL
+
+Both filters SHALL be stored in the URL like the other facets, with unknown values ignored. Each counts once toward the active count (From and To together are one), and Clear all resets both.
+
+#### Scenario: Restoring from the URL
+
+- **WHEN** the user opens `/listings` with a posted range and Due within 7 days in the URL
+- **THEN** the inputs show those values and the active count includes both
+
+#### Scenario: Clear all
+
+- **WHEN** both filters are set and the user clicks "Clear all"
+- **THEN** the dates are empty and Due within shows Any

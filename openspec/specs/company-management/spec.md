@@ -11,8 +11,8 @@ parsing pasted text and checking the rows before anything is saved.
 
 The `/companies` page SHALL list the user's companies with name, industry, locations, listing count
 and application count, ordered by name. It SHALL have a search box that matches company names, and
-numbered pages like `/listings` that move through the results. Each row SHALL link to `/listings`
-searching for that company's name. An "Add companies" button SHALL lead to `/companies/add`.
+numbered pages like `/listings` that move through the results. Each row SHALL link to that company's
+page at `/companies/<id>`. An "Add companies" button SHALL lead to `/companies/add`.
 
 #### Scenario: Browsing pages
 
@@ -32,7 +32,7 @@ searching for that company's name. An "Add companies" button SHALL lead to `/com
 #### Scenario: Opening a company's listings
 
 - **WHEN** the user clicks a company row
-- **THEN** `/listings` opens with the search box filled with the company's name
+- **THEN** that company's page opens with its listings, instead of a `/listings` search
 
 #### Scenario: No companies
 
@@ -119,7 +119,7 @@ the page SHALL show the error once above the rows and keep every row as it was.
 
 Each row on `/companies` SHALL have a favorite toggle that sets or clears the company's favorite
 mark. The toggle SHALL update at once, undo itself and show an error if the API rejects the change,
-and SHALL NOT open the company's listings when clicked.
+and SHALL NOT open the company's page when clicked.
 
 #### Scenario: Favoriting a company
 
@@ -139,4 +139,60 @@ and SHALL NOT open the company's listings when clicked.
 #### Scenario: Row link is not triggered
 
 - **WHEN** the user clicks the star
-- **THEN** `/listings` does not open
+- **THEN** the company's page does not open
+
+### Requirement: Hide avoided companies
+
+`/companies` SHALL have a "Hide avoided" toggle, off by default. When on, avoided companies SHALL
+be left out of the list, the count and the pages, and the list SHALL start at the first page. The
+toggle state SHALL be kept in the URL, like the search.
+
+#### Scenario: Default shows everyone
+
+- **WHEN** the user opens `/companies` with no query
+- **THEN** avoided companies are listed along with the rest
+
+#### Scenario: Hiding avoided
+
+- **WHEN** the user turns on "Hide avoided"
+- **THEN** only companies that are not avoided are shown, starting at the first page, and the URL records the toggle
+
+#### Scenario: Coming back
+
+- **WHEN** the user opens a company from the filtered list and goes back
+- **THEN** the list still hides avoided companies
+
+#### Scenario: Nothing left
+
+- **WHEN** "Hide avoided" is on and every matching company is avoided
+- **THEN** an empty message says no companies match, and the toggle stays visible to turn it off
+
+### Requirement: Avoided badge on company rows
+
+A row for an avoided company SHALL show an "Avoided" badge next to its other badges.
+
+#### Scenario: Avoided row
+
+- **WHEN** a company in the list is avoided
+- **THEN** its row shows an "Avoided" badge
+
+### Requirement: Companies view kept in the URL
+
+`/companies` SHALL keep its search and page number in the URL, updated without adding a browser
+history entry, and SHALL restore them when the page opens. An empty search and page 1 SHALL be
+left out of the URL. A page number that is not a positive number SHALL be ignored.
+
+#### Scenario: Back from a company's listings
+
+- **WHEN** the user searches "consult", moves to page 2, clicks a company row and presses the browser back button
+- **THEN** `/companies` shows the search "consult" and page 2
+
+#### Scenario: Opening a later page
+
+- **WHEN** the user opens `/companies` with page 3 in the URL
+- **THEN** page 3 is shown and the pager marks page 3 as current
+
+#### Scenario: Page past the end
+
+- **WHEN** the URL names a page beyond the last page
+- **THEN** the last page is shown
