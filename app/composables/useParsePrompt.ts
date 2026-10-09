@@ -69,6 +69,24 @@ const PARSE_LISTING_FROM_URL = graphql(`
   }
 `)
 
+const PARSE_URL = graphql(`
+  mutation ParseUrl($url: String!) {
+    parseUrl(input: { url: $url }) {
+      parseJob {
+        status
+        result
+        error
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
 // Call load() before the user can click copy: browsers can refuse a clipboard write that follows
 // an await, so the instructions must already be here.
 export const useParsePrompt = (name: PromptName) => {
@@ -132,5 +150,33 @@ export const useParsePrompt = (name: PromptName) => {
     }
   }
 
-  return { instructions, copied, load, copy, parsing, parse, parsingUrl, parseFromUrl }
+  // Same as parseFromUrl but for an unsaved listing: the API reads the given URL (always a FULL
+  // parse) and saves nothing.
+  const parsingNewUrl = ref(false)
+  const parseNewUrl = async (url: string): Promise<{ result: string } | { error: string }> => {
+    parsingNewUrl.value = true
+    try {
+      const { parseUrl } = await gql(PARSE_URL, { url: url.trim() })
+      const { parseJob, errors } = parseUrl
+      if (parseJob?.status === 'SUCCEEDED' && parseJob.result) return { result: parseJob.result }
+      return { error: errors?.[0]?.message ?? parseJob?.error ?? ERROR_MESSAGES.generic }
+    } catch {
+      return { error: ERROR_MESSAGES.generic }
+    } finally {
+      parsingNewUrl.value = false
+    }
+  }
+
+  return {
+    instructions,
+    copied,
+    load,
+    copy,
+    parsing,
+    parse,
+    parsingUrl,
+    parseFromUrl,
+    parsingNewUrl,
+    parseNewUrl
+  }
 }

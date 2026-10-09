@@ -33,8 +33,9 @@ const listingForm = useTemplateRef('listingForm')
 
 const filledFromAd = ref(false)
 
-const onDraft = (draft: Record<string, unknown>) => {
+const onDraft = (draft: Record<string, unknown>, url?: string) => {
   fillDraft(draft)
+  if (url) state.url = url
   listingForm.value?.validate()
   filledFromAd.value = true
   checkNewNames(state)
@@ -131,7 +132,7 @@ const onConfirm = async () => {
       />
     </ListingsForm>
 
-    <ListingsParseModal v-model:open="parseOpen" @apply="onDraft" />
+    <ListingsParseModal v-model:open="parseOpen" :url="state.url" @apply="onDraft" />
 
     <AppConfirmModal
       v-model:open="confirmOpen"

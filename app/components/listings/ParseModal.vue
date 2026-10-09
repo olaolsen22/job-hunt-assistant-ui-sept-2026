@@ -1,13 +1,26 @@
 <script setup lang="ts">
 const open = defineModel<boolean>('open', { required: true })
-const emit = defineEmits<{ apply: [draft: Record<string, unknown>] }>()
+// url: the link typed in the modal (add page only), so the page can put it in the form.
+const emit = defineEmits<{ apply: [draft: Record<string, unknown>, url?: string] }>()
 
-// listingId: set on the edit page. Parsing from the link reads the saved listing's URL on the API
-// side, so that tab only exists for saved listings.
-const props = defineProps<{ listingId?: number }>()
+// listingId: set on the edit page; the API reads the saved listing's URL. Without it (add page)
+// From link takes a link typed here, prefilled with url (the form's Ad link).
+const props = defineProps<{ listingId?: number; url?: string }>()
 
-const { instructions, copied, load, copy, parsing, parse, parsingUrl, parseFromUrl } =
-  useParsePrompt('listingParsePrompt')
+const {
+  instructions,
+  copied,
+  load,
+  copy,
+  parsing,
+  parse,
+  parsingUrl,
+  parseFromUrl,
+  parsingNewUrl,
+  parseNewUrl
+} = useParsePrompt('listingParsePrompt')
+
+const link = ref('')
 
 // Fetched on open and after each parse, so the counter shows what this parse just used.
 const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
@@ -15,7 +28,7 @@ const tokens = new Intl.NumberFormat()
 const usage = computed(() => usageData.value?.llmUsageToday)
 
 type Tab = 'link' | 'paste' | 'ai'
-const tab = ref<Tab>(props.listingId ? 'link' : 'paste')
+const tab = ref<Tab>('link')
 
 // The pasted ad is shared by the Paste ad and Use your own AI tabs, so a failed parse keeps it
 // when the user switches to the other method.
@@ -25,15 +38,11 @@ const jsonError = ref('')
 const urlError = ref('')
 const builtInError = ref('')
 
-const INVALID_JSON = 'That doesn’t look like valid JSON.'
-
 // Closing mid-parse would throw the result away.
-const busy = computed(() => parsing.value || parsingUrl.value)
+const busy = computed(() => parsing.value || parsingUrl.value || parsingNewUrl.value)
 
 const tabs = computed(() => [
-  ...(props.listingId
-    ? [{ label: 'From link', value: 'link', icon: 'i-lucide-link', disabled: busy.value }]
-    : []),
+  { label: 'From link', value: 'link', icon: 'i-lucide-link', disabled: busy.value },
   { label: 'Paste ad', value: 'paste', icon: 'i-lucide-clipboard-paste', disabled: busy.value },
   { label: 'Use your own AI', value: 'ai', icon: 'i-lucide-bot', disabled: busy.value }
 ])
@@ -43,6 +52,7 @@ watch(
   open,
   (isOpen) => {
     if (!isOpen) return
+    link.value = props.url ?? ''
     load()
     refreshUsage()
   },
@@ -52,17 +62,14 @@ watch(
 watch(open, () => (urlError.value = builtInError.value = ''))
 watch(json, () => (jsonError.value = ''))
 watch(ad, () => (builtInError.value = ''))
+watch(link, () => (urlError.value = ''))
 
 const apply = (reply: string) => {
-  // AIs often wrap the JSON in a code fence or a sentence, so take the outermost object.
-  const raw = reply.slice(reply.indexOf('{'), reply.lastIndexOf('}') + 1)
-  let draft: Record<string, unknown>
-  try {
-    draft = JSON.parse(raw)
-  } catch {
-    return false
-  }
-  emit('apply', draft)
+  const draft = parseDraft(reply)
+  if (!draft) return false
+  const url = props.listingId ? '' : link.value.trim()
+  if (url) emit('apply', draft, url)
+  else emit('apply', draft)
   ad.value = ''
   json.value = ''
   open.value = false
@@ -70,15 +77,17 @@ const apply = (reply: string) => {
 }
 
 const applyReply = () => {
-  if (!apply(json.value)) jsonError.value = INVALID_JSON
+  if (!apply(json.value)) jsonError.value = INVALID_DRAFT_JSON
 }
 
 const parseUrl = async () => {
   urlError.value = ''
-  const reply = await parseFromUrl(props.listingId!)
+  const reply = props.listingId
+    ? await parseFromUrl(props.listingId)
+    : await parseNewUrl(link.value)
   refreshUsage()
   if ('error' in reply) urlError.value = reply.error
-  else if (!apply(reply.result)) urlError.value = INVALID_JSON
+  else if (!apply(reply.result)) urlError.value = INVALID_DRAFT_JSON
 }
 
 const parseBuiltIn = async () => {
@@ -86,7 +95,7 @@ const parseBuiltIn = async () => {
   const reply = await parse(ad.value)
   refreshUsage()
   if ('error' in reply) builtInError.value = reply.error
-  else if (!apply(reply.result)) builtInError.value = INVALID_JSON
+  else if (!apply(reply.result)) builtInError.value = INVALID_DRAFT_JSON
 }
 </script>
 
@@ -132,11 +141,22 @@ const parseBuiltIn = async () => {
         </UAlert>
 
         <div v-if="tab === 'link'" class="space-y-3">
-          <p class="text-sm text-muted">
+          <p v-if="listingId" class="text-sm text-muted">
             Reads the ad from the listing’s saved link, so changes to the link in the form aren’t
             used until you save them. Takes up to 25 seconds. Some sites can’t be read; paste the ad
             instead.
           </p>
+          <template v-else>
+            <UFormField label="Ad link" help="Takes up to 25 seconds.">
+              <UInput
+                v-model="link"
+                type="url"
+                placeholder="https://"
+                class="w-full"
+                data-testid="parse-link"
+              />
+            </UFormField>
+          </template>
           <UAlert
             v-if="urlError"
             color="error"
@@ -144,7 +164,19 @@ const parseBuiltIn = async () => {
             icon="i-lucide-circle-alert"
             :title="urlError"
             data-testid="parse-url-error"
-          />
+          >
+            <!-- Unreadable pages (login walls, JS-built ads) are common; the link is kept for the paste parse. -->
+            <template v-if="!listingId" #actions>
+              <UButton
+                color="neutral"
+                variant="soft"
+                icon="i-lucide-clipboard-paste"
+                data-testid="parse-paste-instead"
+                @click="tab = 'paste'"
+                >Paste the ad instead</UButton
+              >
+            </template>
+          </UAlert>
         </div>
 
         <template v-else>
@@ -189,7 +221,11 @@ const parseBuiltIn = async () => {
 
             <UFormField
               label="3. Paste the reply"
-              :help="listingId ? undefined : 'The ad URL isn’t included; add it in the form.'"
+              :help="
+                listingId || link.trim()
+                  ? undefined
+                  : 'The ad URL isn’t included; add it in the form.'
+              "
               :error="jsonError || undefined"
             >
               <UTextarea
@@ -215,7 +251,8 @@ const parseBuiltIn = async () => {
         <UButton
           v-if="tab === 'link'"
           icon="i-lucide-link"
-          :loading="parsingUrl"
+          :loading="parsingUrl || parsingNewUrl"
+          :disabled="!listingId && !link.trim()"
           data-testid="parse-url"
           @click="parseUrl"
           >Parse from link</UButton

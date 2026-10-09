@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
+import { readBody } from 'h3'
 import ParseModal from '~/components/listings/ParseModal.vue'
 
-const mountOpen = (props: { listingId?: number }) =>
+const mountOpen = (props: { listingId?: number; url?: string }) =>
   mountSuspended(ParseModal, { props: { open: true, ...props }, attachTo: document.body })
 
 const click = async (testid: string) => {
@@ -14,23 +15,30 @@ const click = async (testid: string) => {
 // One endpoint for the whole file: a later registerEndpoint on the same path doesn't replace it.
 let urlParseResponse: object = {}
 let builtInResponse: object = {}
+let sentUrl: unknown
 registerEndpoint('/graphql', {
   method: 'POST',
-  handler: () => ({
-    data: {
-      parseListingFromUrl: urlParseResponse,
-      parseListing: builtInResponse,
-      prompt: { instructions: 'x' },
-      llmUsageToday: {
-        requests: 3,
-        inputTokens: 1200,
-        outputTokens: 340,
-        requestsLimit: 50,
-        remainingRequests: 47,
-        resetsAt: '2026-10-08T00:00:00Z'
+  handler: async (event) => {
+    const { query, variables } = await readBody(event)
+    if (query.includes('ParseUrl')) sentUrl = variables.url
+    return {
+      data: {
+        // Same response for both link parses.
+        parseListingFromUrl: urlParseResponse,
+        parseUrl: urlParseResponse,
+        parseListing: builtInResponse,
+        prompt: { instructions: 'x' },
+        llmUsageToday: {
+          requests: 3,
+          inputTokens: 1200,
+          outputTokens: 340,
+          requestsLimit: 50,
+          remainingRequests: 47,
+          resetsAt: '2026-10-08T00:00:00Z'
+        }
       }
     }
-  })
+  }
 })
 const respondToUrlParse = (payload: object) => (urlParseResponse = payload)
 const respondToBuiltInParse = (payload: object) => (builtInResponse = payload)
@@ -63,9 +71,43 @@ describe('ParseModal', () => {
     wrapper.unmount()
   })
 
-  it('only offers Parse from link for a saved listing', async () => {
-    const wrapper = await mountOpen({})
-    expect(document.body.querySelector('[data-testid="parse-url"]')).toBeNull()
+  it('parses a link pasted in the modal and hands it back with the draft', async () => {
+    respondToUrlParse({
+      parseJob: { status: 'SUCCEEDED', result: '{"title":"Dev"}', error: null },
+      errors: null
+    })
+    const wrapper = await mountOpen({ url: '' })
+    const parse = () => document.body.querySelector<HTMLButtonElement>('[data-testid="parse-url"]')!
+    expect(parse().disabled).toBe(true)
+
+    const input = document.body.querySelector<HTMLInputElement>('[data-testid="parse-link"]')!
+    input.value = 'https://jobs.example/1'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    await click('parse-url')
+
+    await vi.waitFor(() =>
+      expect(wrapper.emitted('apply')?.[0]).toEqual([{ title: 'Dev' }, 'https://jobs.example/1'])
+    )
+    expect(sentUrl).toBe('https://jobs.example/1')
+    wrapper.unmount()
+  })
+
+  it('offers pasting the ad when a new link cannot be read', async () => {
+    respondToUrlParse({
+      parseJob: null,
+      errors: [{ __typename: 'InvalidParseRequestError', message: 'Page unreadable' }]
+    })
+    const wrapper = await mountOpen({ url: 'https://blocked.example/1' })
+    await click('parse-url')
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[data-testid="parse-url-error"]')?.textContent).toContain(
+        'Page unreadable'
+      )
+    )
+
+    await click('parse-paste-instead')
+    expect(document.body.querySelector('[data-testid="parse-ad"]')).not.toBeNull()
     wrapper.unmount()
   })
 
@@ -92,6 +134,8 @@ describe('ParseModal', () => {
       errors: [{ __typename: 'InvalidParseRequestError', message: 'Ad too short' }]
     })
     const wrapper = await mountOpen({})
+    wrapper.vm.tab = 'paste'
+    await flushPromises()
     const ad = document.body.querySelector<HTMLTextAreaElement>('[data-testid="parse-ad"]')!
     ad.value = 'Some ad'
     ad.dispatchEvent(new Event('input'))
