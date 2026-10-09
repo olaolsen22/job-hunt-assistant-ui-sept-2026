@@ -98,7 +98,7 @@ const submit = async () => {
     const { applyToListing } = await gql(APPLY, {
       input: {
         listingId: listing.id,
-        cvDocumentId: cvId.value!,
+        cvDocumentId: cvId.value ?? null,
         coverLetterDocumentId: coverId.value ?? null,
         appliedAt: new Date(appliedAt.value).toISOString(),
         note: note.value
@@ -118,7 +118,7 @@ const submit = async () => {
     title="Apply"
     confirm-label="Apply"
     :loading="loading"
-    :disabled="!(cvId || cvFile) || !appliedAt"
+    :disabled="!appliedAt"
     @confirm="submit"
   >
     <div class="space-y-4">
@@ -126,7 +126,7 @@ const submit = async () => {
         v-model:document-id="cvId"
         v-model:file="cvFile"
         label="CV"
-        required
+        help="Optional. No CV? Say how you applied in the note."
         :documents="unsent('CV')"
       />
       <ListingsDocumentPicker

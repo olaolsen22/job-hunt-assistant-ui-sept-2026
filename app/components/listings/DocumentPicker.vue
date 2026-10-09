@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { ListingDetail } from '~/composables/useListing'
 
-const { documents } = defineProps<{
+const { documents, help = '' } = defineProps<{
   label: string
   required?: boolean
+  help?: string
   documents: ListingDetail['documents']
 }>()
 // Either an already uploaded document or a new file to upload on submit, never both.
@@ -14,7 +15,7 @@ const items = computed(() => documents.map((d) => ({ label: d.fileName, value: d
 </script>
 
 <template>
-  <UFormField :label="label" :required="required">
+  <UFormField :label="label" :required="required" :help="help">
     <div class="space-y-2">
       <USelect
         v-if="items.length"
