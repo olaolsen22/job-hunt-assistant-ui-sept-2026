@@ -10,40 +10,34 @@ import type { DeadlineType } from '~/constants/listing'
 
 definePageMeta({ title: 'Quick add listings' })
 
-const RESULT_FRAGMENT = graphql(`
-  fragment R on CreateListingPayload {
-    listing {
-      id
-      title
-      url
-    }
-    previousAttempts {
-      id
-      title
-      status
-    }
-    possibleDuplicates {
-      id
-      title
-      archivedAt
-      company {
-        name
+const RESULT_FRAGMENT = graphql(
+  `
+    fragment R on CreateListingPayload {
+      listing {
+        ...ListingCompareFields
       }
-      jobRole {
-        name
+      previousAttempts {
+        id
+        title
+        status
       }
-    }
-    errors {
-      __typename
-      ... on Error {
-        message
+      possibleDuplicates {
+        ...ListingCompareFields
+        archivedAt
       }
-      ... on DuplicateListingError {
-        existingListingId
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+        ... on DuplicateListingError {
+          existingListingId
+        }
       }
     }
-  }
-`)
+  `,
+  [LISTING_COMPARE_FIELDS]
+)
 
 type CreateListingResult = ResultOf<typeof RESULT_FRAGMENT>
 type PossibleDuplicate = NonNullable<CreateListingResult['possibleDuplicates']>[number]
@@ -108,7 +102,8 @@ const state = reactive({ rows: [] as Row[] })
 const isBlank = (r: Row) => !r.title.trim() && !r.companyName && !r.jobRoleName && !r.url.trim()
 const toSave = (rows: Row[]) => rows.filter((r) => !r.saved && !isBlank(r))
 const pending = computed(() => toSave(state.rows))
-const anySaved = computed(() => state.rows.some((r) => r.saved))
+const savedCount = computed(() => state.rows.filter((r) => r.saved).length)
+const failedCount = computed(() => pending.value.filter((r) => r.error).length)
 
 // Field names use the row key, not the index, so errors stay on the right row after a removal.
 const validate = (s: typeof state): FormError[] =>
@@ -261,6 +256,10 @@ const onSave = async () => {
   }
 }
 
+// Saved rows are already in the API, so only unsaved ones are lost by leaving.
+const leaveOpen = ref(false)
+const onBack = () => (savedCount.value ? (leaveOpen.value = true) : navigateTo('/listings'))
+
 const removeRow = (row: Row) => state.rows.splice(state.rows.indexOf(row), 1)
 
 const toRemove = ref<Row>()
@@ -270,6 +269,27 @@ const deleting = ref(false)
 const askRemove = (row: Row) => {
   toRemove.value = row
   confirmOpen.value = true
+}
+
+const compareRow = ref<Row>()
+const compareId = ref(0)
+const compareOpen = ref(false)
+
+const openCompare = (row: Row, id: number) => {
+  compareRow.value = row
+  compareId.value = id
+  compareOpen.value = true
+}
+
+const onCompareKeep = () => {
+  compareOpen.value = false
+  compareRow.value!.duplicates = undefined
+}
+
+// Closed first so the remove confirmation doesn't stack on top of it.
+const onCompareRemove = () => {
+  compareOpen.value = false
+  askRemove(compareRow.value!)
 }
 
 const onConfirmRemove = async () => {
@@ -380,8 +400,8 @@ const onConfirmRemove = async () => {
       data-testid="quick-add-paste-summary"
     >
       <p class="text-sm text-muted">
-        Pasted {{ pastedCount }} {{ pastedCount === 1 ? 'listing' : 'listings' }}. Check them below,
-        then save.
+        Pasted {{ pastedCount }} {{ pastedCount === 1 ? 'listing' : 'listings' }}.
+        {{ pending.length ? 'Check them below, then save.' : 'All saved.' }}
       </p>
       <UButton
         icon="i-lucide-clipboard-paste"
@@ -434,6 +454,15 @@ const onConfirmRemove = async () => {
                 <!-- Archived means the user already applied to it. -->
                 <UBadge v-if="match.archivedAt" color="neutral" variant="subtle" size="sm"
                   >Applied</UBadge
+                >
+                <UButton
+                  icon="i-lucide-columns-2"
+                  size="sm"
+                  color="neutral"
+                  variant="link"
+                  data-testid="quick-add-row-compare"
+                  @click="openCompare(row, match.id)"
+                  >Compare</UButton
                 >
               </li>
             </ul>
@@ -624,21 +653,70 @@ const onConfirmRemove = async () => {
         @click="state.rows.push(newRow())"
         >Add row</UButton
       >
-      <div class="flex flex-col-reverse gap-2 sm:ml-auto sm:flex-row">
-        <UButton to="/listings" color="neutral" variant="ghost" class="justify-center">{{
-          anySaved ? 'Done' : 'Cancel'
-        }}</UButton>
+      <div class="flex flex-col-reverse gap-2 sm:ml-auto sm:flex-row sm:items-center">
+        <!-- No Done/Cancel: a leave action named by where it goes can't be mistaken for saving. -->
         <UButton
-          type="submit"
-          :loading="saving"
-          :disabled="!pending.length"
+          v-if="savedCount && !pending.length"
+          to="/listings"
           class="justify-center"
-          data-testid="quick-add-save"
-          >Save {{ pending.length || '' }}
-          {{ pending.length === 1 ? 'listing' : 'listings' }}</UButton
+          data-testid="quick-add-view-listings"
+          >View listings</UButton
         >
+        <template v-else>
+          <UButton
+            color="neutral"
+            variant="ghost"
+            class="justify-center"
+            data-testid="quick-add-back"
+            @click="onBack"
+            >Back to listings</UButton
+          >
+          <!-- Not type="submit": with no submit button, Enter in a row field can't save every row. -->
+          <UButton
+            :loading="saving"
+            :disabled="!pending.length"
+            class="justify-center"
+            data-testid="quick-add-save"
+            @click="form?.submit()"
+            >Save {{ pending.length || '' }}
+            {{ pending.length === 1 ? 'listing' : 'listings' }}</UButton
+          >
+        </template>
+        <!-- Last in the DOM so it sits on top in the reversed phone stack, first from sm up. -->
+        <p
+          v-if="savedCount"
+          class="flex items-center justify-center gap-3 text-sm text-muted sm:order-first"
+          data-testid="quick-add-status"
+        >
+          <span class="flex items-center gap-1">
+            <UIcon name="i-lucide-circle-check" class="size-4 text-success" />
+            {{ savedCount }} saved
+          </span>
+          <span v-if="failedCount" class="flex items-center gap-1">
+            <UIcon name="i-lucide-circle-alert" class="size-4 text-error" />
+            {{ failedCount }} {{ failedCount === 1 ? 'needs' : 'need' }} fixing
+          </span>
+        </p>
       </div>
     </div>
+
+    <ListingsCompareModal
+      v-if="compareRow?.saved && compareRow.duplicates"
+      v-model:open="compareOpen"
+      v-model:match-id="compareId"
+      :listing="compareRow.saved"
+      :matches="compareRow.duplicates"
+      @keep="onCompareKeep"
+      @remove="onCompareRemove"
+    />
+
+    <AppConfirmModal
+      v-model:open="leaveOpen"
+      :title="`Leave ${pending.length} unsaved ${pending.length === 1 ? 'listing' : 'listings'}?`"
+      description="Saved listings are kept."
+      confirm-label="Leave"
+      @confirm="navigateTo('/listings')"
+    />
 
     <AppConfirmModal
       v-model:open="confirmOpen"

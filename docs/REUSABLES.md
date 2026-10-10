@@ -41,6 +41,9 @@ remove it when you delete one.
 - `<ListingsForm v-model :validate submit-label cancel-to @submit>` — the listing form's fields
   and Cancel/submit buttons, shared by add and edit. `v-model` is `useListingForm().state`; the
   default slot renders above the buttons (error alert). The page owns mutation, confirm, errors.
+- `<ListingsCompareModal v-model:open v-model:matchId listing matches @keep @remove>` — compares a new listing with a possible
+  duplicate, one row per field (differing rows highlighted); "Compare with" select for 2+ matches; footer: Open existing,
+  Keep both, Remove new one. Values side by side from `sm`, stacked with New/Existing badges below.
 - `<ListingsParseModal v-model:open listingId? url? @apply(draft, url?)>` — "Analyze ad" modal with tabs: From link (only with `listingId`;
   the API reads the saved URL), Paste ad (built-in `parseListing`, error shown in the tab) and Use your own AI (copy the
   `listingParsePrompt` + ad, paste the JSON back). The ad text is shared between the last two. Emits `apply` with the
@@ -94,6 +97,7 @@ remove it when you delete one.
 
 ## Composables (`app/composables/`)
 
+- `LISTING_COMPARE_FIELDS` fragment + `ComparedListing` type (`composables/listingCompareFields.ts`) — fields the compare modal needs.
 - `CONTACT_FIELDS` fragment + `CompanyContact` type (`composables/contactFields.ts`) — contact shape for company and listing queries.
 - `useListing(id)` → `{ listing, loading, error, refresh }` — client-only `listingById` query with every
   field (key `listing-${id}`), incl. application status, history, interviews and documents, for the

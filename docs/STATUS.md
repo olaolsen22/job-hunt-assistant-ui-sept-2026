@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-10-09 · Last logged commit: 902e311
+Updated: 2026-10-10 · Last logged commit: 8a530f1
 
 ## Pages
 
@@ -8,7 +8,7 @@ Updated: 2026-10-09 · Last logged commit: 902e311
 - `/listings` — whole view (search, sort, preset, facets, page) in the URL query via `router.replace`, so back/refresh restore it; dashboard links use `?filter=`, `?status=`, `?favorites=1`; toolbar (debounced search, sort, Filters toggle with active count, Clear all) + facet panel (status, skill,
   location, posting/required language, posted from/to, due within, favorites; closed by default at every width), presets (closing soon, to analyze,
   archived), offset pagination
-- `/listings/add` (full form incl. Contacts, "Analyze ad" parser modal opening on From link with its own link input (`parseUrl`), paste fallback on errors, dismissible filled-from-ad notice) · `/listings/quick-add` (JSON batch, one aliased `createListing` per row)
+- `/listings/add` (full form incl. Contacts, "Analyze ad" parser modal opening on From link with its own link input (`parseUrl`), paste fallback on errors, dismissible filled-from-ad notice) · `/listings/quick-add` (JSON batch, one aliased `createListing` per row; possible duplicates: Keep both / Remove / Compare modal; saves only on the Save button; Back to listings (confirms if unsaved rows remain) / View listings when all saved; "N saved · M need fixing")
 - `/listings/[id]` — Back (own row below `sm`) + Analyze ad / Edit / More (⋮: Mark analyzed with confirm, Archive/Unarchive); header (title, favorite, status/analyzed/archived badges, company, role, locations, dates, View ad), archived notice, application, timeline, interviews, documents, Details `dl`, Summary, Skills grouped Required / Nice to have, Contacts (read-only); Apply with optional CV; "Re-analyze" once analyzed
 - `/listings/[id]/edit` — Back + Analyze ad toolbar, saved title heading, form (Details, Skills, Summary) with "Save changes?" confirm; Analyze ad merges a parse into the saved listing (`?analyze` opens it); filled-from-ad notice
 - `/companies` — list (name, industry, locations, listing/application counts), debounced search, numbered pager over cursors (walks forward to jump, stops at the last page); search and page in the URL, page size like /listings (measurePageSize); rows open `/listings?search=<name>`; star toggles a company favorite
@@ -26,12 +26,12 @@ Updated: 2026-10-09 · Last logged commit: 902e311
 - `listings/`: Card, Form, Dates (server `dueOn`), Location, LocationsField, LanguagesField, SkillsField, ContactsField, NameCombobox,
   FilterPanel (toolbar + facets), FilterCombobox,
   ToggleGroup, FavoriteButton (`size`), AnalyzedBadge, ParseModal (tabs: From link / Paste ad / Use your own AI); application: Application, ApplyModal (CV optional), DocumentPicker (`help`),
-  OutcomeModal (per-status labels), StatusBadge (Accepted solid + icon), StatusChangeModal, StatusTimeline, Interviews, InterviewModal
+  OutcomeModal (per-status labels), StatusBadge (Accepted solid + icon), StatusChangeModal, StatusTimeline, Interviews, InterviewModal; CompareModal (new vs existing, row per field, stacks on phones)
 
 ## Stores & composables
 
 - Pinia: `stores/auth.ts`
-- Composables: useDashboardLayout, useListing, useListingForm, useLlmUsage, useListingsList (presets, facets, sort, search, page ↔ URL query; `useListingsView` last list URL; runtime-built query), useMutation, useNewNames, useProfileTranslation (provide/inject), CONTACT_FIELDS (`contactFields.ts`), useProfile (`PROFILE_FIELDS`, entry types), useParsePrompt (listing, quick, company prompts; `parse` / `parseFromUrl` / `parseNewUrl` return `{ result }` or `{ error }`)
+- Composables: useDashboardLayout, useListing, useListingForm, useLlmUsage, useListingsList (presets, facets, sort, search, page ↔ URL query; `useListingsView` last list URL; runtime-built query), useMutation, useNewNames, useProfileTranslation (provide/inject), CONTACT_FIELDS (`contactFields.ts`), LISTING_COMPARE_FIELDS (`listingCompareFields.ts`), useProfile (`PROFILE_FIELDS`, entry types), useParsePrompt (listing, quick, company prompts; `parse` / `parseFromUrl` / `parseNewUrl` return `{ result }` or `{ error }`)
 - Utils: parseDraft, formatMonth / formatMonthRange / formatYears, daysFromToday, formatDate, formatDateTime, toDateTimeLocal, todayIso, daysAgoIso, localDayStartIso, graphql (`gql`)
 
 ## API operations in use
@@ -64,6 +64,8 @@ Updated: 2026-10-09 · Last logged commit: 902e311
 | Profile translations (`add-profile-translations`)                                                   | Done                                                                               |
 | Optional CV on apply (`optional-cv-on-apply`)                                                       | Done                                                                               |
 | Parse a new listing from its link (`parse-new-listing-from-url`)                                    | Done                                                                               |
+| Quick-add duplicate compare (`quick-add-duplicate-compare`)                                         | Done; UI unverified                                                                |
+| Quick-add save flow (`quick-add-save-flow`)                                                         | Done; UI unverified                                                                |
 
 ## Next up
 
@@ -72,6 +74,8 @@ Updated: 2026-10-09 · Last logged commit: 902e311
 
 ## Decisions log
 
+- 2026-10-10 — Quick-add has no submit button (Save calls `form.submit()`), so Enter can't save the batch; no Done/Cancel, leave action named by destination.
+- 2026-10-10 — Duplicate compare: one row-per-field grid that stacks on phones (no tabs/drawer, both sides stay visible); data from the save response.
 - 2026-10-08 — Profile: one page and query, edits in modals; Basics/Preferences swap in the returned profile, everything else refetches. Bullets are plain text, edited inline. Months use a custom select + year field (native month input is a text box in desktop Firefox/Safari).
 - 2026-10-07 — Listing page: Edit is the only solid primary action; Analyze ad is neutral subtle, rarely used actions sit in a More menu. Optional selects use clearable `USelectMenu`; the edit save keeps its confirm.
 - 2026-10-06 — Analyzing an existing listing merges into the edit form (parsed values win, saved ones kept where the parse is empty, URL kept); saved only on "Save changes".
