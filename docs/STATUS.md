@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-10-10 · Last logged commit: fece3fc
+Updated: 2026-10-11 · Last logged commit: 2cd4566
 
 ## Pages
 
@@ -8,7 +8,8 @@ Updated: 2026-10-10 · Last logged commit: fece3fc
 - `/listings` — whole view (search, sort, preset, facets, page) in the URL query via `router.replace`, so back/refresh restore it; dashboard links use `?filter=`, `?status=`, `?favorites=1`; toolbar (debounced search, sort, Filters toggle with active count, Clear all) + facet panel (status, skill,
   location, posting/required language, posted from/to, due within, favorites; closed by default at every width), presets (closing soon, to analyze,
   archived), offset pagination
-- `/listings/add` (full form incl. Contacts, "Analyze ad" parser modal opening on From link with its own link input (`parseUrl`), paste fallback on errors, dismissible filled-from-ad notice) · `/listings/quick-add` (JSON batch, one aliased `createListing` per row; after save: "Needs a look" (flagged rows: primary Compare → modal, Keep both, Remove new one; applied-before "Got it"), collapsible "N listings added" (closed), "Not saved"; saves only on the Save button; Back to listings (confirms if unsaved rows remain) / View listings when all saved; "N saved · M need fixing")
+- `/listings/add` (full form incl. Contacts, "Analyze ad" parser modal opening on From link with its own link input (`parseUrl`), paste fallback on errors, dismissible filled-from-ad notice)
+- `/listings/quick-add` — Paste text / Collected jobs; explicit Built-in AI / Use your own AI. Full listing JSON → authenticated Check jobs (≤100 URLs, saved/repeated URLs skipped) → collected/skipped/ready counts → Process N jobs (sequential QUICK calls, ≤20 complete jobs and ≤12,000 compact JSON chars) → Review → Save. Labelled progress, current batch, processed/skipped-after-failure/unprocessed counts; failures pause for Retry batch / Skip batch and continue / Stop and review. Drafts append once at completion/stop, existing review rows stay, nothing saves during processing; running/paused controls locked. Free text and external Copy prompt keep one payload. Checked input is read-only; Edit collected jobs / Restart processing confirm reset and retain saved/earlier rows. Back to listings and in-app navigation confirm pending nonblank drafts, checked input, or unfinished batch work before the first save too; reload/close uses native confirmation; discarded responses ignored. All saved with no remaining collection work → View listings. Save-only-on-Save; flagged "Needs a look" (Compare / Keep both / Remove new one, previous-attempt Got it), collapsible added receipt, Not saved, saved/fixing counts retained.
 - `/listings/[id]` — Back (own row below `sm`) + Analyze ad / Edit / More (⋮: Mark analyzed with confirm, Archive/Unarchive); header (title, favorite, status/analyzed/archived badges, company, role, locations, dates, View ad), archived notice, application, timeline, interviews, documents, Details `dl`, Summary, Skills grouped Required / Nice to have, Contacts (read-only); Apply with optional CV; "Re-analyze" once analyzed
 - `/listings/[id]/edit` — Back + Analyze ad toolbar, saved title heading, form (Details, Skills, Summary) with "Save changes?" confirm; Analyze ad merges a parse into the saved listing (`?analyze` opens it); filled-from-ad notice
 - `/companies` — list (name, industry, locations, listing/application counts), debounced search, numbered pager over cursors (walks forward to jump, stops at the last page); search and page in the URL, page size like /listings (measurePageSize); rows open `/listings?search=<name>`; star toggles a company favorite
@@ -31,14 +32,14 @@ Updated: 2026-10-10 · Last logged commit: fece3fc
 ## Stores & composables
 
 - Pinia: `stores/auth.ts`
-- Composables: useDashboardLayout, useListing, useListingForm, useLlmUsage, useListingsList (presets, facets, sort, search, page ↔ URL query; `useListingsView` last list URL; runtime-built query), useMutation, useNewNames, useProfileTranslation (provide/inject), CONTACT_FIELDS (`contactFields.ts`), LISTING_COMPARE_FIELDS (`listingCompareFields.ts`), useProfile (`PROFILE_FIELDS`, entry types), useParsePrompt (listing, quick, company prompts; `parse` / `parseFromUrl` / `parseNewUrl` return `{ result }` or `{ error }`)
-- Utils: parseDraft, formatMonth / formatMonthRange / formatYears, daysFromToday, formatDate, formatDateTime, toDateTimeLocal, todayIso, daysAgoIso, localDayStartIso, graphql (`gql`)
+- Composables: useDashboardLayout, useListing, useListingForm, useLlmUsage, useListingsList (presets, facets, sort, search, page ↔ URL query; `useListingsView` last list URL; runtime-built query), useMutation, useNewNames, useProfileTranslation (provide/inject), CONTACT_FIELDS (`contactFields.ts`), LISTING_COMPARE_FIELDS (`listingCompareFields.ts`), useProfile (`PROFILE_FIELDS`, entry types), useParsePrompt (listing, quick, company prompts; `parse` / `parseFromUrl` / `parseNewUrl` return `{ result }` or `{ error }`), useCollectedJobProcessing (local sequential runner, staged drafts, paused recovery, counts, stale-run disposal)
+- Utils: parseDraft, formatMonth / formatMonthRange / formatYears, daysFromToday, formatDate, formatDateTime, toDateTimeLocal, todayIso, daysAgoIso, localDayStartIso, graphql (`gql`), collectedJobs (validate, check/filter batches, prepare posting), collectedJobBatches (plan by count/serialized size, compact posting, validate full reply/count)
 
 ## API operations in use
 
 - REST: `/api/auth/{login,guest,logout,me}`, `/api/health`, `/api/documents/…`
 - Queries: DashboardLayout, Profile, Dashboard* (ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, CompanyOpenListings), Listings (built at runtime: preset + selected facet clauses, `$order`; counts as aliases), ListingById, CompanyPage,
-  Company/JobRole/Skill/Industry/CitySearch, Companies (cursor-paged), CompanyParsePrompt, SkillFilterSearch, LocationFilterSearch, NewNameCheck, ListingParsePrompt, ListingQuickParsePrompt
+  Company/JobRole/Skill/Industry/CitySearch, Companies (cursor-paged), CompanyParsePrompt, SkillFilterSearch, LocationFilterSearch, NewNameCheck, ListingParsePrompt, ListingQuickParsePrompt, CheckListingUrls
 - Mutations: CreateListing (`previousAttempts`), QuickAddListings, CreateCompanies, UpdateListing, DeleteListing, SetListingFavorite, SetCompanyFavorite, SaveDashboardLayout,
   SetListingArchived, UploadDocument, ApplyToListing, RecordOutcome (OFFER/ACCEPTED/REJECTED/WITHDRAWN),
   UndoStatusChange (`DuplicateListingError` → link to open listing), UpdateStatusChange, Add/Update/DeleteInterview, ParseListing, ParseListingFromUrl, ParseUrl, SetCompanyAvoided, SetCompanyNotes, SaveLocation,
@@ -67,13 +68,19 @@ Updated: 2026-10-10 · Last logged commit: fece3fc
 | Quick-add duplicate compare (`quick-add-duplicate-compare`)                                         | Done; UI unverified                                                                |
 | Quick-add save flow (`quick-add-save-flow`)                                                         | Done; UI unverified                                                                |
 | Quick-add flagged section (`quick-add-flagged-section`)                                             | Done; UI unverified                                                                |
+| Collected-job URL checks (`precheck-collected-job-urls`)                                            | Done; 32 focused unit tests pass; E2E not run, UI unverified                       |
+| Collected-job AI batching (`batch-collected-job-processing`)                                        | Done; 64 focused unit tests pass; E2E/live UI not run                              |
 
 ## Next up
 
 - Parse queue + `onParseJobUpdated` over SSE (waiting on the backend)
-- `job-listings-cards-layout-rework` (two-column cards, measured page size) and the open `listings-filters` tasks
+- `job-listings-cards-layout-rework` (two-column cards, measured page size)
+- Sync/archive dependencies `quick-add-save-flow` and `precheck-collected-job-urls` before syncing `batch-collected-job-processing` (expanded Leaving quick-add requirement).
 
 ## Decisions log
+
+- 2026-10-11 — Collected jobs use a separate Check jobs step so counts are visible and Copy prompt stays on a direct click.
+- 2026-10-11 — Built-in collected parsing is sequential; invalid replies pause for a user decision, progress counts successful inputs only, and replacement/navigation confirms before losing prepared work or unsaved drafts.
 
 - 2026-10-10 — Quick-add after save: flagged rows first in full, clean ones in a closed `UCollapsible` receipt list; one primary Compare per duplicate note (modal switches matches).
 - 2026-10-10 — Quick-add has no submit button (Save calls `form.submit()`), so Enter can't save the batch; no Done/Cancel, leave action named by destination.

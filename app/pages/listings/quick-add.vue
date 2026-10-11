@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { PreparedJobs } from '~/utils/collectedJobs'
+import { collectedJobsPosting, prepareCollectedJobs } from '~/utils/collectedJobs'
+import { useCollectedJobProcessing } from '~/composables/useCollectedJobProcessing'
 import type { FormError } from '@nuxt/ui'
 import { print } from '@0no-co/graphql.web'
 import type { ResultOf } from 'gql.tada'
@@ -175,6 +178,7 @@ const toRow = (d: Record<string, unknown>): Row => ({
 
 const { instructions, copied, load, copy, parsing, parse } =
   useParsePrompt('listingQuickParsePrompt')
+const batchRun = useCollectedJobProcessing(parse)
 onMounted(load)
 
 const form = useTemplateRef('form')
@@ -186,7 +190,70 @@ const pastedCount = ref(0)
 const builtIn = ref(false)
 watch(json, () => (jsonError.value = ''))
 
-const addRows = async (reply: string) => {
+const inputMode = ref('text')
+const INPUT_MODES = [
+  { label: 'Paste text', value: 'text' },
+  { label: 'Collected jobs', value: 'collected' }
+]
+const collected = ref('')
+const checking = ref(false)
+const checkError = ref('')
+const prepared = ref<PreparedJobs | null>(null)
+const collectedError = ref('')
+const publishedKeys = ref<number[]>([])
+const processing = batchRun.busy
+const runStatus = batchRun.status
+const runProgress = batchRun.completed
+const runTotal = batchRun.total
+const runCurrentBatch = batchRun.currentBatch
+const runBatchCount = computed(() => batchRun.batches.value.length)
+const runSkipped = batchRun.skipped
+const runUnprocessed = batchRun.unprocessed
+const runError = batchRun.error
+const runTitle = computed(() => {
+  if (runStatus.value === 'stopped') return 'Processing incomplete'
+  if (runStatus.value === 'paused') return 'Processing paused'
+  if (runStatus.value === 'finished')
+    return runSkipped.value ? 'Finished with skipped jobs' : 'Processing complete'
+  return 'Processing jobs'
+})
+const hasUnsavedWork = computed(
+  () =>
+    pending.value.length > 0 ||
+    (!!prepared.value && !batchRun.published.value) ||
+    processing.value ||
+    (batchRun.published.value && (batchRun.skipped.value > 0 || batchRun.unprocessed.value > 0))
+)
+const collectedMode = computed(() => inputMode.value === 'collected')
+const posting = computed(() =>
+  collectedMode.value ? collectedJobsPosting(prepared.value?.rows ?? []) : ad.value.trim()
+)
+const aiDisabled = computed(
+  () => checking.value || parsing.value || batchRun.busy.value || !posting.value
+)
+watch(collected, () => {
+  prepared.value = null
+  checkError.value = ''
+  collectedError.value = ''
+})
+const checkJobs = async () => {
+  if (batchRun.busy.value) return
+  checking.value = true
+  checkError.value = ''
+  prepared.value = null
+  try {
+    prepared.value = await prepareCollectedJobs(collected.value)
+  } catch (error) {
+    checkError.value = error instanceof Error ? error.message : ERROR_MESSAGES.generic
+  } finally {
+    checking.value = false
+  }
+}
+const copyPrompt = () => {
+  if (!aiDisabled.value) return copy(posting.value)
+}
+
+const decodeRows = (reply: string) => {
   // AIs often wrap the JSON in a code fence or a sentence, so take the outermost array.
   const raw = reply.slice(reply.indexOf('['), reply.lastIndexOf(']') + 1)
   let items: unknown
@@ -201,12 +268,14 @@ const addRows = async (reply: string) => {
     jsonError.value = 'No listings found in that reply.'
     return false
   }
+  return rows
+}
+
+const appendRows = async (rows: Row[]) => {
+  if (!rows.length) return false
   // Appended, not replaced, so a second paste never drops rows already saved or edited.
   state.rows.push(...rows)
   pastedCount.value = rows.length
-  ad.value = ''
-  json.value = ''
-  pasteOpen.value = false
   // Shows what the AI missed (e.g. a null url) right away instead of on Save. The row fields use
   // eager-validation because UForm otherwise only rechecks a field on input after its first blur:
   // the error would stay while fixing it, then vanish on the Save mousedown, shifting Save away
@@ -216,8 +285,22 @@ const addRows = async (reply: string) => {
   return true
 }
 
+const addRows = async (reply: string) => {
+  const rows = decodeRows(reply)
+  if (!rows) return false
+  const added = await appendRows(rows)
+  if (added) {
+    if (collectedMode.value) collected.value = ''
+    else ad.value = ''
+    json.value = ''
+    pasteOpen.value = false
+  }
+  return added
+}
+
 const parseBuiltIn = async () => {
-  const reply = await parse(ad.value)
+  if (aiDisabled.value) return
+  const reply = await parse(posting.value)
   if ('error' in reply) {
     toast.add({ title: reply.error, color: 'error', icon: 'i-lucide-circle-alert' })
   }
@@ -225,11 +308,32 @@ const parseBuiltIn = async () => {
   if ('error' in reply || !(await addRows(reply.result))) builtIn.value = false
 }
 
+const startCollectedProcessing = () => {
+  if (!prepared.value?.rows.length || batchRun.status.value !== 'idle' || saving.value) return
+  collectedError.value = ''
+  try {
+    batchRun.start(prepared.value.rows)
+  } catch (cause) {
+    collectedError.value = cause instanceof Error ? cause.message : ERROR_MESSAGES.generic
+  }
+}
+
+const publishBatchResults = async () => {
+  if (!['finished', 'stopped'].includes(batchRun.status.value) || !batchRun.markPublished()) return
+  const rows = batchRun.accepted.value.map(toRow)
+  publishedKeys.value = rows.map((row) => row.key)
+  if (await appendRows(rows)) pasteOpen.value = false
+}
+watch(batchRun.status, (status) => {
+  if (status === 'finished' || status === 'stopped') void publishBatchResults()
+})
+
 const toast = useToast()
 const saving = ref(false)
 const saveError = ref('')
 
 const onSave = async () => {
+  if (processing.value || saving.value) return
   const rows = pending.value
   saving.value = true
   saveError.value = ''
@@ -265,9 +369,72 @@ const onSave = async () => {
   }
 }
 
-// Saved rows are already in the API, so only unsaved ones are lost by leaving.
 const leaveOpen = ref(false)
-const onBack = () => (savedCount.value ? (leaveOpen.value = true) : navigateTo('/listings'))
+const leaveDestination = ref('/listings')
+const leaveReason = ref<'leave' | 'edit' | 'restart'>('leave')
+let allowRouteLeave = false
+const requestLeave = (destination: string) => {
+  if (allowRouteLeave || !hasUnsavedWork.value) return true
+  leaveDestination.value = destination
+  leaveReason.value = 'leave'
+  leaveOpen.value = true
+  return false
+}
+onBeforeRouteLeave((to) => requestLeave(to.fullPath))
+const onBack = () => {
+  if (requestLeave('/listings')) return navigateTo('/listings')
+}
+const editCollected = () => {
+  // A replacement drops only this run's unsaved drafts, keeping earlier edits and saved rows.
+  state.rows = state.rows.filter((row) => row.saved || !publishedKeys.value.includes(row.key))
+  publishedKeys.value = []
+  batchRun.invalidate()
+  prepared.value = null
+  collectedError.value = ''
+  pasteOpen.value = true
+}
+const requestEditCollected = () => {
+  if (!hasUnsavedWork.value) return editCollected()
+  leaveReason.value = 'edit'
+  leaveOpen.value = true
+}
+const restartCollected = () => {
+  leaveReason.value = 'restart'
+  leaveOpen.value = true
+}
+const confirmDiscard = async () => {
+  leaveOpen.value = false
+  if (leaveReason.value === 'edit' || leaveReason.value === 'restart') {
+    editCollected()
+    return
+  }
+  batchRun.invalidate()
+  allowRouteLeave = true
+  try {
+    await navigateTo(leaveDestination.value)
+  } finally {
+    allowRouteLeave = false
+  }
+}
+const beforeUnload = (event: BeforeUnloadEvent) => {
+  if (!hasUnsavedWork.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+onMounted(() => {
+  watch(
+    hasUnsavedWork,
+    (unsaved) => {
+      if (unsaved) window.addEventListener('beforeunload', beforeUnload)
+      else window.removeEventListener('beforeunload', beforeUnload)
+    },
+    { immediate: true }
+  )
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', beforeUnload)
+  batchRun.invalidate()
+})
 
 const removeRow = (row: Row) => state.rows.splice(state.rows.indexOf(row), 1)
 
@@ -332,15 +499,54 @@ const onConfirmRemove = async () => {
     data-testid="quick-add-form"
     @submit="onSave"
   >
+    <p v-if="collectedMode" class="text-sm text-muted" data-testid="quick-add-stages">
+      Check duplicates → Process jobs → Review → Save
+    </p>
     <UCard v-if="pasteOpen" data-testid="quick-add-paste">
       <div class="space-y-6">
         <div class="space-y-3">
-          <UCheckbox
-            v-model="builtIn"
-            label="Use built-in parser"
-            data-testid="quick-add-builtin"
-          />
+          <UFormField label="Input">
+            <UFieldGroup class="w-full">
+              <UButton
+                v-for="mode in INPUT_MODES"
+                :key="mode.value"
+                :label="mode.label"
+                color="neutral"
+                :variant="inputMode === mode.value ? 'solid' : 'outline'"
+                :aria-pressed="inputMode === mode.value"
+                :disabled="checking || parsing || processing || saving"
+                class="flex-1"
+                :data-testid="`quick-add-mode-${mode.value}`"
+                @click="inputMode = mode.value"
+              />
+            </UFieldGroup>
+          </UFormField>
+          <UFormField label="AI method">
+            <UFieldGroup class="w-full">
+              <UButton
+                label="Built-in AI"
+                color="neutral"
+                :variant="builtIn ? 'solid' : 'outline'"
+                :aria-pressed="builtIn"
+                :disabled="checking || parsing || processing || saving"
+                class="flex-1"
+                data-testid="quick-add-builtin"
+                @click="builtIn = true"
+              />
+              <UButton
+                label="Use your own AI"
+                color="neutral"
+                :variant="!builtIn ? 'solid' : 'outline'"
+                :aria-pressed="!builtIn"
+                :disabled="checking || parsing || processing || saving"
+                class="flex-1"
+                data-testid="quick-add-external"
+                @click="builtIn = false"
+              />
+            </UFieldGroup>
+          </UFormField>
           <UFormField
+            v-if="!collectedMode"
             :label="
               builtIn
                 ? 'Paste one or more ads, or a job-board results page'
@@ -355,28 +561,101 @@ const onConfirmRemove = async () => {
               autoresize
               placeholder="The ads or results page text"
               class="w-full"
+              :disabled="parsing || processing || saving"
               data-testid="quick-add-ad"
             />
           </UFormField>
+          <template v-else>
+            <UFormField
+              label="Collected jobs"
+              help='Paste the full listing JSON array. Each job needs a URL; all other fields are kept. Example: [{ "title": "Waiter", "companyName": "Acme", "url": "https://example.com/job/1" }]'
+            >
+              <UTextarea
+                v-model="collected"
+                :rows="6"
+                :maxrows="12"
+                autoresize
+                :disabled="checking || parsing || processing || saving"
+                :readonly="!!prepared"
+                placeholder="The collected jobs JSON array"
+                class="w-full font-mono"
+                data-testid="quick-add-collected"
+              />
+            </UFormField>
+            <UButton
+              :loading="checking"
+              :disabled="
+                !collected.trim() || checking || parsing || processing || saving || !!prepared
+              "
+              data-testid="quick-add-check"
+              @click="checkJobs"
+              >Check jobs</UButton
+            >
+            <UAlert
+              v-if="checkError"
+              color="error"
+              icon="i-lucide-circle-alert"
+              :title="checkError"
+              data-testid="quick-add-check-error"
+            />
+            <p
+              v-if="prepared"
+              class="text-sm text-muted"
+              role="status"
+              data-testid="quick-add-check-summary"
+            >
+              {{ prepared.remaining + prepared.skipped }} collected · {{ prepared.skipped }} skipped
+              · {{ prepared.remaining }} ready
+            </p>
+            <UButton
+              v-if="prepared && runStatus !== 'finished' && runStatus !== 'stopped'"
+              color="neutral"
+              variant="ghost"
+              :disabled="saving || processing"
+              data-testid="quick-add-edit-collected"
+              @click="requestEditCollected"
+              >Edit collected jobs</UButton
+            >
+            <div
+              v-if="prepared && !prepared.remaining"
+              class="py-6 text-center text-muted"
+              data-testid="quick-add-check-empty"
+            >
+              <UIcon name="i-lucide-check-check" class="mb-2 size-8" />
+              <p>No new jobs remain.</p>
+            </div>
+          </template>
           <UButton
             v-if="builtIn"
             icon="i-lucide-sparkles"
             :loading="parsing"
-            :disabled="!ad.trim()"
+            :disabled="aiDisabled || saving || (collectedMode && runStatus !== 'idle')"
             data-testid="quick-add-builtin-run"
-            @click="parseBuiltIn"
+            @click="collectedMode ? startCollectedProcessing() : parseBuiltIn()"
           >
-            Parse into rows
+            {{ collectedMode ? `Process ${prepared?.remaining ?? 0} jobs` : 'Parse into rows' }}
           </UButton>
+          <p v-if="builtIn && collectedMode" class="text-sm text-muted">
+            Creates drafts for review. Nothing is saved until you choose Save.
+          </p>
+          <UAlert
+            v-if="collectedError"
+            color="error"
+            icon="i-lucide-circle-alert"
+            :title="collectedError"
+            data-testid="quick-add-process-error"
+          />
           <UButton
-            v-else
+            v-if="!builtIn"
             :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
             :color="copied ? 'success' : 'primary'"
             variant="subtle"
             :loading="!instructions"
-            :disabled="!ad.trim()"
+            :disabled="
+              aiDisabled || !instructions || saving || (collectedMode && runStatus !== 'idle')
+            "
             data-testid="quick-add-copy-prompt"
-            @click="copy(ad)"
+            @click="copyPrompt"
           >
             {{ copied ? 'Copied' : 'Copy prompt' }}
           </UButton>
@@ -393,10 +672,16 @@ const onConfirmRemove = async () => {
               autoresize
               placeholder="The JSON array the AI returned"
               class="w-full font-mono"
+              :disabled="processing || saving || (collectedMode && runStatus !== 'idle')"
               data-testid="quick-add-json"
             />
           </UFormField>
-          <UButton :disabled="!json.trim()" data-testid="quick-add-parse" @click="addRows(json)"
+          <UButton
+            :disabled="
+              !json.trim() || processing || saving || (collectedMode && runStatus !== 'idle')
+            "
+            data-testid="quick-add-parse"
+            @click="addRows(json)"
             >Parse into rows</UButton
           >
         </div>
@@ -409,7 +694,10 @@ const onConfirmRemove = async () => {
       data-testid="quick-add-paste-summary"
     >
       <p class="text-sm text-muted">
-        Pasted {{ pastedCount }} {{ pastedCount === 1 ? 'listing' : 'listings' }}.
+        <template v-if="runStatus !== 'idle'">Prepared {{ pastedCount }} drafts.</template>
+        <template v-else
+          >Pasted {{ pastedCount }} {{ pastedCount === 1 ? 'listing' : 'listings' }}.</template
+        >
         {{ pending.length ? 'Check them below, then save.' : 'All saved.' }}
       </p>
       <UButton
@@ -417,10 +705,87 @@ const onConfirmRemove = async () => {
         color="neutral"
         variant="ghost"
         data-testid="quick-add-paste-more"
-        @click="pasteOpen = true"
+        :disabled="processing || saving"
+        @click="collectedMode && prepared ? requestEditCollected() : (pasteOpen = true)"
         >Paste more</UButton
       >
     </div>
+
+    <UCard v-if="runStatus !== 'idle'" data-testid="quick-add-processing">
+      <div class="space-y-3">
+        <h2 class="font-semibold text-highlighted">{{ runTitle }}</h2>
+        <UProgress
+          :model-value="runProgress"
+          :max="runTotal"
+          :get-value-label="() => 'Processing jobs'"
+          :get-value-text="(value, max) => `${value ?? 0} of ${max} jobs processed`"
+          data-testid="quick-add-progress"
+        />
+        <p
+          role="status"
+          aria-live="polite"
+          class="text-sm text-muted"
+          data-testid="quick-add-progress-status"
+        >
+          {{ runProgress }} of {{ runTotal }} jobs processed · Batch {{ runCurrentBatch }} of
+          {{ runBatchCount }}
+        </p>
+        <p v-if="prepared" class="text-sm text-muted">
+          {{ prepared.remaining + prepared.skipped }} collected · {{ prepared.skipped }} skipped
+          before AI · {{ prepared.remaining }} ready
+        </p>
+        <UAlert
+          v-if="runStatus === 'paused'"
+          color="error"
+          icon="i-lucide-circle-alert"
+          :title="`Batch ${runCurrentBatch} failed`"
+          :description="runError"
+          data-testid="quick-add-batch-error"
+        />
+        <div v-if="runStatus === 'paused'" class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <UButton data-testid="quick-add-retry" @click="batchRun.retry()">Retry batch</UButton>
+          <UButton
+            color="neutral"
+            variant="subtle"
+            data-testid="quick-add-skip"
+            @click="batchRun.skip()"
+            >Skip batch and continue</UButton
+          >
+          <UButton
+            color="neutral"
+            variant="ghost"
+            data-testid="quick-add-stop"
+            @click="batchRun.stop()"
+            >Stop and review</UButton
+          >
+        </div>
+        <template v-if="runStatus === 'finished' || runStatus === 'stopped'">
+          <p class="text-sm text-muted" data-testid="quick-add-terminal-counts">
+            {{ runProgress }} processed · {{ runSkipped }} skipped after failure ·
+            {{ runUnprocessed }} unprocessed
+          </p>
+          <p v-if="runProgress" class="text-sm text-muted">Review the drafts below, then save.</p>
+          <div class="flex flex-col gap-2 sm:flex-row">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              :disabled="saving"
+              data-testid="quick-add-edit-collected"
+              @click="requestEditCollected"
+              >Edit collected jobs</UButton
+            >
+            <UButton
+              color="neutral"
+              variant="subtle"
+              :disabled="saving"
+              data-testid="quick-add-restart"
+              @click="restartCollected"
+              >Restart processing</UButton
+            >
+          </div>
+        </template>
+      </div>
+    </UCard>
 
     <section v-if="flagged.length" class="space-y-3" data-testid="quick-add-review">
       <div>
@@ -479,18 +844,24 @@ const onConfirmRemove = async () => {
               <UButton
                 icon="i-lucide-columns-2"
                 data-testid="quick-add-row-compare"
+                :disabled="processing"
                 @click="openCompare(row, row.duplicates[0]!.id)"
                 >Compare{{
                   row.duplicates.length > 1 ? ` (${row.duplicates.length})` : ''
                 }}</UButton
               >
-              <UButton color="neutral" variant="subtle" @click="row.duplicates = undefined"
+              <UButton
+                color="neutral"
+                variant="subtle"
+                :disabled="processing"
+                @click="row.duplicates = undefined"
                 >Keep both</UButton
               >
               <UButton
                 color="error"
                 variant="soft"
                 data-testid="quick-add-row-remove-duplicate"
+                :disabled="processing"
                 @click="askRemove(row)"
                 >Remove new one</UButton
               >
@@ -528,6 +899,7 @@ const onConfirmRemove = async () => {
               variant="subtle"
               class="mt-3"
               data-testid="quick-add-row-got-it"
+              :disabled="processing"
               @click="row.previousAttempts = undefined"
               >Got it</UButton
             >
@@ -582,7 +954,7 @@ const onConfirmRemove = async () => {
             required
             class="sm:col-span-2 xl:flex-1"
           >
-            <UInput v-model="row.title" class="w-full" />
+            <UInput v-model="row.title" :disabled="processing" class="w-full" />
           </UFormField>
           <UFormField
             label="Company"
@@ -594,6 +966,7 @@ const onConfirmRemove = async () => {
             <ListingsNameCombobox
               v-model="row.companyName"
               lookup="companies"
+              :disabled="processing"
               placeholder="Search or add"
             />
           </UFormField>
@@ -607,6 +980,7 @@ const onConfirmRemove = async () => {
             <ListingsNameCombobox
               v-model="row.jobRoleName"
               lookup="jobRoles"
+              :disabled="processing"
               placeholder="Search or add"
             />
           </UFormField>
@@ -617,7 +991,27 @@ const onConfirmRemove = async () => {
             required
             class="sm:col-span-2 xl:flex-1"
           >
-            <UInput v-model="row.url" type="url" placeholder="https://" class="w-full" />
+            <div class="flex items-center gap-2">
+              <UInput
+                v-model="row.url"
+                :disabled="processing"
+                type="url"
+                placeholder="https://"
+                class="min-w-0 flex-1"
+              />
+              <UButton
+                v-if="/^https?:\/\/\S+$/i.test(row.url.trim())"
+                :to="row.url.trim()"
+                target="_blank"
+                rel="noopener noreferrer"
+                icon="i-lucide-external-link"
+                color="neutral"
+                variant="ghost"
+                aria-label="Open job ad in a new tab"
+                title="Open job ad in a new tab"
+                data-testid="quick-add-row-open-ad"
+              />
+            </div>
           </UFormField>
           <div class="flex items-end gap-2 xl:w-48">
             <UFormField
@@ -627,7 +1021,13 @@ const onConfirmRemove = async () => {
               required
               class="flex-1"
             >
-              <UInput v-model="row.postedOn" type="date" :max="todayIso()" class="w-full" />
+              <UInput
+                v-model="row.postedOn"
+                :disabled="processing"
+                type="date"
+                :max="todayIso()"
+                class="w-full"
+              />
             </UFormField>
             <UButton
               icon="i-lucide-trash-2"
@@ -635,6 +1035,7 @@ const onConfirmRemove = async () => {
               variant="ghost"
               aria-label="Remove row"
               data-testid="quick-add-row-remove"
+              :disabled="processing"
               @click="removeRow(row)"
             />
           </div>
@@ -644,6 +1045,7 @@ const onConfirmRemove = async () => {
           <UFormField label="Deadline" :name="`${row.key}.deadlineType`" class="w-40">
             <USelect
               v-model="row.deadlineType"
+              :disabled="processing"
               :items="[...DEADLINE_TYPE_OPTIONS]"
               class="w-full"
               data-testid="quick-add-row-deadline-type"
@@ -658,6 +1060,7 @@ const onConfirmRemove = async () => {
           >
             <UInput
               v-model="row.deadlineOn"
+              :disabled="processing"
               type="date"
               class="w-full"
               data-testid="quick-add-row-deadline-on"
@@ -711,13 +1114,14 @@ const onConfirmRemove = async () => {
         variant="ghost"
         class="justify-center"
         data-testid="quick-add-add-row"
+        :disabled="processing || saving"
         @click="state.rows.push(newRow())"
         >Add row</UButton
       >
       <div class="flex flex-col-reverse gap-2 sm:ml-auto sm:flex-row sm:items-center">
         <!-- No Done/Cancel: a leave action named by where it goes can't be mistaken for saving. -->
         <UButton
-          v-if="savedCount && !pending.length"
+          v-if="savedCount && !hasUnsavedWork"
           to="/listings"
           class="justify-center"
           data-testid="quick-add-view-listings"
@@ -735,7 +1139,7 @@ const onConfirmRemove = async () => {
           <!-- Not type="submit": with no submit button, Enter in a row field can't save every row. -->
           <UButton
             :loading="saving"
-            :disabled="!pending.length"
+            :disabled="!pending.length || processing"
             class="justify-center"
             data-testid="quick-add-save"
             @click="form?.submit()"
@@ -773,10 +1177,22 @@ const onConfirmRemove = async () => {
 
     <AppConfirmModal
       v-model:open="leaveOpen"
-      :title="`Leave ${pending.length} unsaved ${pending.length === 1 ? 'listing' : 'listings'}?`"
-      description="Saved listings are kept."
-      confirm-label="Leave"
-      @confirm="navigateTo('/listings')"
+      :title="
+        leaveReason !== 'leave'
+          ? 'Reset collected jobs?'
+          : processing
+            ? 'Leave batch processing?'
+            : pending.length
+              ? `Leave ${pending.length} unsaved ${pending.length === 1 ? 'listing' : 'listings'}?`
+              : 'Leave collected jobs?'
+      "
+      :description="
+        leaveReason !== 'leave'
+          ? 'Checked input, batch progress, and this run’s unsaved drafts will be reset. Earlier review rows and saved listings are kept.'
+          : 'Unsaved listings, checked input, and batch progress will be lost. Saved listings are kept.'
+      "
+      :confirm-label="leaveReason === 'leave' ? 'Leave' : 'Reset'"
+      @confirm="confirmDiscard"
     />
 
     <AppConfirmModal

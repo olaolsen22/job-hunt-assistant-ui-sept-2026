@@ -2,7 +2,12 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 import { defineVitestProject } from '@nuxt/test-utils/config'
 
-const standaloneTests = ['test/unit/formatMonth.test.ts', 'test/unit/useListingForm.test.ts']
+const standaloneTests = [
+  'test/unit/formatMonth.test.ts',
+  'test/unit/useListingForm.test.ts',
+  'test/unit/collectedJobs.test.ts',
+  'test/unit/collectedJobBatches.test.ts'
+]
 
 export default defineConfig({
   test: {

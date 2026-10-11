@@ -34,7 +34,7 @@ remove it when you delete one.
 - `<ListingsContactsField v-model>` — listing form rows for linked contacts (name, title, email, phone, link).
 - `<CompaniesContactModal v-model:open companyId contact @changed>` — add (`contact: null`) or replace a contact via `addContact`/`updateContact`; API errors as toasts.
   Uses `@click.prevent.stop`, so it can sit inside a link row.
-- `<ListingsNameCombobox v-model lookup placeholder? countryCode? clear?>` — debounced search over
+- `<ListingsNameCombobox v-model lookup placeholder? countryCode? clear? disabled?>` — debounced search over
   `companies` / `jobRoles` / `skills` / `industries` by name, or `locations` by city within `countryCode`;
   allows creating a new name; shows a "new" hint for created names and ones `useIsNewName` flags. Results are cached in `useState('name-lookups')` and filtered
   locally; clear it with `clearNuxtState('name-lookups')` after a save that can create names.
@@ -97,6 +97,8 @@ remove it when you delete one.
 
 ## Composables (`app/composables/`)
 
+- `useCollectedJobProcessing(parse)` — page-local sequential runner. `start`, `retry`, `skip`, `stop`, and `invalidate` control `idle`/`running`/`paused`/`finished`/`stopped`; `accepted` holds validated raw drafts in order. `completed`, `skipped`, `unprocessed`, `currentBatch`, `total`, `error`, and `busy` support progress and recovery UI. `markPublished()` is a one-shot guard for appending drafts.
+
 - `LISTING_COMPARE_FIELDS` fragment + `ComparedListing` type (`composables/listingCompareFields.ts`) — fields the compare modal needs.
 - `CONTACT_FIELDS` fragment + `CompanyContact` type (`composables/contactFields.ts`) — contact shape for company and listing queries.
 - `useListing(id)` → `{ listing, loading, error, refresh }` — client-only `listingById` query with every
@@ -139,6 +141,9 @@ remove it when you delete one.
 - `useAuthStore()` → `{ user, fetchMe, login, loginAsGuest, logout }`.
 
 ## Utils (`app/utils/`, auto-imported)
+
+- `collectedJobs.ts` — `parseCollectedJobs(source)` validates full listing JSON objects by URL, preserving every field without requiring text; `prepareCollectedJobs(source)` checks authenticated URL batches (≤100), maps indexes and filters normalized repeats across batches, returns `{ rows, remaining, skipped }` only after all succeed; `collectedJobsPosting(rows)` serializes the retained complete objects as JSON (empty rows yield no payload). Exports `CollectedJob`, `PreparedJobs`.
+- `collectedJobBatches.ts` — `planCollectedJobBatches(rows)` preserves full objects and input order in consecutive batches of at most 20 jobs and 12,000 compact JSON characters; throws `OversizedCollectedJobError(index)` before processing if one object cannot fit. `collectedJobBatchPosting(batch)` is the exact compact request text. `decodeCollectedJobReply(reply, expectedCount)` extracts a JSON array and accepts only the expected count of object values. Exports the two limit constants and `OversizedCollectedJobError`.
 
 - ``graphql(`...`, [fragments])`` — gql.tada document; result/variable types inferred from the API schema
   (`app/graphql-env.d.ts`, regenerate with `pnpm gql:gen`). Use `ResultOf<typeof DOC>` for derived types.

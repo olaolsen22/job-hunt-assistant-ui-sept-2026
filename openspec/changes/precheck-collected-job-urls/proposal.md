@@ -6,9 +6,9 @@ Collected jobs can include saved listings and repeated links, wasting AI parsing
 
 ## What Changes
 
-- Add a collected-jobs input mode to quick-add: a JSON array of `{ url, text }` rows, with a small example and validation before checking.
+- Add a collected-jobs input mode to quick-add: a JSON array of complete listing objects with a URL in each row, with a small example and validation before checking.
 - Check URLs through the existing authenticated `checkListingUrls(urls)` query in batches of at most 100. Map results by their batch-local `index` back to original rows and retain only `shouldProcess: true` rows.
-- Track returned `normalizedUrl` values across batches to skip repeats between chunks, preserving the original order and row content.
+- Track returned `normalizedUrl` values across batches to skip repeats between chunks, preserving the original order and every field of each retained object.
 - Show remaining and skipped counts before built-in parsing or copying a prompt for external AI. Block both actions on check failure or when no jobs remain.
 - Invalidate prepared results when input changes; retain the input for correction and retry.
 - Keep the existing free-text, pasted AI reply, and save-time duplicate handling flows. Scraping, URL fetching, backend changes, and single-listing analysis changes are outside scope.

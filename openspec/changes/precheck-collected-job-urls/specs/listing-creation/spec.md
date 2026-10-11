@@ -4,16 +4,16 @@
 
 ### Requirement: Structured collected jobs in quick-add
 
-Quick-add SHALL offer a collected-jobs input mode accepting a JSON array of `{ url, text }` rows. Each row MUST have a non-empty http(s) URL and non-empty text. Invalid or empty input SHALL show an error and SHALL NOT start URL checking or AI processing. The existing free-text and pasted AI reply flows SHALL remain available.
+Quick-add SHALL offer a collected-jobs input mode accepting a JSON array of full listing objects. Each row MUST have a non-empty http(s) URL. Every field of retained objects SHALL be preserved; a text field SHALL NOT be required. Invalid or empty input SHALL show an error and SHALL NOT start URL checking or AI processing. The existing free-text and pasted AI reply flows SHALL remain available.
 
 #### Scenario: Valid collected jobs
 
-- **WHEN** the user pastes a valid array of URL and text rows and chooses Check jobs
+- **WHEN** the user pastes a valid array of listing objects without a text field and chooses Check jobs
 - **THEN** quick-add checks their URLs before enabling AI actions
 
 #### Scenario: Invalid collection
 
-- **WHEN** the array is invalid JSON, empty, or contains a row with a missing or invalid URL or blank text
+- **WHEN** the array is invalid JSON, empty, or contains a row that is not an object or has a missing or invalid URL
 - **THEN** the input error identifies the problem and no URL-check or AI request is sent
 
 ### Requirement: Authenticated URL eligibility before AI
@@ -63,7 +63,7 @@ After all checks succeed, quick-add SHALL show remaining and skipped job counts,
 
 - **WHEN** 105 input jobs yield 80 eligible unique jobs
 - **THEN** the UI shows 80 jobs remaining and 25 skipped
-- **AND** parsing or copying the prompt includes only those 80 jobs with their original URLs and text
+- **AND** parsing or copying the prompt includes only those 80 jobs with all their original fields, including nested locations, dates, and null values
 
 #### Scenario: Every job is skipped
 

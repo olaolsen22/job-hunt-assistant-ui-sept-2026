@@ -16,7 +16,7 @@ The API schema defines `checkListingUrls(urls: [String!]!): [ListingUrlCheckResu
 
 ### 1. Explicit collected-jobs input and preparation step
 
-Add a local input-mode control in the existing quick-add paste card: Paste text / Collected jobs. Keep Paste text as the default. Collected jobs uses a labelled `UTextarea` with a concise JSON example such as `[{ "url": "https://example.com/job/1", "text": "Developer at Acme..." }]`. Accept only string URLs and text, trim outer whitespace, and reject the whole collection with an inline row-numbered error if a row is invalid. Ignore other object properties. This minimal input shape is a recorded planning assumption; CSV, scraping, and rich imported metadata are excluded.
+Add a local input-mode control in the existing quick-add paste card: Paste text / Collected jobs. Keep Paste text as the default. Collected jobs uses a labelled `UTextarea` with a concise JSON example such as `[{ "title": "Waiter", "companyName": "Acme", "url": "https://example.com/job/1" }]`. Accept complete listing objects and require only a valid string URL for eligibility checking. Preserve every original field, including nested arrays and null values. Trim URLs only when validating and building query variables; reject the whole collection with an inline row-numbered error if a URL is invalid. The owner clarified that collected input uses the full listing JSON shape, without a required text field. CSV and scraping remain excluded.
 
 An explicit Check jobs button prepares the collection, followed by the summary and current built-in/external AI controls. Inline UI/UX advice: reuse the page's `UCard`, `UFormField`, `UTextarea`, `UButton`, and existing built-in-parser checkbox; use `UAlert` for check errors, muted summary text, and a centered empty message when all jobs are skipped. Stack input, summary, and actions at every width, wrapping long text. Keep existing theme and touch sizes; no table or new shared UI component is needed.
 
@@ -32,7 +32,7 @@ Sequential checks were chosen over parallel checks to stop later requests on fai
 
 ### 3. Both AI actions consume one prepared payload
 
-Serialize only retained `{ url, text }` rows into a readable posting string with each original URL next to its text. Pass that same prepared string to existing `parse` or `copy`; do not pass raw collected JSON or skipped text. These functions and other consumers remain unchanged. Parse results continue through `addRows` and the existing explicit save flow.
+Serialize only retained complete listing objects into a formatted JSON array, preserving every original field. Empty preparations produce no posting payload. Pass that same prepared string to existing `parse` or `copy`; do not pass unchecked collected JSON or skipped objects. These functions and other consumers remain unchanged. Parse results continue through `addRows` and the existing explicit save flow.
 
 Keep prepared content reusable when toggling built-in/external AI or when parsing fails, as long as the input has not changed. A URL-check failure blocks both collected AI actions, retains the original input, and shows the thrown API message when available, otherwise the existing generic message. Unlike the current parser fallback, check failure must never offer an unchecked collected prompt. Retry checks the whole collection. An empty result also blocks both actions and shows zero remaining plus skipped count.
 

@@ -8,6 +8,7 @@ const props = defineProps<{
   countryCode?: string
   // Optional fields (the industry on the company edit page) need a way back to empty.
   clear?: boolean
+  disabled?: boolean
 }>()
 const model = defineModel<string>()
 
@@ -87,6 +88,12 @@ const menuItems = computed(() => {
 })
 const loading = ref(false)
 const open = ref(false)
+watch(
+  () => props.disabled,
+  (disabled) => {
+    if (disabled) open.value = false
+  }
+)
 const createdName = ref<string>()
 const isNewName = useIsNewName()
 // The name only exists once the listing is saved, so say so; otherwise it looks like an existing match.
@@ -167,6 +174,7 @@ const search = async (q: string) => {
       :loading="loading"
       :placeholder="placeholder"
       :clear="clear"
+      :disabled="disabled"
       ignore-filter
       open-on-focus
       :create-item="{ position: 'top', when: 'always' }"
