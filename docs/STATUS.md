@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-10-10 · Last logged commit: 8a530f1
+Updated: 2026-10-10 · Last logged commit: fece3fc
 
 ## Pages
 
@@ -8,7 +8,7 @@ Updated: 2026-10-10 · Last logged commit: 8a530f1
 - `/listings` — whole view (search, sort, preset, facets, page) in the URL query via `router.replace`, so back/refresh restore it; dashboard links use `?filter=`, `?status=`, `?favorites=1`; toolbar (debounced search, sort, Filters toggle with active count, Clear all) + facet panel (status, skill,
   location, posting/required language, posted from/to, due within, favorites; closed by default at every width), presets (closing soon, to analyze,
   archived), offset pagination
-- `/listings/add` (full form incl. Contacts, "Analyze ad" parser modal opening on From link with its own link input (`parseUrl`), paste fallback on errors, dismissible filled-from-ad notice) · `/listings/quick-add` (JSON batch, one aliased `createListing` per row; possible duplicates: Keep both / Remove / Compare modal; saves only on the Save button; Back to listings (confirms if unsaved rows remain) / View listings when all saved; "N saved · M need fixing")
+- `/listings/add` (full form incl. Contacts, "Analyze ad" parser modal opening on From link with its own link input (`parseUrl`), paste fallback on errors, dismissible filled-from-ad notice) · `/listings/quick-add` (JSON batch, one aliased `createListing` per row; after save: "Needs a look" (flagged rows: primary Compare → modal, Keep both, Remove new one; applied-before "Got it"), collapsible "N listings added" (closed), "Not saved"; saves only on the Save button; Back to listings (confirms if unsaved rows remain) / View listings when all saved; "N saved · M need fixing")
 - `/listings/[id]` — Back (own row below `sm`) + Analyze ad / Edit / More (⋮: Mark analyzed with confirm, Archive/Unarchive); header (title, favorite, status/analyzed/archived badges, company, role, locations, dates, View ad), archived notice, application, timeline, interviews, documents, Details `dl`, Summary, Skills grouped Required / Nice to have, Contacts (read-only); Apply with optional CV; "Re-analyze" once analyzed
 - `/listings/[id]/edit` — Back + Analyze ad toolbar, saved title heading, form (Details, Skills, Summary) with "Save changes?" confirm; Analyze ad merges a parse into the saved listing (`?analyze` opens it); filled-from-ad notice
 - `/companies` — list (name, industry, locations, listing/application counts), debounced search, numbered pager over cursors (walks forward to jump, stops at the last page); search and page in the URL, page size like /listings (measurePageSize); rows open `/listings?search=<name>`; star toggles a company favorite
@@ -66,6 +66,7 @@ Updated: 2026-10-10 · Last logged commit: 8a530f1
 | Parse a new listing from its link (`parse-new-listing-from-url`)                                    | Done                                                                               |
 | Quick-add duplicate compare (`quick-add-duplicate-compare`)                                         | Done; UI unverified                                                                |
 | Quick-add save flow (`quick-add-save-flow`)                                                         | Done; UI unverified                                                                |
+| Quick-add flagged section (`quick-add-flagged-section`)                                             | Done; UI unverified                                                                |
 
 ## Next up
 
@@ -74,6 +75,7 @@ Updated: 2026-10-10 · Last logged commit: 8a530f1
 
 ## Decisions log
 
+- 2026-10-10 — Quick-add after save: flagged rows first in full, clean ones in a closed `UCollapsible` receipt list; one primary Compare per duplicate note (modal switches matches).
 - 2026-10-10 — Quick-add has no submit button (Save calls `form.submit()`), so Enter can't save the batch; no Done/Cancel, leave action named by destination.
 - 2026-10-10 — Duplicate compare: one row-per-field grid that stacks on phones (no tabs/drawer, both sides stay visible); data from the save response.
 - 2026-10-08 — Profile: one page and query, edits in modals; Basics/Preferences swap in the returned profile, everything else refetches. Bullets are plain text, edited inline. Months use a custom select + year field (native month input is a text box in desktop Firefox/Safari).

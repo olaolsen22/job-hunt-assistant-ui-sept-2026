@@ -105,6 +105,15 @@ const pending = computed(() => toSave(state.rows))
 const savedCount = computed(() => state.rows.filter((r) => r.saved).length)
 const failedCount = computed(() => pending.value.filter((r) => r.error).length)
 
+// Clearing a row's flags (Keep both, Got it) moves it from flagged into added.
+type SavedRow = Row & { saved: NonNullable<Row['saved']> }
+const isSaved = (r: Row): r is SavedRow => !!r.saved
+const isFlagged = (r: Row) => !!(r.duplicates || r.previousAttempts)
+const flagged = computed(() => state.rows.filter(isSaved).filter(isFlagged))
+const added = computed(() => state.rows.filter(isSaved).filter((r) => !isFlagged(r)))
+const unsaved = computed(() => state.rows.filter((r) => !r.saved))
+const addedOpen = ref(false)
+
 // Field names use the row key, not the index, so errors stay on the right row after a removal.
 const validate = (s: typeof state): FormError[] =>
   toSave(s.rows).flatMap((r) => {
@@ -413,8 +422,12 @@ const onConfirmRemove = async () => {
       >
     </div>
 
-    <template v-for="row in state.rows" :key="row.key">
-      <UCard v-if="row.saved" data-testid="quick-add-row-saved">
+    <section v-if="flagged.length" class="space-y-3" data-testid="quick-add-review">
+      <div>
+        <h2 class="font-semibold text-highlighted">Needs a look ({{ flagged.length }})</h2>
+        <p class="text-sm text-muted">Saved, but may match a listing you already have.</p>
+      </div>
+      <UCard v-for="row in flagged" :key="row.key" data-testid="quick-add-row-saved">
         <div class="flex items-start gap-3">
           <UIcon name="i-lucide-circle-check" class="mt-0.5 size-5 shrink-0 text-success" />
           <div class="min-w-0 flex-1 space-y-1">
@@ -447,40 +460,39 @@ const onConfirmRemove = async () => {
                 :key="match.id"
                 class="flex flex-wrap items-center gap-x-2"
               >
-                <NuxtLink :to="`/listings/${match.id}`" class="font-medium hover:underline">{{
-                  match.title
-                }}</NuxtLink>
+                <!-- New tab, so following it keeps the unsaved rows on this page. -->
+                <NuxtLink
+                  :to="`/listings/${match.id}`"
+                  target="_blank"
+                  class="font-medium hover:underline"
+                  >{{ match.title }}</NuxtLink
+                >
                 <span class="text-muted">{{ match.company.name }} · {{ match.jobRole.name }}</span>
                 <!-- Archived means the user already applied to it. -->
                 <UBadge v-if="match.archivedAt" color="neutral" variant="subtle" size="sm"
                   >Applied</UBadge
                 >
-                <UButton
-                  icon="i-lucide-columns-2"
-                  size="sm"
-                  color="neutral"
-                  variant="link"
-                  data-testid="quick-add-row-compare"
-                  @click="openCompare(row, match.id)"
-                  >Compare</UButton
-                >
               </li>
             </ul>
+            <!-- One Compare for the note: the modal's "Compare with" switches between matches. -->
             <div class="mt-3 flex flex-wrap gap-2">
               <UButton
-                size="sm"
-                color="neutral"
-                variant="outline"
-                @click="row.duplicates = undefined"
+                icon="i-lucide-columns-2"
+                data-testid="quick-add-row-compare"
+                @click="openCompare(row, row.duplicates[0]!.id)"
+                >Compare{{
+                  row.duplicates.length > 1 ? ` (${row.duplicates.length})` : ''
+                }}</UButton
+              >
+              <UButton color="neutral" variant="subtle" @click="row.duplicates = undefined"
                 >Keep both</UButton
               >
               <UButton
-                size="sm"
                 color="error"
                 variant="soft"
                 data-testid="quick-add-row-remove-duplicate"
                 @click="askRemove(row)"
-                >Remove this one</UButton
+                >Remove new one</UButton
               >
             </div>
           </template>
@@ -502,17 +514,66 @@ const onConfirmRemove = async () => {
                 :key="attempt.id"
                 class="flex flex-wrap items-center gap-x-2"
               >
-                <NuxtLink :to="`/listings/${attempt.id}`" class="font-medium hover:underline">{{
-                  attempt.title
-                }}</NuxtLink>
+                <NuxtLink
+                  :to="`/listings/${attempt.id}`"
+                  target="_blank"
+                  class="font-medium hover:underline"
+                  >{{ attempt.title }}</NuxtLink
+                >
                 <ListingsStatusBadge :status="attempt.status" />
               </li>
             </ul>
+            <UButton
+              color="neutral"
+              variant="subtle"
+              class="mt-3"
+              data-testid="quick-add-row-got-it"
+              @click="row.previousAttempts = undefined"
+              >Got it</UButton
+            >
           </template>
         </UAlert>
       </UCard>
+    </section>
 
-      <UCard v-else data-testid="quick-add-row">
+    <UCollapsible v-if="added.length" v-model:open="addedOpen">
+      <UButton
+        color="neutral"
+        variant="subtle"
+        icon="i-lucide-circle-check"
+        :trailing-icon="addedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+        block
+        data-testid="quick-add-added-toggle"
+        >{{ added.length }} {{ added.length === 1 ? 'listing' : 'listings' }} added</UButton
+      >
+      <template #content>
+        <UCard class="mt-2" data-testid="quick-add-added">
+          <ul class="divide-y divide-default">
+            <li v-for="row in added" :key="row.key" class="min-w-0 py-2 first:pt-0 last:pb-0">
+              <NuxtLink
+                :to="`/listings/${row.saved.id}`"
+                class="block truncate font-medium text-highlighted hover:underline"
+                >{{ row.saved.title }}</NuxtLink
+              >
+              <p class="truncate text-sm text-muted">
+                {{ row.companyName }} · {{ row.jobRoleName }}
+              </p>
+            </li>
+          </ul>
+        </UCard>
+      </template>
+    </UCollapsible>
+
+    <h2
+      v-if="savedCount && unsaved.length"
+      class="font-semibold text-highlighted"
+      data-testid="quick-add-unsaved"
+    >
+      Not saved ({{ unsaved.length }})
+    </h2>
+
+    <template v-for="row in unsaved" :key="row.key">
+      <UCard data-testid="quick-add-row">
         <div class="grid gap-3 sm:grid-cols-2 xl:flex xl:items-start">
           <UFormField
             label="Job title"

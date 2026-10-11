@@ -1,6 +1,7 @@
 import type { ShallowRef } from 'vue'
 import type { ResultOf, TadaDocumentNode } from 'gql.tada'
 import { parse, print } from '@0no-co/graphql.web'
+import { graphql } from '~/utils/graphql'
 import { APPLICATION_STATUS_OPTIONS, LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 
 const LISTING_ITEM = graphql(`

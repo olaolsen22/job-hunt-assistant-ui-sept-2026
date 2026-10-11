@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 const listing = (applied: boolean) => ({
   id: 5,
   title: 'Frontend Developer',
-  company: { name: 'Acme', applicationCount: applied ? 1 : 0 },
+  company: { id: 3, name: 'Acme', applicationCount: applied ? 1 : 0, avoidedAt: null },
   jobRole: { name: 'Frontend' },
   seniority: null,
   employmentType: null,
@@ -35,7 +35,8 @@ const listing = (applied: boolean) => ({
   ],
   locations: [],
   languages: [],
-  skills: []
+  skills: [],
+  contacts: []
 })
 
 test('applies with an uploaded CV and shows the new status', async ({ page }) => {

@@ -22,6 +22,14 @@ const saved = (id: number) => ({
   possibleDuplicates: null,
   errors: null
 })
+const duplicate = (id: number) => ({
+  ...saved(id),
+  possibleDuplicates: [{ ...saved(90).listing, archivedAt: null }]
+})
+const appliedBefore = (id: number) => ({
+  ...saved(id),
+  previousAttempts: [{ id: 80, title: 'Job 80', status: 'REJECTED' }]
+})
 const failed = {
   listing: null,
   previousAttempts: null,
@@ -111,5 +119,48 @@ describe('Quick add', () => {
     expect(w.find('[data-testid="quick-add-save"]').exists()).toBe(false)
     expect(w.find('[data-testid="quick-add-back"]').exists()).toBe(false)
     expect(w.get('[data-testid="quick-add-paste-summary"]').text()).toContain('All saved.')
+  })
+
+  it('shows flagged rows first and groups the rest as added', async () => {
+    mockApi([duplicate(1), saved(2), saved(3), failed])
+    const w = await pasteRows(4)
+    await save(w)
+
+    const review = w.get('[data-testid="quick-add-review"]')
+    expect(review.text()).toContain('Needs a look (1)')
+    expect(review.findAll('[data-testid="quick-add-row-saved"]')).toHaveLength(1)
+    expect(w.get('[data-testid="quick-add-added-toggle"]').text()).toBe('2 listings added')
+    expect(w.find('[data-testid="quick-add-added"]').exists()).toBe(false)
+    expect(w.get('[data-testid="quick-add-unsaved"]').text()).toBe('Not saved (1)')
+
+    await w.get('[data-testid="quick-add-added-toggle"]').trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="quick-add-added"]').text()).toContain('Job 3')
+  })
+
+  it('opens the compare modal from the note and moves a kept row into added', async () => {
+    mockApi([duplicate(1), saved(2)])
+    const w = await pasteRows(2)
+    await save(w)
+
+    await w.get('[data-testid="quick-add-row-compare"]').trigger('click')
+    await flushPromises()
+    // The modal is teleported to <body>, outside the wrapper.
+    expect(document.body.querySelector('[data-testid="compare-keep"]')).not.toBeNull()
+
+    const keep = w.findAll('[data-testid="quick-add-row-duplicates"] button')
+    await keep.find((b) => b.text() === 'Keep both')!.trigger('click')
+    expect(w.find('[data-testid="quick-add-review"]').exists()).toBe(false)
+    expect(w.get('[data-testid="quick-add-added-toggle"]').text()).toBe('2 listings added')
+  })
+
+  it('clears an applied-before note with Got it', async () => {
+    mockApi([appliedBefore(1)])
+    const w = await pasteRows(1)
+    await save(w)
+
+    await w.get('[data-testid="quick-add-row-got-it"]').trigger('click')
+    expect(w.find('[data-testid="quick-add-review"]').exists()).toBe(false)
+    expect(w.get('[data-testid="quick-add-added-toggle"]').text()).toBe('1 listing added')
   })
 })

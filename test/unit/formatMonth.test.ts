@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { formatMonth, formatMonthRange, formatYears } from '~/utils/formatMonth'
 
 describe('formatMonth', () => {
   it('shows a short month and year without shifting the month', () => {
