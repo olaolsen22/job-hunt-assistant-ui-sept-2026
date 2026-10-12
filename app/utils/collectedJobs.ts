@@ -1,5 +1,6 @@
 import type { ResultOf } from 'gql.tada'
 import { gql, graphql } from './graphql'
+import { isHttpUrl } from './isHttpUrl'
 
 const CHECK_LISTING_URLS = graphql(`
   query CheckListingUrls($urls: [String!]!) {
@@ -38,14 +39,8 @@ export const parseCollectedJobs = (source: string): CollectedJob[] => {
       throw new Error(`Job ${index + 1}: enter a listing object with an http(s) URL.`)
     }
     const url = typeof item?.url === 'string' ? item.url.trim() : ''
-    let validUrl = false
-    try {
-      const parsed = new URL(url)
-      validUrl = ['http:', 'https:'].includes(parsed.protocol) && !/\s/.test(url)
-    } catch {
-      // Invalid input is shown with its row number below.
-    }
-    if (!validUrl) throw new Error(`Job ${index + 1}: enter an http(s) URL.`)
+    if (!isHttpUrl(url) || /\s/.test(url))
+      throw new Error(`Job ${index + 1}: enter an http(s) URL.`)
     return item
   })
 }

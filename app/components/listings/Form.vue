@@ -57,7 +57,10 @@ defineExpose({ validate: () => form.value?.validate({ silent: true }) })
         </UFormField>
 
         <UFormField label="Ad link" name="url" required class="sm:col-span-2">
-          <UInput v-model="state.url" type="url" placeholder="https://" class="w-full" />
+          <div class="flex gap-2">
+            <UInput v-model="state.url" type="url" placeholder="https://" class="min-w-0 flex-1" />
+            <slot name="url-action" />
+          </div>
         </UFormField>
 
         <!-- The optional selects use USelectMenu because USelect can't go back to empty once

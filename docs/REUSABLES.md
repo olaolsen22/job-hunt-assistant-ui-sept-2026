@@ -9,6 +9,7 @@ remove it when you delete one.
   header shows when either is given). Default wrapper for page sections.
 - `<AppMonthField v-model disabled?>` — month `USelect` + year `UInputNumber`; model is `'YYYY-MM-01' | null`
   and is `null` whenever either part is empty. Used by every dated profile entry.
+- `<AppAiCostNotice :usage?>` — warning that built-in parsing bills the app's AI key, with today's `LlmUsage` when given; used by `ListingsParseModal` and `ProfileCvImportModal`.
 - `<AppConfirmModal v-model:open title description? confirm-label? loading? disabled? @confirm>` — confirm
   dialog with Cancel / confirm buttons; not dismissible while `loading`. The default slot is the
   body, so form modals (`<ListingsApplyModal>` etc.) wrap it too.
@@ -40,7 +41,8 @@ remove it when you delete one.
   locally; clear it with `clearNuxtState('name-lookups')` after a save that can create names.
 - `<ListingsForm v-model :validate submit-label cancel-to @submit>` — the listing form's fields
   and Cancel/submit buttons, shared by add and edit. `v-model` is `useListingForm().state`; the
-  default slot renders above the buttons (error alert). The page owns mutation, confirm, errors.
+  default slot renders above the buttons (error alert); `url-action` renders beside the Ad link
+  input. The page owns mutation, confirm, errors.
 - `<ListingsCompareModal v-model:open v-model:matchId listing matches @keep @remove>` — compares a new listing with a possible
   duplicate, one row per field (differing rows highlighted); "Compare with" select for 2+ matches; footer: Open existing,
   Keep both, Remove new one. Values side by side from `sm`, stacked with New/Existing badges below.
@@ -123,6 +125,10 @@ remove it when you delete one.
 - `useProfile()` → `{ profile, loading, error, refresh }` (key `profile`, client-only). Exports `PROFILE_FIELDS`
   (the fragment the full-replace mutations also select), `BULLET_FIELDS` (also used by `moveProfileBullet`), `PROFILE` and `ProfileData` / `ProfileExperience` /
   `ProfileEducation` / `ProfileCertification` / `ProfileProject` / `ProfileSkill` / `ProfileLanguage` / `ProfileBullet`.
+- `useProfileCvImport()` → prompt load/copy state, `busy`, `parse(text)`, `preview(json)`, `save(selection)`; operations return `{ value }` or `{ error, stale?, apiErrors? }` for inline handling (`apiErrors` keeps each typed save error so the modal can route it; a network failure has none and warns the save is unconfirmed). `CvCandidate` and `CvSelection` are derived from GraphQL documents; parsing/preview never imports.
+- `profileCvImport.ts` → `createCvDraft(candidate, profile)` (missing skill levels: saved level by trimmed, case-insensitive name, else 1, with a visible note), `selectCvTarget(entry, kind, id, profile)`, `reviewCvSelection(draft, profile)` returning typed selection, plain-language path errors and selected count. Omission preserves content; included null clears optional basics; links/hobbies replace only on explicit opt-in. Issues are `CvIssue { path, message, severity? }` (`'warning'` guides without blocking). `cvFeedback(draft, errors)` splits source warnings into field warnings (retired when edited or skipped; entry-level ones only when skipped) and Import notes; `cvPathWithin(path, prefix)`, `cvPathRenderable(path)` (the review shows a target for it), `cvSubmissionPaths` + `cvServerIssue` (route API messages past skipped rows/bullets), `cvSavedSkill(profile, name)`, `cvEntryLabel(entry)` (saved or draft entry), `CV_ISSUES` (injection key).
+- `<ProfileCvImportModal v-model:open :profile :refresh-profile @saved(profile)>` — listing-style Paste CV / Use your own AI input followed by local editable `<ProfileCvReview v-model :profile :issues :notes>` (exposes `focusIssue(paths)`: opens the first match's entry and focuses it) and `<ProfileCvEntryReview>` (compact header, Edit fields disclosure); only Save import sends one atomic mutation. The footer status counts issues (warning before a Save attempt, error after) and focuses the first; Save is neutral-subtle when nothing is selected. Refreshes target options before review, supports manual entry/bullet IDs, and confirms discarding or replacing review. The caller applies the full returned profile. English-primary profiles only; Norwegian translations are preserved.
+- `<ProfileCvField :path label? help? exact?>` — `UFormField` showing the `CV_ISSUES` issue for `path` (or below it, unless `exact`); without a slot it renders only while it has a message, as a focusable item/section target. `<ProfileCvSection :title :icon :path>` — review section heading with an issue count and `actions` slot. Both must render inside `<ProfileCvReview>` (or a test providing `CV_ISSUES`).
 - `useListingsList(grid)` → `{ listings, totalCount, counts, page, pageSize, filter, search, sort, facets, loading, error, refresh }` —
   `search` (bound to an input; starts as `?search=` from the URL, which the companies list links with) is debounced 300 ms and applies to the list and every count. `filter`
   (`'closingSoon' | 'toAnalyze' | 'archived' | null`, `ListingsFilter`) is the preset; `facets` (reactive
@@ -158,6 +164,7 @@ remove it when you delete one.
 - `formatDateTime(iso)` — formats a `DateTime` instant as `nb-NO` medium date + short time, local zone.
 - `toDateTimeLocal(value = now)` — a date/ISO string as local `YYYY-MM-DDTHH:mm` for
   `<input type="datetime-local">` (send back with `new Date(value).toISOString()`).
+- `isHttpUrl(value)` — whether a string parses as an `http:`/`https:` URL.
 - `locationInput(countryCode?, city?)` — a form's country + city as `LocationInput` (`null` without a country).
 - `formatMonth(iso)` — `YYYY-MM-DD` as `nb-NO` short month + year; `formatMonthRange(start, end, openLabel?)`
   ("Mar 2020 – Present"; no `openLabel` shows just the start); `formatYears(months)` ("2.5 yrs", "<1 yr", "" for 0).

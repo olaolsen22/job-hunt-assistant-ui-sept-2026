@@ -190,6 +190,57 @@ const clickConfirm = () =>
   document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
 
 describe('ProfilePage', () => {
+  it('keeps the profile mounted when refreshing CV update targets fails', async () => {
+    let failed = false
+    const { wrapper } = await mountPage({ ...filledProfile, contentLanguage: 'ENGLISH' }, () => {
+      if (failed) throw new Error('Refresh unavailable')
+      return undefined
+    })
+    failed = true
+    await expect(wrapper.vm.refreshCvProfile()).rejects.toThrow()
+    expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('Ada Lovelace')
+    wrapper.unmount()
+  })
+
+  it('offers CV import on empty and populated English-primary profiles, including translated profiles', async () => {
+    for (const profile of [
+      { ...emptyProfile, contentLanguage: 'ENGLISH' },
+      {
+        ...filledProfile,
+        contentLanguage: 'ENGLISH',
+        translations: [
+          {
+            id: 1,
+            language: 'NORWEGIAN',
+            headline: 'Norsk',
+            summary: null,
+            sourceHeadline: 'Engineer',
+            sourceSummary: null,
+            isMachine: false,
+            isHeadlineStale: false,
+            isSummaryStale: false
+          }
+        ]
+      }
+    ]) {
+      const { wrapper } = await mountPage(profile)
+      expect(
+        wrapper.get('[data-testid="profile-import-cv"]').attributes('disabled')
+      ).toBeUndefined()
+      expect(wrapper.find('[data-testid="profile-import-cv-hint"]').exists()).toBe(false)
+      wrapper.unmount()
+    }
+  })
+
+  it('explains unavailable CV import for a Norwegian-primary profile', async () => {
+    const { wrapper } = await mountPage(emptyProfile)
+    expect(wrapper.get('[data-testid="profile-import-cv"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="profile-import-cv-hint"]').text()).toContain(
+      'content language control'
+    )
+    wrapper.unmount()
+  })
+
   it('shows every section of a filled profile', async () => {
     const { wrapper } = await mountPage()
     expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('Ada Lovelace')

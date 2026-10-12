@@ -24,7 +24,6 @@ const link = ref('')
 
 // Fetched on open and after each parse, so the counter shows what this parse just used.
 const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
-const tokens = new Intl.NumberFormat()
 const usage = computed(() => usageData.value?.llmUsageToday)
 
 type Tab = 'link' | 'paste' | 'ai'
@@ -111,34 +110,8 @@ const parseBuiltIn = async () => {
         <!-- content=false: the tabs only switch `tab`; the panels below are ordinary markup. -->
         <UTabs v-model="tab" :items="tabs" :content="false" class="w-full" />
 
-        <!-- From link and Paste ad both run on the backend's AI key, which costs money; Use your
-             own AI doesn't. No price: the UI doesn't know it. -->
-        <UAlert
-          v-if="tab !== 'ai'"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-coins"
-          title="Uses the app’s paid AI key"
-          data-testid="parse-cost-notice"
-        >
-          <template #description>
-            <p>Each parse is billed to the app’s AI account.</p>
-            <template v-if="usage">
-              <p data-testid="parse-usage-tokens">
-                {{ tokens.format(usage.inputTokens) }} tokens in ·
-                {{ tokens.format(usage.outputTokens) }} out
-              </p>
-              <p data-testid="parse-usage-requests">
-                {{
-                  usage.requestsLimit != null
-                    ? `${usage.requests} of ${usage.requestsLimit}`
-                    : usage.requests
-                }}
-                requests
-              </p>
-            </template>
-          </template>
-        </UAlert>
+        <!-- From link and Paste ad both run on the backend's AI key; Use your own AI doesn't. -->
+        <AppAiCostNotice v-if="tab !== 'ai'" :usage="usage" data-testid="parse-cost-notice" />
 
         <div v-if="tab === 'link'" class="space-y-3">
           <p v-if="listingId" class="text-sm text-muted">

@@ -27,6 +27,11 @@ const { listing, loading, error } = await useListing(id)
 const { state, validate, toInput, fill, mergeDraft } = useListingForm()
 const { checkNewNames } = provideNewNames()
 
+const adLink = computed(() => {
+  const url = state.url.trim()
+  return isHttpUrl(url) ? url : undefined
+})
+
 const parseOpen = ref(false)
 
 // The listing loads client-side after setup, so fill the form once it arrives. The detail page's
@@ -167,6 +172,21 @@ const onConfirm = async () => {
         data-testid="edit-listing-form"
         @submit="confirmOpen = true"
       >
+        <template #url-action>
+          <UButton
+            :to="adLink"
+            :disabled="!adLink"
+            target="_blank"
+            rel="noopener noreferrer"
+            icon="i-lucide-external-link"
+            color="neutral"
+            variant="outline"
+            aria-label="Open ad link in a new tab"
+            title="Open ad link in a new tab"
+            class="shrink-0"
+            data-testid="edit-listing-open-ad"
+          />
+        </template>
         <UAlert
           v-if="errorMessages.length"
           color="error"

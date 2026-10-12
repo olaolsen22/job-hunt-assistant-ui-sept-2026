@@ -2,13 +2,19 @@
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LINK_KIND_OPTIONS } from '~/constants/listing'
 import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
-import type { ProfileData } from '~/composables/useProfile'
+import { PROFILE, type ProfileData } from '~/composables/useProfile'
 
 definePageMeta({ title: 'Profile' })
 
 const { profile, loading, error, refresh } = useProfile()
 
 const basicsOpen = ref(false)
+const cvImportOpen = ref(false)
+
+// Keep the mounted review and its edits if fetching fresh update targets fails.
+const refreshCvProfile = async () => {
+  profile.value = (await gql(PROFILE)).profile
+}
 
 const SET_CONTENT_LANGUAGE = graphql(`
   mutation SetProfileContentLanguage($input: SetProfileContentLanguageInput!) {
@@ -124,16 +130,35 @@ const contact = computed(() => {
               </h1>
               <p v-if="profile.headline" class="text-muted">{{ profile.headline }}</p>
             </div>
-            <UButton
-              icon="i-lucide-pencil"
-              color="neutral"
-              variant="subtle"
-              class="shrink-0"
-              data-testid="profile-edit"
-              @click="basicsOpen = true"
-              >Edit</UButton
-            >
+            <div class="flex shrink-0 flex-col gap-2 sm:flex-row">
+              <UButton
+                icon="i-lucide-clipboard-paste"
+                variant="subtle"
+                :disabled="profile.contentLanguage !== 'ENGLISH'"
+                data-testid="profile-import-cv"
+                @click="cvImportOpen = true"
+                >Import CV</UButton
+              >
+              <UButton
+                icon="i-lucide-pencil"
+                color="neutral"
+                variant="subtle"
+                class="shrink-0"
+                data-testid="profile-edit"
+                @click="basicsOpen = true"
+                >Edit</UButton
+              >
+            </div>
           </div>
+
+          <p
+            v-if="profile.contentLanguage !== 'ENGLISH'"
+            class="text-sm text-muted"
+            data-testid="profile-import-cv-hint"
+          >
+            CV import requires an English-primary profile. Use the content language control below
+            when permitted.
+          </p>
 
           <div class="flex flex-wrap items-center gap-2" data-testid="profile-translation-controls">
             <USelect
@@ -271,6 +296,13 @@ const contact = computed(() => {
           </div>
         </div>
 
+        <LazyProfileCvImportModal
+          v-if="cvImportOpen"
+          v-model:open="cvImportOpen"
+          :profile="profile"
+          :refresh-profile="refreshCvProfile"
+          @saved="onSaved"
+        />
         <ProfileBasicsModal
           v-model:open="basicsOpen"
           :profile="profile"

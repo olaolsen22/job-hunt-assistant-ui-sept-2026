@@ -160,9 +160,9 @@ describe('ParseModal', () => {
 
     expect(notice()).not.toBeNull()
     const line = (id: string) => document.body.querySelector(`[data-testid="${id}"]`)?.textContent
-    await vi.waitFor(() => expect(line('parse-usage-tokens')).toContain('1,200 tokens in'))
-    expect(line('parse-usage-tokens')).toContain('340 out')
-    expect(line('parse-usage-requests')).toContain('3 of 50 requests')
+    await vi.waitFor(() => expect(line('ai-usage-tokens')).toContain('1,200 tokens in'))
+    expect(line('ai-usage-tokens')).toContain('340 out')
+    expect(line('ai-usage-requests')).toContain('3 of 50 requests')
     wrapper.vm.tab = 'paste'
     await flushPromises()
     expect(notice()).not.toBeNull()

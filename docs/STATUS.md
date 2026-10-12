@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-10-11 · Last logged commit: 2cd4566
+Updated: 2026-10-12 · Last logged commit: cd2fbb0
 
 ## Pages
 
@@ -15,14 +15,14 @@ Updated: 2026-10-11 · Last logged commit: 2cd4566
 - `/companies` — list (name, industry, locations, listing/application counts), debounced search, numbered pager over cursors (walks forward to jump, stops at the last page); search and page in the URL, page size like /listings (measurePageSize); rows open `/listings?search=<name>`; star toggles a company favorite
 - `/companies/add` — paste (built-in parser or copy-paste prompt) → editable preview rows (name, industry, locations) → one `createCompanies`; result cards
 - `/companies/[id]` — company page (stats, positions incl. archived, Locations card, Contacts card with add/edit/delete, notes, Avoid / Stop avoiding) · `/companies/[id]/edit` — name, industry, locations
-- `/profile` — one `profile` query shown as cards: header (name, headline, contact, links; Basics modal), Summary (Markdown), Preferences (+ target locations via `saveLocation`), Experience, Projects, Education, Certifications (modal add/edit, confirmed delete, inline drag-reorderable plain-text bullets), Skills (level, derived years), Languages (inline levels), References (drag-reorder), Hobbies; links have a kind, header shows date of birth / nationality / work authorization, entries have a location; content-language picker + Translate mode (per-bullet, headline/summary translations, stale/machine badges); sidebar + user menu link
+- `/profile` — one `profile` query shown as cards: header (name, headline, contact, links; Basics modal), Summary (Markdown), Preferences (+ target locations via `saveLocation`), Experience, Projects, Education, Certifications (modal add/edit, confirmed delete, inline drag-reorderable plain-text bullets), Skills (level, derived years), Languages (inline levels), References (drag-reorder), Hobbies; links have a kind, header shows date of birth / nationality / work authorization, entries have a location; content-language picker + Translate mode (per-bullet, headline/summary translations, stale/machine badges); Import CV (English-primary only): pasted text/Markdown or external prompt + JSON → editable review (plain-language issues inline beside fields/items, section issue counts, compact skill/language/bullet rows, collapsed entry headers with dates, missing skill levels default to the saved level or 1, imported links/hobbies previewed before opt-in), footer status that focuses the first issue, manual add/update/skip and one atomic Save import (server errors routed to fields); omitted content and Norwegian translations preserved, no upload or automatic matching; sidebar + user menu link
 - `middleware/auth.global.ts` redirects to `/login` without a session
 
 ## Components (`app/components`)
 
-- `app/`: Card (`actions` slot), MonthField, ConfirmModal, MarkdownContent, MarkdownEditor
+- `app/`: Card (`actions` slot), AiCostNotice (Analyze ad + CV import), MonthField, ConfirmModal, MarkdownContent, MarkdownEditor
 - `companies/`: FavoriteButton, AvoidedBadge, NotesModal, ContactList, ContactModal
-- `profile/`: LocationField, ReferenceList/Modal, Section, Entry, Bullets, NamesField, BasicsModal, PreferencesCard/Modal, Experience/Education/Certification/Project List + Modal, SkillList/Modal, LanguageList, BulletTranslation, TranslationBlock
+- `profile/`: LocationField, ReferenceList/Modal, Section, Entry, Bullets, NamesField, BasicsModal, PreferencesCard/Modal, Experience/Education/Certification/Project List + Modal, SkillList/Modal, LanguageList, BulletTranslation, TranslationBlock, CvImportModal, CvReview, CvEntryReview, CvField, CvSection
 - `dashboard/`: ApiHealth, Widget (shell), Row, ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, Editor
 - `listings/`: Card, Form, Dates (server `dueOn`), Location, LocationsField, LanguagesField, SkillsField, ContactsField, NameCombobox,
   FilterPanel (toolbar + facets), FilterCombobox,
@@ -32,18 +32,18 @@ Updated: 2026-10-11 · Last logged commit: 2cd4566
 ## Stores & composables
 
 - Pinia: `stores/auth.ts`
-- Composables: useDashboardLayout, useListing, useListingForm, useLlmUsage, useListingsList (presets, facets, sort, search, page ↔ URL query; `useListingsView` last list URL; runtime-built query), useMutation, useNewNames, useProfileTranslation (provide/inject), CONTACT_FIELDS (`contactFields.ts`), LISTING_COMPARE_FIELDS (`listingCompareFields.ts`), useProfile (`PROFILE_FIELDS`, entry types), useParsePrompt (listing, quick, company prompts; `parse` / `parseFromUrl` / `parseNewUrl` return `{ result }` or `{ error }`), useCollectedJobProcessing (local sequential runner, staged drafts, paused recovery, counts, stale-run disposal)
-- Utils: parseDraft, formatMonth / formatMonthRange / formatYears, daysFromToday, formatDate, formatDateTime, toDateTimeLocal, todayIso, daysAgoIso, localDayStartIso, graphql (`gql`), collectedJobs (validate, check/filter batches, prepare posting), collectedJobBatches (plan by count/serialized size, compact posting, validate full reply/count)
+- Composables: useDashboardLayout, useListing, useListingForm, useLlmUsage, useListingsList (presets, facets, sort, search, page ↔ URL query; `useListingsView` last list URL; runtime-built query), useMutation, useNewNames, useProfileTranslation (provide/inject), CONTACT_FIELDS (`contactFields.ts`), LISTING_COMPARE_FIELDS (`listingCompareFields.ts`), useProfile (`PROFILE_FIELDS`, entry types), useProfileCvImport (prompt, parse, preview, atomic save; inline errors), useParsePrompt (listing, quick, company prompts; `parse` / `parseFromUrl` / `parseNewUrl` return `{ result }` or `{ error }`), useCollectedJobProcessing (local sequential runner, staged drafts, paused recovery, counts, stale-run disposal)
+- Utils: profileCvImport (local draft, explicit targets, omission-safe selection validation, issue model + server path routing), isHttpUrl, parseDraft, formatMonth / formatMonthRange / formatYears, daysFromToday, formatDate, formatDateTime, toDateTimeLocal, todayIso, daysAgoIso, localDayStartIso, graphql (`gql`), collectedJobs (validate, check/filter batches, prepare posting), collectedJobBatches (plan by count/serialized size, compact posting, validate full reply/count)
 
 ## API operations in use
 
 - REST: `/api/auth/{login,guest,logout,me}`, `/api/health`, `/api/documents/…`
 - Queries: DashboardLayout, Profile, Dashboard* (ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, CompanyOpenListings), Listings (built at runtime: preset + selected facet clauses, `$order`; counts as aliases), ListingById, CompanyPage,
-  Company/JobRole/Skill/Industry/CitySearch, Companies (cursor-paged), CompanyParsePrompt, SkillFilterSearch, LocationFilterSearch, NewNameCheck, ListingParsePrompt, ListingQuickParsePrompt, CheckListingUrls
+  Company/JobRole/Skill/Industry/CitySearch, Companies (cursor-paged), CompanyParsePrompt, SkillFilterSearch, LocationFilterSearch, NewNameCheck, ListingParsePrompt, ListingQuickParsePrompt, CheckListingUrls, ProfileCvPrompt
 - Mutations: CreateListing (`previousAttempts`), QuickAddListings, CreateCompanies, UpdateListing, DeleteListing, SetListingFavorite, SetCompanyFavorite, SaveDashboardLayout,
   SetListingArchived, UploadDocument, ApplyToListing, RecordOutcome (OFFER/ACCEPTED/REJECTED/WITHDRAWN),
   UndoStatusChange (`DuplicateListingError` → link to open listing), UpdateStatusChange, Add/Update/DeleteInterview, ParseListing, ParseListingFromUrl, ParseUrl, SetCompanyAvoided, SetCompanyNotes, SaveLocation,
-  UpdateProfile, UpdateProfilePreferences, Add/Update/DeleteProfile{Experience,Education,Certification,Project}, Add/Update/Move/DeleteProfileBullet, Add/Update/Move/DeleteProfileReference, SetProfileSkill, RemoveProfileSkill, SetProfileLanguage, RemoveProfileLanguage, Set/DeleteProfileTranslation, Set/DeleteProfileBulletTranslation, Add/Update/DeleteContact
+  ParseProfileCv, PreviewProfileCvImport, ImportProfileCv, UpdateProfile, UpdateProfilePreferences, Add/Update/DeleteProfile{Experience,Education,Certification,Project}, Add/Update/Move/DeleteProfileBullet, Add/Update/Move/DeleteProfileReference, SetProfileSkill, RemoveProfileSkill, SetProfileLanguage, RemoveProfileLanguage, Set/DeleteProfileTranslation, Set/DeleteProfileBulletTranslation, Add/Update/DeleteContact
 
 ## Milestones
 
@@ -70,14 +70,20 @@ Updated: 2026-10-11 · Last logged commit: 2cd4566
 | Quick-add flagged section (`quick-add-flagged-section`)                                             | Done; UI unverified                                                                |
 | Collected-job URL checks (`precheck-collected-job-urls`)                                            | Done; 32 focused unit tests pass; E2E not run, UI unverified                       |
 | Collected-job AI batching (`batch-collected-job-processing`)                                        | Done; 64 focused unit tests pass; E2E/live UI not run                              |
+| Reviewed English CV import (`import-profile-cv`)                                                    | Done; 47 focused tests pass; E2E/live UI not run                                   |
+| CV import review refinement (`improve-cv-import-review`, `refine-cv-import-review`)                 | Done; 223 unit tests pass; E2E/live UI not run                                     |
 
 ## Next up
 
 - Parse queue + `onParseJobUpdated` over SSE (waiting on the backend)
 - `job-listings-cards-layout-rework` (two-column cards, measured page size)
+- Sync/archive `import-profile-cv` → `improve-cv-import-review` → `refine-cv-import-review` in that order.
 - Sync/archive dependencies `quick-add-save-flow` and `precheck-collected-job-urls` before syncing `batch-collected-job-processing` (expanded Leaving quick-add requirement).
 
 ## Decisions log
+
+- 2026-10-12 — CV review blockers show as warnings until the first Save attempt; Save stays clickable and focuses the first issue; disabled Save uses neutral-subtle, not inline styles.
+- 2026-10-12 — CV import keeps candidates local until one reviewed atomic save; manual IDs select updates, links/hobbies require explicit replacement opt-in, and imported English sources preserve Norwegian translations.
 
 - 2026-10-11 — Collected jobs use a separate Check jobs step so counts are visible and Copy prompt stays on a direct click.
 - 2026-10-11 — Built-in collected parsing is sequential; invalid replies pause for a user decision, progress counts successful inputs only, and replacement/navigation confirms before losing prepared work or unsaved drafts.
