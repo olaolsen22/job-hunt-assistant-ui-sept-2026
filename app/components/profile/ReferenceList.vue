@@ -140,23 +140,11 @@ const remove = async () => {
             {{ r.note }}
           </p>
         </div>
-        <UButton
-          icon="i-lucide-pencil"
-          color="neutral"
-          variant="ghost"
-          size="sm"
-          :aria-label="`Edit ${r.name}`"
-          data-testid="profile-reference-edit"
-          @click="openForm(r)"
-        />
-        <UButton
-          icon="i-lucide-trash-2"
-          color="neutral"
-          variant="ghost"
-          size="sm"
-          :aria-label="`Delete ${r.name}`"
-          data-testid="profile-reference-delete"
-          @click="deleting = r"
+        <ProfileRowActions
+          :name="r.name"
+          testid="profile-reference-actions"
+          @edit="openForm(r)"
+          @remove="deleting = r"
         />
       </li>
     </VueDraggable>

@@ -7,12 +7,17 @@ remove it when you delete one.
 
 - `<AppCard title?>` — `UCard` with an optional `h2` header and an `actions` slot beside it (right-aligned; the
   header shows when either is given). Default wrapper for page sections.
-- `<AppMonthField v-model disabled?>` — month `USelect` + year `UInputNumber`; model is `'YYYY-MM-01' | null`
-  and is `null` whenever either part is empty. Used by every dated profile entry.
+- `<AppMonthField v-model v-model:partial? disabled?>` — month `USelect` + year `UInputNumber`; model is `'YYYY-MM-01' | null`
+  and is `null` whenever either part is empty; `partial` is true while only one part is set. Used by every dated profile entry.
 - `<AppAiCostNotice :usage?>` — warning that built-in parsing bills the app's AI key, with today's `LlmUsage` when given; used by `ListingsParseModal` and `ProfileCvImportModal`.
 - `<AppConfirmModal v-model:open title description? confirm-label? loading? disabled? @confirm>` — confirm
   dialog with Cancel / confirm buttons; not dismissible while `loading`. The default slot is the
   body, so form modals (`<ListingsApplyModal>` etc.) wrap it too.
+- `<AppFormModal v-model:open title description? save-label? loading? :state validate? @submit>` — form
+  modal on `UForm`: Enter or Save submits, `validate` errors show inline and focus the first one, closing
+  with `state` changed since opening asks "Discard changes?", full screen on phones. `after` slot holds
+  content that saves on its own (bullets), outside the form. Used by the profile forms.
+- `PHONE_FULLSCREEN_MODAL` (`constants/ui.ts`) — `UModal` content classes for full screen below `sm`.
 - `<AppMarkdownEditor v-model label>` — `UTextarea` for a Markdown note with a `n / 10000` counter
   (the API's max). Send the raw string; the API stores blank as null.
 - `<AppMarkdownContent source>` — renders Markdown with `marked`, sanitized by DOMPurify, in
@@ -87,7 +92,7 @@ remove it when you delete one.
   `<ProfileSection title icon testid empty empty-message add-label @add>` (card with a centered empty state; header
   Add when filled, `actions` slot to override), `<ProfileEntry kind entry-id title subtitle? dates? bullets>` (an
   entry row with edit/delete + `<ProfileBullets kind entry-id bullets>`: add/edit/delete/drag-reorder, max 20),
-  `<ProfileNamesField v-model lookup?>` (name chips; combobox with `lookup`, free text without, used for hobbies), `<ProfileLocationField v-model:country-code v-model:city>` (country + city, city reset on country change), `<ProfileReferenceList>`/`<ProfileReferenceModal>` (drag-reorder via `moveProfileReference`), the four `…List` + `…Modal` pairs (Experience,
+  `<ProfileNamesField v-model lookup?>` (name chips; combobox with `lookup`, free text without, used for hobbies; exposes `commit()` to add typed text before saving), `<ProfileLocationField v-model:country-code v-model:city>` (country + city, city reset on country change), `<ProfileReferenceList>`/`<ProfileReferenceModal>` (drag-reorder via `moveProfileReference`), the four `…List` + `…Modal` pairs (Experience,
   Education, Certification, Project), `<ProfileSkillList>`/`<ProfileSkillModal>`, `<ProfileLanguageList>` (inline
   levels), `<ProfilePreferencesCard>` (+ target locations via `saveLocation`) and `<ProfileBasicsModal>`.
   Translations mode: the page provides `{ translating, target }` (`provideProfileTranslation`); `<ProfileBullets>` then

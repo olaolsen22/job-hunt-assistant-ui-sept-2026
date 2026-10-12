@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { ProfileBullet } from '~/composables/useProfile'
 
-// One entry of experience / education / certifications / projects: the row, its buttons, its bullets.
+// One entry of experience / education / certifications / projects: the row, its actions menu and
+// its bullets (edited in the entry's form; translated here).
 defineProps<{
   kind: 'EXPERIENCE' | 'EDUCATION' | 'CERTIFICATION' | 'PROJECT'
   entryId: number
@@ -22,23 +23,11 @@ const emit = defineEmits<{ edit: []; delete: []; changed: [] }>()
         <p v-if="dates" class="text-sm text-muted">{{ dates }}</p>
         <slot />
       </div>
-      <UButton
-        icon="i-lucide-pencil"
-        color="neutral"
-        variant="ghost"
-        size="sm"
-        :aria-label="`Edit ${title}`"
-        data-testid="profile-entry-edit"
-        @click="emit('edit')"
-      />
-      <UButton
-        icon="i-lucide-trash-2"
-        color="neutral"
-        variant="ghost"
-        size="sm"
-        :aria-label="`Delete ${title}`"
-        data-testid="profile-entry-delete"
-        @click="emit('delete')"
+      <ProfileRowActions
+        :name="title"
+        testid="profile-entry-actions"
+        @edit="emit('edit')"
+        @remove="emit('delete')"
       />
     </div>
     <ProfileBullets

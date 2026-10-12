@@ -30,6 +30,14 @@ describe('MonthField', () => {
     expect(lastEmit(wrapper)).toBeNull()
   })
 
+  it('reports a half-filled value as partial until both parts are set', async () => {
+    const wrapper = await mountField('2021-03-01')
+    await setParts(wrapper, 3, undefined)
+    expect(wrapper.emitted('update:partial')?.at(-1)).toEqual([true])
+    await setParts(wrapper, 3, 2022)
+    expect(wrapper.emitted('update:partial')?.at(-1)).toEqual([false])
+  })
+
   it('fills both parts from an initial value', async () => {
     const wrapper = await mountField('2021-03-01')
     expect(wrapper.findComponent(USelect).props('modelValue')).toBe(3)

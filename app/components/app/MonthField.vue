@@ -3,6 +3,8 @@
 // plain text box. Emits a date only when both parts are set, so a half-cleared value can't survive.
 const { disabled } = defineProps<{ disabled?: boolean }>()
 const model = defineModel<string | null>({ default: null })
+// True while only one part is set, so a form can say why the value is still null.
+const partial = defineModel<boolean>('partial', { default: false })
 
 const MONTHS = Array.from({ length: 12 }, (_, i) => ({
   label: new Intl.DateTimeFormat('en', { month: 'long' }).format(new Date(2000, i, 1)),
@@ -30,6 +32,7 @@ watch(
 
 watch([month, year], ([m, y]) => {
   model.value = toIso(m, y)
+  partial.value = !m !== !y
 })
 </script>
 

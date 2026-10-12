@@ -4,10 +4,13 @@ import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import { USelectMenu, USelect, UCheckbox } from '#components'
 import { VueDraggable } from 'vue-draggable-plus'
-import ProfileSkillModal from '~/components/profile/SkillModal.vue'
+import ProfileExperienceModal from '~/components/profile/ExperienceModal.vue'
+import ProfilePreferencesModal from '~/components/profile/PreferencesModal.vue'
 import AppMonthField from '~/components/app/MonthField.vue'
 import ProfilePage from '~/pages/profile.vue'
 import ProfileNamesField from '~/components/profile/NamesField.vue'
+import ProfileLanguageModal from '~/components/profile/LanguageModal.vue'
+import ProfileTargetLocations from '~/components/profile/TargetLocations.vue'
 
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
 
@@ -148,6 +151,15 @@ type Request = { query: string; variables: { input: Record<string, any> } }
 // Returns a response to stand in for the API, or undefined to fall through to the profile query.
 type Respond = (body: Request, profile: typeof filledProfile) => Record<string, unknown> | undefined
 
+// UTooltip needs the TooltipProvider that UApp gives the real app; the stub shows what it would say.
+const TooltipStub = defineComponent({
+  props: { text: String, disabled: Boolean },
+  setup:
+    (props, { slots }) =>
+    () =>
+      h('div', { 'data-tooltip': props.disabled ? undefined : props.text }, slots.default?.())
+})
+
 const mountPage = async (profile: typeof emptyProfile = filledProfile, respond?: Respond) => {
   const requests: Request[] = []
   const current = structuredClone(profile) as typeof filledProfile
@@ -161,7 +173,9 @@ const mountPage = async (profile: typeof emptyProfile = filledProfile, respond?:
   })
   // useAsyncData keeps its data between mounts in the same file.
   clearNuxtData('profile')
-  const wrapper = await mountSuspended(ProfilePage)
+  const wrapper = await mountSuspended(ProfilePage, {
+    global: { stubs: { UTooltip: TooltipStub } }
+  })
   await flushPromises()
   return { wrapper, requests, profile: current }
 }
@@ -186,8 +200,35 @@ const setInputIn = (
   input.dispatchEvent(new Event('input'))
 }
 
+const contentLanguage = (wrapper: Awaited<ReturnType<typeof mountSuspended>>) =>
+  wrapper
+    .findAllComponents(USelect)
+    .find((select) => select.vm.$attrs['data-testid'] === 'profile-content-language')!
+
+const EXPERIENCE_ACTIONS =
+  '[data-testid="profile-experience"] [data-testid="profile-entry-actions"]'
+
 const clickConfirm = () =>
   document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
+
+// Opens a row's actions menu from the keyboard (Reka opens it on pointerdown, not click) and picks an item.
+const chooseAction = async (
+  wrapper: { get: (s: string) => { trigger: (e: string, o?: object) => Promise<void> } },
+  trigger: string,
+  label: 'Edit' | 'Delete' | 'Remove'
+) => {
+  await wrapper.get(trigger).trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  const item = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (el) => el.textContent?.trim() === label
+  )!
+  item.click()
+  await flushPromises()
+}
+
+// Save in the open form modal; closed modals render nothing, so there is only one.
+const clickSave = () =>
+  document.body.querySelector<HTMLButtonElement>('[data-testid="form-modal-save"]')!.click()
 
 describe('ProfilePage', () => {
   it('keeps the profile mounted when refreshing CV update targets fails', async () => {
@@ -227,7 +268,7 @@ describe('ProfilePage', () => {
       expect(
         wrapper.get('[data-testid="profile-import-cv"]').attributes('disabled')
       ).toBeUndefined()
-      expect(wrapper.find('[data-testid="profile-import-cv-hint"]').exists()).toBe(false)
+      expect(wrapper.find('[data-tooltip]').exists()).toBe(false)
       wrapper.unmount()
     }
   })
@@ -235,8 +276,8 @@ describe('ProfilePage', () => {
   it('explains unavailable CV import for a Norwegian-primary profile', async () => {
     const { wrapper } = await mountPage(emptyProfile)
     expect(wrapper.get('[data-testid="profile-import-cv"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-testid="profile-import-cv-hint"]').text()).toContain(
-      'content language control'
+    expect(wrapper.get('[data-tooltip]').attributes('data-tooltip')).toContain(
+      'English-primary profile'
     )
     wrapper.unmount()
   })
@@ -259,6 +300,38 @@ describe('ProfilePage', () => {
       expect(wrapper.find(`[data-testid="profile-${section}"]`).exists()).toBe(true)
       expect(wrapper.find(`[data-testid="profile-${section}-empty"]`).exists()).toBe(false)
     }
+  })
+
+  it('formats profile dates in the content language', async () => {
+    const english = await mountPage({ ...filledProfile, contentLanguage: 'ENGLISH' })
+    expect(english.wrapper.get('[data-testid="profile-experience"]').text()).toContain(
+      'Jan 2020 – Present'
+    )
+    expect(english.wrapper.get('[data-testid="profile-dob"]').text()).toBe('17 May 1990')
+    english.wrapper.unmount()
+
+    const norwegian = await mountPage()
+    expect(norwegian.wrapper.get('[data-testid="profile-experience"]').text()).toMatch(
+      /jan\.? 2020 – Present/
+    )
+    expect(norwegian.wrapper.get('[data-testid="profile-dob"]').text()).toContain('mai 1990')
+    norwegian.wrapper.unmount()
+  })
+
+  it('lists Preferences last in the side column, after Certifications', async () => {
+    const { wrapper } = await mountPage()
+    const html = wrapper.html()
+    for (const [before, after] of [
+      ['skills', 'languages'],
+      ['languages', 'hobbies'],
+      ['hobbies', 'certifications'],
+      ['certifications', 'preferences']
+    ]) {
+      expect(html.indexOf(`data-testid="profile-${before}"`)).toBeLessThan(
+        html.indexOf(`data-testid="profile-${after}"`)
+      )
+    }
+    wrapper.unmount()
   })
 
   it('shows an empty state with an add action for a new profile', async () => {
@@ -291,7 +364,7 @@ describe('ProfilePage', () => {
     await flushPromises()
     setInput('basics-headline', 'Staff engineer')
     await flushPromises()
-    clickConfirm()
+    clickSave()
 
     await vi.waitFor(() =>
       expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('Staff engineer')
@@ -313,6 +386,53 @@ describe('ProfilePage', () => {
     wrapper.unmount()
   })
 
+  it('edits only the summary in its own form and keeps the other basics', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
+      if (!body.query.includes('updateProfile(')) return undefined
+      Object.assign(profile, { summary: body.variables.input.summary })
+      return { updateProfile: { profile, errors: null } }
+    })
+
+    await wrapper.get('[data-testid="profile-summary-edit"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="basics-headline"]')).toBeNull()
+    const textarea = document.body.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!
+    textarea.value = 'New summary'
+    textarea.dispatchEvent(new Event('input'))
+    await flushPromises()
+    clickSave()
+
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="profile-summary"]').text()).toContain('New summary')
+    )
+    expect(requests.find((r) => r.query.includes('updateProfile('))!.variables.input).toMatchObject(
+      { summary: 'New summary', headline: 'Engineer', hobbies: ['Chess'] }
+    )
+    wrapper.unmount()
+  })
+
+  it('saves a typed hobby that was not added yet, keeping the other basics', async () => {
+    const { wrapper, requests } = await mountPage(emptyProfile, (body, profile) => {
+      if (!body.query.includes('updateProfile(')) return undefined
+      Object.assign(profile, { hobbies: body.variables.input.hobbies })
+      return { updateProfile: { profile, errors: null } }
+    })
+
+    await wrapper.get('[data-testid="profile-hobbies-add"]').trigger('click')
+    await flushPromises()
+    setInput('names-field-input', 'Climbing')
+    await flushPromises()
+    clickSave()
+
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="profile-hobbies"]').text()).toContain('Climbing')
+    )
+    expect(requests.find((r) => r.query.includes('updateProfile('))!.variables.input).toMatchObject(
+      { hobbies: ['Climbing'], summary: null, links: [] }
+    )
+    wrapper.unmount()
+  })
+
   it('sends a new job role in the preferences and shows it after saving', async () => {
     const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
       if (!body.query.includes('updateProfilePreferences(')) return undefined
@@ -325,10 +445,11 @@ describe('ProfilePage', () => {
     await flushPromises()
     // Picking a name goes through the combobox, which has its own tests; drive its model directly.
     wrapper
-      .findComponent(ProfileNamesField)
+      .getComponent(ProfilePreferencesModal)
+      .getComponent(ProfileNamesField)
       .vm.$emit('update:modelValue', ['Developer', 'Designer'])
     await flushPromises()
-    clickConfirm()
+    clickSave()
 
     await vi.waitFor(() =>
       expect(wrapper.get('[data-testid="profile-preferences-rows"]').text()).toContain('Designer')
@@ -343,18 +464,26 @@ describe('ProfilePage', () => {
     wrapper.unmount()
   })
 
-  it('adds and removes a target location', async () => {
+  it('adds and removes a target location in the preferences form, with the card read-only', async () => {
     const { wrapper, requests } = await mountPage()
     const saves = () => requests.filter((r) => r.query.includes('saveLocation('))
+    expect(wrapper.find('[data-testid="profile-target-add"]').exists()).toBe(false)
 
-    // The only select menu on the page while the modals are closed.
-    wrapper.getComponent(USelectMenu).vm.$emit('update:modelValue', 'SE')
+    await wrapper.get('[data-testid="profile-preferences-edit"]').trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="profile-target-add"]').trigger('click')
+    wrapper
+      .getComponent(ProfileTargetLocations)
+      .getComponent(USelectMenu)
+      .vm.$emit('update:modelValue', 'SE')
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="profile-target-add"]')!.click()
     await vi.waitFor(() => expect(saves()).toHaveLength(1))
     expect(saves()[0]!.variables.input).toEqual({ countryCode: 'SE', city: null, isTarget: true })
 
-    await wrapper.get('[aria-label="Remove Oslo, Norway"]').trigger('click')
+    document.body.querySelector<HTMLButtonElement>('[aria-label="Remove Oslo, Norway"]')!.click()
+    await flushPromises()
+    expect(saves()).toHaveLength(1)
+    clickConfirm()
     await vi.waitFor(() => expect(saves()).toHaveLength(2))
     expect(saves()[1]!.variables.input).toEqual({
       countryCode: 'NO',
@@ -375,10 +504,17 @@ describe('ProfilePage', () => {
     await flushPromises()
     setInput('experience-employer', 'Globex')
     setInput('experience-title', 'Lead')
-    wrapper.findComponent(AppMonthField).vm.$emit('update:modelValue', '2021-03-01')
-    wrapper.findComponent(UCheckbox).vm.$emit('update:modelValue', true)
+    wrapper
+      .getComponent(ProfileExperienceModal)
+      .getComponent(AppMonthField)
+      .vm.$emit('update:modelValue', '2021-03-01')
+    wrapper
+      .getComponent(ProfileExperienceModal)
+      .getComponent(UCheckbox)
+      .vm.$emit('update:modelValue', true)
     await flushPromises()
-    clickConfirm()
+    expect(document.body.textContent).toContain('You can add bullets after saving.')
+    clickSave()
 
     await vi.waitFor(() =>
       expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(2)
@@ -403,10 +539,11 @@ describe('ProfilePage', () => {
         : undefined
     )
 
-    await wrapper
-      .get('[data-testid="profile-education"] [data-testid="profile-entry-delete"]')
-      .trigger('click')
-    await flushPromises()
+    await chooseAction(
+      wrapper,
+      '[data-testid="profile-education"] [data-testid="profile-entry-actions"]',
+      'Delete'
+    )
     expect(requests.some((r) => r.query.includes('deleteProfileEducation('))).toBe(false)
     clickConfirm()
 
@@ -432,11 +569,8 @@ describe('ProfilePage', () => {
         : undefined
     )
 
-    await wrapper
-      .get('[data-testid="profile-experience"] [data-testid="profile-entry-edit"]')
-      .trigger('click')
-    await flushPromises()
-    clickConfirm()
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    clickSave()
 
     await vi.waitFor(() =>
       expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(2)
@@ -455,22 +589,36 @@ describe('ProfilePage bullets', () => {
       }
     ]
   })
-  const bulletTexts = (wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']) =>
+  const cardBullets = (wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']) =>
     wrapper
       .findAll('[data-testid="profile-experience"] [data-testid="profile-bullet"]')
       .map((li) => li.text())
+  const inModal = (testid: string) =>
+    document.body.querySelector<HTMLElement>(`[role="dialog"] [data-testid="${testid}"]`)!
+  const pressEnter = (testid: string) =>
+    inModal(testid).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
 
-  it('adds a bullet to the right entry kind', async () => {
-    const { wrapper, requests } = await mountPage(filledProfile, (body) =>
-      body.query.includes('addProfileBullet(')
-        ? { addProfileBullet: { profileBullet: { id: 101 }, errors: null } }
-        : undefined
-    )
-    const section = '[data-testid="profile-experience"]'
+  it('shows bullets on the card as plain text, without editing controls', async () => {
+    const { wrapper } = await mountPage()
+    expect(cardBullets(wrapper)).toEqual(['Led a team'])
+    const card = wrapper.get('[data-testid="profile-experience"]')
+    expect(card.find('[data-testid="profile-bullet-new"]').exists()).toBe(false)
+    expect(card.find('[data-testid="profile-bullet-edit"]').exists()).toBe(false)
+    expect(card.find('.drag-handle').exists()).toBe(false)
+    wrapper.unmount()
+  })
 
-    setInputIn(wrapper, `${section} [data-testid="profile-bullet-new"]`, ' Led a team of 4 ')
+  it('adds a bullet from the entry form and shows it in the open form', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
+      if (!body.query.includes('addProfileBullet(')) return undefined
+      profile.experiences[0]!.bullets.push(bullet(101, body.variables.input.text, 1))
+      return { addProfileBullet: { profileBullet: { id: 101 }, errors: null } }
+    })
+
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    setInput('profile-bullet-new', ' Led a team of 4 ')
     await flushPromises()
-    await wrapper.get(`${section} form`).trigger('submit')
+    pressEnter('profile-bullet-new')
 
     await vi.waitFor(() =>
       expect(requests.find((r) => r.query.includes('addProfileBullet('))!.variables.input).toEqual({
@@ -479,24 +627,52 @@ describe('ProfilePage bullets', () => {
         text: 'Led a team of 4'
       })
     )
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[role="dialog"]')!.textContent).toContain(
+        'Led a team of 4'
+      )
+    )
+    expect(cardBullets(wrapper)).toEqual(['Led a team', 'Led a team of 4'])
     wrapper.unmount()
   })
 
-  it('edits a bullet', async () => {
+  it('keeps the typed text when the API rejects a bullet', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body) =>
+      body.query.includes('addProfileBullet(')
+        ? {
+            addProfileBullet: {
+              profileBullet: null,
+              errors: [{ __typename: 'ValidationError', message: 'Too long' }]
+            }
+          }
+        : undefined
+    )
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    setInput('profile-bullet-new', 'Way too long')
+    await flushPromises()
+    pressEnter('profile-bullet-new')
+
+    await vi.waitFor(() =>
+      expect(requests.some((r) => r.query.includes('addProfileBullet('))).toBe(true)
+    )
+    await flushPromises()
+    expect(inModal('profile-bullet-new')).toHaveProperty('value', 'Way too long')
+    wrapper.unmount()
+  })
+
+  it('edits a bullet with Enter', async () => {
     const { wrapper, requests } = await mountPage(filledProfile, (body) =>
       body.query.includes('updateProfileBullet(')
         ? { updateProfileBullet: { profileBullet: { id: 100 }, errors: null } }
         : undefined
     )
-    const section = '[data-testid="profile-experience"]'
 
-    await wrapper.get(`${section} [data-testid="profile-bullet-edit"]`).trigger('click')
-    setInputIn(wrapper, `${section} [data-testid="profile-bullet-input"]`, 'Led a team of 5')
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    inModal('profile-bullet-edit').click()
     await flushPromises()
-    await wrapper
-      .get(`${section} [data-testid="profile-bullet-input"]`)
-      .element.closest('form')!
-      .dispatchEvent(new Event('submit'))
+    setInput('profile-bullet-input', 'Led a team of 5')
+    await flushPromises()
+    pressEnter('profile-bullet-input')
 
     await vi.waitFor(() =>
       expect(
@@ -509,7 +685,31 @@ describe('ProfilePage bullets', () => {
     wrapper.unmount()
   })
 
-  it('sends the final index on a drop and shows the returned order', async () => {
+  it('deletes a bullet only after confirming, and cancelling the form keeps it deleted', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
+      if (!body.query.includes('deleteProfileBullet(')) return undefined
+      profile.experiences[0]!.bullets = []
+      return { deleteProfileBullet: { id: 100, errors: null } }
+    })
+    const deletes = () => requests.filter((r) => r.query.includes('deleteProfileBullet('))
+
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    inModal('profile-bullet-delete').click()
+    await flushPromises()
+    expect(deletes()).toHaveLength(0)
+    clickConfirm()
+
+    await vi.waitFor(() => expect(deletes()).toHaveLength(1))
+    await vi.waitFor(() => expect(cardBullets(wrapper)).toEqual([]))
+    // Nothing else changed, so Cancel closes without asking and the delete stays.
+    inModal('form-modal-cancel').click()
+    await flushPromises()
+    expect(document.body.textContent).not.toContain('Discard changes?')
+    expect(cardBullets(wrapper)).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('sends the final index on a drop and refetches the card', async () => {
     const { wrapper, requests } = await mountPage(withBullets(['one', 'two', 'three']), (body) =>
       body.query.includes('moveProfileBullet(')
         ? {
@@ -521,38 +721,86 @@ describe('ProfilePage bullets', () => {
         : undefined
     )
 
-    // jsdom can't do a real pointer drag, so emit what SortableJS would for the third item going first.
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    // happy-dom can't do a real pointer drag, so emit what SortableJS would for the third item going first.
     wrapper.getComponent(VueDraggable).vm.$emit('update', { oldIndex: 2, newIndex: 0 })
 
-    await vi.waitFor(() => expect(bulletTexts(wrapper)).toEqual(['three', 'one', 'two']))
-    expect(requests.find((r) => r.query.includes('moveProfileBullet('))!.variables.input).toEqual({
-      id: 102,
-      position: 0
-    })
-    // The returned list replaced the bullets; there was no refetch.
-    expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(1)
+    await vi.waitFor(() =>
+      expect(requests.find((r) => r.query.includes('moveProfileBullet('))!.variables.input).toEqual(
+        { id: 102, position: 0 }
+      )
+    )
+    await vi.waitFor(() =>
+      expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(2)
+    )
     wrapper.unmount()
   })
 
   it('disables Add bullet at 20 bullets', async () => {
     const { wrapper } = await mountPage(withBullets(Array.from({ length: 20 }, (_, i) => `b${i}`)))
-    setInputIn(
-      wrapper,
-      '[data-testid="profile-experience"] [data-testid="profile-bullet-new"]',
-      'one more'
-    )
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    setInput('profile-bullet-new', 'one more')
     await flushPromises()
-    expect(
-      wrapper
-        .get('[data-testid="profile-experience"] [data-testid="profile-bullet-add"]')
-        .attributes('disabled')
-    ).toBeDefined()
+    expect(inModal('profile-bullet-add').hasAttribute('disabled')).toBe(true)
+    wrapper.unmount()
+  })
+})
+
+describe('ProfilePage entry forms', () => {
+  it('shows an inline error and sends nothing when the employer is missing', async () => {
+    const { wrapper, requests } = await mountPage()
+    await wrapper.get('[data-testid="profile-experience-add"]').trigger('click')
+    await flushPromises()
+    setInput('experience-title', 'Lead')
+    wrapper
+      .getComponent(ProfileExperienceModal)
+      .getComponent(AppMonthField)
+      .vm.$emit('update:modelValue', '2021-03-01')
+    await flushPromises()
+    clickSave()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Enter an employer.')
+    expect(requests.some((r) => r.query.includes('addProfileExperience('))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('saves when Enter submits the form', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body) =>
+      body.query.includes('updateProfileExperience(')
+        ? { updateProfileExperience: { profileExperience: { id: 10 }, errors: null } }
+        : undefined
+    )
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    setInput('experience-title', 'Lead')
+    await flushPromises()
+    // A browser submits the form on Enter in a field; happy-dom needs the event itself.
+    document.body.querySelector('[role="dialog"] form')!.dispatchEvent(new Event('submit'))
+
+    await vi.waitFor(() =>
+      expect(
+        requests.find((r) => r.query.includes('updateProfileExperience('))!.variables.input
+      ).toMatchObject({ id: 10, title: 'Lead', employer: 'Acme' })
+    )
+    wrapper.unmount()
+  })
+
+  it('asks before discarding unsaved changes', async () => {
+    const { wrapper } = await mountPage()
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    setInput('experience-title', 'Lead')
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="form-modal-cancel"]')!.click()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Discard changes?')
+    expect(document.body.querySelector('[data-testid="experience-title"]')).not.toBeNull()
     wrapper.unmount()
   })
 })
 
 describe('ProfilePage skills and languages', () => {
-  it('changes a skill level by name', async () => {
+  it('changes a skill level with one tap in the bulk form', async () => {
     const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
       if (!body.query.includes('setProfileSkill(')) return undefined
       profile.skills[0]!.level = body.variables.input.level
@@ -561,11 +809,13 @@ describe('ProfilePage skills and languages', () => {
       }
     })
 
-    await wrapper.get('[data-testid="profile-skill-edit"]').trigger('click')
+    await wrapper.get('[data-testid="profile-skills-edit"]').trigger('click')
     await flushPromises()
-    wrapper.getComponent(ProfileSkillModal).getComponent(USelect).vm.$emit('update:modelValue', 5)
+    document.body
+      .querySelector<HTMLButtonElement>('[aria-label="Vue level"] button:nth-child(5)')!
+      .click()
     await flushPromises()
-    clickConfirm()
+    clickSave()
 
     await vi.waitFor(() =>
       expect(wrapper.get('[data-testid="profile-skill"]').text()).toContain('Level 5/5')
@@ -577,24 +827,114 @@ describe('ProfilePage skills and languages', () => {
     wrapper.unmount()
   })
 
-  it('adds Norwegian and then offers no more languages', async () => {
+  it('removes a marked skill after one confirm and keeps a failed row open', async () => {
+    const profile = {
+      ...filledProfile,
+      skills: [
+        ...filledProfile.skills,
+        { level: 1, experienceMonths: 0, skill: { id: 2, name: 'Go' } }
+      ]
+    }
+    const { wrapper, requests } = await mountPage(profile, (body) => {
+      if (body.query.includes('removeProfileSkill('))
+        return { removeProfileSkill: { skillId: 2, errors: null } }
+      if (body.query.includes('setProfileSkill('))
+        return {
+          setProfileSkill: {
+            profileSkill: null,
+            errors: [{ __typename: 'InvalidProfileError', message: 'Level rejected' }]
+          }
+        }
+      return undefined
+    })
+
+    await wrapper.get('[data-testid="profile-skills-edit"]').trigger('click')
+    await flushPromises()
+    document.body
+      .querySelector<HTMLButtonElement>('[aria-label="Vue level"] button:nth-child(2)')!
+      .click()
+    document.body.querySelector<HTMLButtonElement>('[aria-label="Remove Go"]')!.click()
+    await flushPromises()
+    clickSave()
+    await flushPromises()
+    expect(document.body.textContent).toContain('Remove 1 skill?')
+    expect(requests.some((r) => r.query.includes('removeProfileSkill('))).toBe(false)
+    clickConfirm()
+
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Level rejected'))
+    expect(requests.find((r) => r.query.includes('removeProfileSkill('))!.variables.input).toEqual({
+      skillId: 2
+    })
+    expect(document.body.querySelector('[data-testid="skills-failed"]')!.textContent).toContain(
+      "1 change didn't save"
+    )
+    expect(document.body.querySelectorAll('[data-testid="skills-row"]')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('adds Norwegian in the language form and then offers no more languages', async () => {
     const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
       if (!body.query.includes('setProfileLanguage(')) return undefined
       profile.languages.push(body.variables.input)
       return { setProfileLanguage: { profileLanguage: body.variables.input } }
     })
-    expect(wrapper.find('[data-testid="profile-language-add-row"]').exists()).toBe(true)
 
-    await wrapper.get('[data-testid="profile-language-add"]').trigger('click')
+    await wrapper.get('[data-testid="profile-languages-add"]').trigger('click')
+    await flushPromises()
+    clickSave()
 
     await vi.waitFor(() =>
-      expect(wrapper.find('[data-testid="profile-language-add-row"]').exists()).toBe(false)
+      expect(wrapper.findAll('[data-testid="profile-language"]')).toHaveLength(2)
     )
     expect(requests.find((r) => r.query.includes('setProfileLanguage('))!.variables.input).toEqual({
       language: 'NORWEGIAN',
       level: 'B2'
     })
-    expect(wrapper.findAll('[data-testid="profile-language"]')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="profile-languages-add"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="profile-languages"]').text()).toContain('Norwegian')
+    wrapper.unmount()
+  })
+
+  it('changes a language level', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
+      if (!body.query.includes('setProfileLanguage(')) return undefined
+      profile.languages[0]!.level = body.variables.input.level
+      return { setProfileLanguage: { profileLanguage: body.variables.input } }
+    })
+
+    await chooseAction(wrapper, '[data-testid="profile-language-actions"]', 'Edit')
+    wrapper
+      .getComponent(ProfileLanguageModal)
+      .getComponent(USelect)
+      .vm.$emit('update:modelValue', 'C2')
+    await flushPromises()
+    clickSave()
+
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="profile-language"]').text()).toContain('C2')
+    )
+    expect(requests.find((r) => r.query.includes('setProfileLanguage('))!.variables.input).toEqual({
+      language: 'ENGLISH',
+      level: 'C2'
+    })
+    wrapper.unmount()
+  })
+
+  it('removes a language only after confirming', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body) =>
+      body.query.includes('removeProfileLanguage(')
+        ? { removeProfileLanguage: { language: 'ENGLISH', errors: null } }
+        : undefined
+    )
+    const removes = () => requests.filter((r) => r.query.includes('removeProfileLanguage('))
+
+    await chooseAction(wrapper, '[data-testid="profile-language-actions"]', 'Remove')
+    expect(removes()).toHaveLength(0)
+    expect(document.body.textContent).toContain('Remove this language?')
+    clickConfirm()
+
+    await vi.waitFor(() => expect(removes()).toHaveLength(1))
+    expect(removes()[0]!.variables.input).toEqual({ language: 'ENGLISH' })
     wrapper.unmount()
   })
 })
@@ -618,7 +958,7 @@ describe('ProfilePage references, hobbies and links', () => {
     await flushPromises()
     document.body.querySelector<HTMLButtonElement>('[data-testid="basics-add-link"]')!.click()
     await flushPromises()
-    clickConfirm()
+    clickSave()
 
     await vi.waitFor(() =>
       expect(requests.some((r) => r.query.includes('updateProfile('))).toBe(true)
@@ -672,7 +1012,7 @@ describe('ProfilePage references, hobbies and links', () => {
     setInput('reference-name', 'Ken Thompson')
     setInput('reference-relationship', 'Mentor')
     await flushPromises()
-    clickConfirm()
+    clickSave()
 
     await vi.waitFor(() =>
       expect(
@@ -813,7 +1153,7 @@ describe('ProfilePage translations', () => {
 
   it('disables the content language once a translation exists', async () => {
     const { wrapper } = await mountPage(withTranslation(tr()))
-    expect(wrapper.getComponent(USelect).props('disabled')).toBe(true)
+    expect(contentLanguage(wrapper).props('disabled')).toBe(true)
     expect(wrapper.get('[data-testid="profile-content-language-hint"]').text()).toContain(
       'Delete all translations'
     )
@@ -827,8 +1167,8 @@ describe('ProfilePage translations', () => {
         : undefined
     )
     const select = wrapper.get('[data-testid="profile-content-language"]')
-    expect(wrapper.getComponent(USelect).props('disabled')).toBe(false)
-    wrapper.getComponent(USelect).vm.$emit('update:modelValue', 'ENGLISH')
+    expect(contentLanguage(wrapper).props('disabled')).toBe(false)
+    contentLanguage(wrapper).vm.$emit('update:modelValue', 'ENGLISH')
 
     await vi.waitFor(() =>
       expect(

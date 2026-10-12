@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // A profile card: title, rows in the default slot, and one centered empty state with the Add action.
 // The header Add shows only when there is content, so an empty card has a single Add button.
-// A section that isn't added to (the summary) fills `actions` itself instead.
+// A section that isn't added to (the summary) fills `actions` itself instead. `full` hides Add once
+// nothing more can be added (every language listed).
 defineProps<{
   title: string
   icon: string
@@ -9,6 +10,7 @@ defineProps<{
   emptyMessage: string
   addLabel: string
   testid: string
+  full?: boolean
 }>()
 const emit = defineEmits<{ add: [] }>()
 </script>
@@ -18,7 +20,7 @@ const emit = defineEmits<{ add: [] }>()
     <template #actions>
       <slot name="actions">
         <UButton
-          v-if="!empty"
+          v-if="!empty && !full"
           icon="i-lucide-plus"
           color="neutral"
           variant="subtle"

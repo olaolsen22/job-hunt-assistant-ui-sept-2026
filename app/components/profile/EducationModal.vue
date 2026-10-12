@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ProfileEducation } from '~/composables/useProfile'
 
-// Without `education` it adds one; with it, it edits that one. Bullets are edited on the card.
+// Without `education` it adds one; with it, it edits that one. Its bullets save on their own.
 const { education } = defineProps<{ education: ProfileEducation | null }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
@@ -46,6 +46,8 @@ const city = ref<string>()
 const startMonth = ref<string | null>(null)
 const endMonth = ref<string | null>(null)
 const current = ref(false)
+const startPartial = ref(false)
+const endPartial = ref(false)
 
 watch(open, (isOpen) => {
   if (!isOpen) return
@@ -62,6 +64,24 @@ watch(open, (isOpen) => {
 watch(current, (isCurrent) => {
   if (isCurrent) endMonth.value = null
 })
+
+const state = computed(() => ({
+  school: school.value,
+  degree: degree.value,
+  field: field.value,
+  countryCode: countryCode.value,
+  city: city.value,
+  startMonth: startMonth.value,
+  endMonth: endMonth.value,
+  current: current.value
+}))
+
+const validate = () =>
+  formErrors({
+    school: requiredError(school.value, 'a school'),
+    startMonth: monthError(startMonth.value, startPartial.value, true),
+    endMonth: !current.value && monthError(endMonth.value, endPartial.value)
+  })
 
 const { run, loading } = useMutation(() => emit('changed'))
 
@@ -91,17 +111,17 @@ const submit = async () => {
 </script>
 
 <template>
-  <AppConfirmModal
+  <AppFormModal
     v-model:open="open"
     :title="education ? 'Edit education' : 'Add education'"
-    confirm-label="Save"
+    :state="state"
+    :validate="validate"
     :loading="loading"
-    :disabled="!school.trim() || !startMonth"
-    @confirm="submit"
+    @submit="submit"
   >
     <div class="space-y-4">
-      <UFormField label="School" required>
-        <UInput v-model="school" class="w-full" />
+      <UFormField label="School" name="school" required>
+        <UInput v-model="school" class="w-full" data-testid="education-school" />
       </UFormField>
       <div class="grid gap-4 sm:grid-cols-2">
         <UFormField label="Degree">
@@ -112,15 +132,26 @@ const submit = async () => {
         </UFormField>
       </div>
       <ProfileLocationField v-model:country-code="countryCode" v-model:city="city" />
-      <UFormField label="Start" required>
-        <AppMonthField v-model="startMonth" />
-      </UFormField>
-      <UFormField label="End">
-        <div class="space-y-2">
-          <AppMonthField v-model="endMonth" :disabled="current" />
-          <UCheckbox v-model="current" label="Current" />
-        </div>
-      </UFormField>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <UFormField label="Start" name="startMonth" required>
+          <AppMonthField v-model="startMonth" v-model:partial="startPartial" />
+        </UFormField>
+        <UFormField label="End" name="endMonth">
+          <div class="space-y-2">
+            <AppMonthField v-model="endMonth" v-model:partial="endPartial" :disabled="current" />
+            <UCheckbox v-model="current" label="Current" />
+          </div>
+        </UFormField>
+      </div>
     </div>
-  </AppConfirmModal>
+
+    <template #after>
+      <ProfileEntryBullets
+        kind="EDUCATION"
+        :entry="education"
+        class="mt-6 border-t border-default pt-4"
+        @changed="emit('changed')"
+      />
+    </template>
+  </AppFormModal>
 </template>

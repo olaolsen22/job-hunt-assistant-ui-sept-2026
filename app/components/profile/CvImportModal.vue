@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProfileData } from '~/composables/useProfile'
+import { PHONE_FULLSCREEN_MODAL } from '~/constants/ui'
 import {
   createCvDraft,
   reviewCvSelection,
@@ -206,7 +207,7 @@ const save = async () => {
 </script>
 
 <template>
-  <!-- Complete history forms need more width than a simple prompt modal. -->
+  <!-- Complete history forms need more width than a simple prompt modal, and the full screen on phones. -->
   <UModal
     v-model:open="modalOpen"
     title="Import English CV"
@@ -214,7 +215,7 @@ const save = async () => {
       reviewing ? 'Review and select what to save.' : 'Parse your CV, then review it before saving.'
     "
     :dismissible="!locked"
-    :ui="{ content: 'max-w-4xl' }"
+    :ui="{ content: `max-w-4xl ${PHONE_FULLSCREEN_MODAL}` }"
   >
     <template #body>
       <div class="space-y-4">
@@ -313,11 +314,13 @@ const save = async () => {
     </template>
     <template #footer>
       <div class="flex w-full flex-col gap-3">
+        <!-- Capped, so opened error details can't push the buttons out of a phone-sized footer. -->
         <UAlert
           v-if="saveError"
           color="error"
           variant="subtle"
           :title="saveError"
+          class="max-h-40 overflow-y-auto"
           data-testid="cv-save-error"
         >
           <template v-if="saveDetails" #description>

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { ProfileExperience } from '~/composables/useProfile'
 
-defineProps<{ experiences: readonly ProfileExperience[] }>()
+const props = defineProps<{ experiences: readonly ProfileExperience[] }>()
 const emit = defineEmits<{ changed: [] }>()
+
+const { locale } = useProfileTranslation()
 
 const DELETE_EXPERIENCE = graphql(`
   mutation DeleteProfileExperience($input: DeleteProfileExperienceInput!) {
@@ -19,7 +21,9 @@ const DELETE_EXPERIENCE = graphql(`
 `)
 
 const formOpen = ref(false)
-const editing = ref<ProfileExperience | null>(null)
+// By id, so the open form shows the refetched entry (its bullets save while it is open).
+const editingId = ref<number | null>(null)
+const editing = computed(() => props.experiences.find((e) => e.id === editingId.value) ?? null)
 const deleting = ref<ProfileExperience | null>(null)
 const deleteOpen = computed({
   get: () => !!deleting.value,
@@ -29,7 +33,7 @@ const deleteOpen = computed({
 })
 
 const openForm = (experience: ProfileExperience | null) => {
-  editing.value = experience
+  editingId.value = experience?.id ?? null
   formOpen.value = true
 }
 
@@ -65,7 +69,7 @@ const remove = async () => {
         :title="`${e.title} · ${e.employer}`"
         :dates="
           [
-            formatMonthRange(e.startMonth, e.endMonth, 'Present'),
+            formatMonthRange(e.startMonth, e.endMonth, 'Present', locale),
             e.location && formatLocation(e.location)
           ]
             .filter(Boolean)

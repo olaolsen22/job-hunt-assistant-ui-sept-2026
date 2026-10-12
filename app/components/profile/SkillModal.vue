@@ -32,6 +32,8 @@ watch(open, (isOpen) => {
   level.value = skill?.level ?? 3
 })
 
+const validate = () => formErrors({ name: requiredError(name.value, 'a skill') })
+
 const { run, loading } = useMutation(() => emit('changed'))
 
 const submit = async () => {
@@ -50,16 +52,16 @@ const submit = async () => {
 </script>
 
 <template>
-  <AppConfirmModal
+  <AppFormModal
     v-model:open="open"
     :title="skill ? 'Edit skill' : 'Add skill'"
-    confirm-label="Save"
+    :state="{ name, level }"
+    :validate="validate"
     :loading="loading"
-    :disabled="!name?.trim()"
-    @confirm="submit"
+    @submit="submit"
   >
     <div class="space-y-4">
-      <UFormField label="Skill" required>
+      <UFormField label="Skill" name="name" required>
         <UInput v-if="skill" :model-value="name" disabled class="w-full" />
         <ListingsNameCombobox
           v-else
@@ -72,5 +74,5 @@ const submit = async () => {
         <USelect v-model="level" :items="SKILL_LEVELS" class="w-full" data-testid="skill-level" />
       </UFormField>
     </div>
-  </AppConfirmModal>
+  </AppFormModal>
 </template>

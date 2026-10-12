@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { ProfileProject } from '~/composables/useProfile'
 
-defineProps<{ projects: readonly ProfileProject[] }>()
+const props = defineProps<{ projects: readonly ProfileProject[] }>()
 const emit = defineEmits<{ changed: [] }>()
+
+const { locale } = useProfileTranslation()
 
 const DELETE_PROJECT = graphql(`
   mutation DeleteProfileProject($input: DeleteProfileProjectInput!) {
@@ -19,7 +21,9 @@ const DELETE_PROJECT = graphql(`
 `)
 
 const formOpen = ref(false)
-const editing = ref<ProfileProject | null>(null)
+// By id, so the open form shows the refetched entry (its bullets save while it is open).
+const editingId = ref<number | null>(null)
+const editing = computed(() => props.projects.find((e) => e.id === editingId.value) ?? null)
 const deleting = ref<ProfileProject | null>(null)
 const deleteOpen = computed({
   get: () => !!deleting.value,
@@ -29,7 +33,7 @@ const deleteOpen = computed({
 })
 
 const openForm = (entry: ProfileProject | null) => {
-  editing.value = entry
+  editingId.value = entry?.id ?? null
   formOpen.value = true
 }
 
@@ -64,7 +68,10 @@ const remove = async () => {
         :entry-id="e.id"
         :title="e.name"
         :dates="
-          [formatMonthRange(e.startMonth, e.endMonth), e.location && formatLocation(e.location)]
+          [
+            formatMonthRange(e.startMonth, e.endMonth, undefined, locale),
+            e.location && formatLocation(e.location)
+          ]
             .filter(Boolean)
             .join(' · ')
         "

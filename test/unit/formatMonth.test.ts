@@ -19,6 +19,12 @@ describe('formatMonth', () => {
     expect(formatMonthRange(null, null)).toBe('')
   })
 
+  it('formats in the given locale, Norwegian by default', () => {
+    expect(formatMonth('2021-03-01', 'en-GB')).toBe('Mar 2021')
+    expect(formatMonth('2021-03-01')).toBe('mars 2021')
+    expect(formatMonthRange('2020-01-01', null, 'Present', 'en-GB')).toBe('Jan 2020 – Present')
+  })
+
   it('formats years of experience', () => {
     expect(formatYears(0)).toBe('')
     expect(formatYears(5)).toBe('<1 yr')

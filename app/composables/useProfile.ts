@@ -1,4 +1,4 @@
-import type { ResultOf } from 'gql.tada'
+import type { ResultOf, VariablesOf } from 'gql.tada'
 
 // Also used by moveProfileBullet, so a reorder returns the same bullet shape (with translations).
 export const BULLET_FIELDS = graphql(`
@@ -179,6 +179,69 @@ export type ProfileLink = ProfileData['links'][number]
 export type ProfileBullet = ProfileExperience['bullets'][number]
 export type ProfileTranslation = ProfileData['translations'][number]
 export type ProfileBulletTranslation = ProfileBullet['translations'][number]
+
+const UPDATE_PROFILE = graphql(
+  `
+    mutation UpdateProfile($input: UpdateProfileInput!) {
+      updateProfile(input: $input) {
+        profile {
+          ...ProfileFields
+        }
+        errors {
+          __typename
+          ... on Error {
+            message
+          }
+        }
+      }
+    }
+  `,
+  [PROFILE_FIELDS]
+)
+
+type UpdateProfileInput = VariablesOf<typeof UPDATE_PROFILE>['input']
+
+// updateProfile replaces every field, so the current values go out for whatever a form doesn't edit.
+export const profileUpdateInput = (profile: ProfileData): UpdateProfileInput => ({
+  fullName: profile.fullName,
+  headline: profile.headline,
+  email: profile.email,
+  phone: profile.phone,
+  summary: profile.summary,
+  dateOfBirth: profile.dateOfBirth,
+  nationality: profile.nationality,
+  workAuthorization: profile.workAuthorization,
+  hobbies: [...profile.hobbies],
+  location:
+    profile.location &&
+    locationInput(profile.location.countryCode, profile.location.city ?? undefined),
+  links: profile.links.map((l) => ({
+    kind: l.kind,
+    label: l.kind === 'OTHER' ? l.label : null,
+    url: l.url
+  }))
+})
+
+// Saves part of the basics (details, summary or hobbies); resolves to the returned profile, or null
+// when the API rejected it (its message is already shown).
+export const useProfileUpdate = (onStale: () => void) => {
+  const { run, loading } = useMutation(onStale)
+  const save = async (
+    profile: ProfileData,
+    changes: Partial<UpdateProfileInput>
+  ): Promise<ProfileData | null> => {
+    let saved: ProfileData | null = null
+    const ok = await run(async () => {
+      const { updateProfile } = await gql(UPDATE_PROFILE, {
+        input: { ...profileUpdateInput(profile), ...changes }
+      })
+      saved = updateProfile.profile
+      return updateProfile.errors
+    })
+    return ok ? saved : null
+  }
+  return { save, loading }
+}
 
 // Client-only like the other pages: it needs the session cookie.
 export const useProfile = () => {

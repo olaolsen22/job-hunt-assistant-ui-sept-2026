@@ -9,6 +9,8 @@ definePageMeta({ title: 'Profile' })
 const { profile, loading, error, refresh } = useProfile()
 
 const basicsOpen = ref(false)
+const summaryOpen = ref(false)
+const hobbiesOpen = ref(false)
 const cvImportOpen = ref(false)
 
 // Keep the mounted review and its edits if fetching fresh update targets fails.
@@ -37,7 +39,9 @@ const translating = ref(false)
 const target = computed<Language>(() =>
   profile.value?.contentLanguage === 'ENGLISH' ? 'NORWEGIAN' : 'ENGLISH'
 )
-provideProfileTranslation({ translating, target })
+// en-GB for English: day-month order and 24-hour habits match a Norwegian reader.
+const locale = computed(() => (profile.value?.contentLanguage === 'ENGLISH' ? 'en-GB' : 'nb-NO'))
+provideProfileTranslation({ translating, target, locale })
 const targetLabel = computed(() => LANGUAGE_OPTIONS.find((o) => o.value === target.value)!.label)
 
 const bulletsOf = (p: ProfileData) => [
@@ -71,6 +75,8 @@ const changeContentLanguage = async (language: Language) => {
   if (ok) await refresh()
 }
 
+const importAvailable = computed(() => profile.value?.contentLanguage === 'ENGLISH')
+
 const kindOf = (kind: string) => LINK_KIND_OPTIONS.find((o) => o.value === kind)!
 
 // Basics and Preferences return the whole profile, so it replaces ours without a refetch.
@@ -91,7 +97,7 @@ const contact = computed(() => {
     },
     {
       icon: 'i-lucide-cake',
-      text: p.dateOfBirth ? formatDate(p.dateOfBirth) : null,
+      text: p.dateOfBirth ? formatDate(p.dateOfBirth, locale.value) : null,
       testid: 'profile-dob'
     },
     { icon: 'i-lucide-flag', text: p.nationality, testid: 'profile-nationality' },
@@ -123,71 +129,42 @@ const contact = computed(() => {
 
       <template v-else-if="profile">
         <header class="space-y-3" data-testid="profile-header">
-          <div class="flex items-start justify-between gap-2">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0">
               <h1 class="break-words text-xl font-semibold text-highlighted">
                 {{ profile.fullName ?? 'Your profile' }}
               </h1>
               <p v-if="profile.headline" class="text-muted">{{ profile.headline }}</p>
             </div>
-            <div class="flex shrink-0 flex-col gap-2 sm:flex-row">
-              <UButton
-                icon="i-lucide-clipboard-paste"
-                variant="subtle"
-                :disabled="profile.contentLanguage !== 'ENGLISH'"
-                data-testid="profile-import-cv"
-                @click="cvImportOpen = true"
-                >Import CV</UButton
-              >
+            <div class="flex shrink-0 gap-2">
               <UButton
                 icon="i-lucide-pencil"
                 color="neutral"
                 variant="subtle"
-                class="shrink-0"
                 data-testid="profile-edit"
                 @click="basicsOpen = true"
-                >Edit</UButton
+                >Edit details</UButton
               >
+              <!-- A disabled button gets no pointer or focus events, so the span carries the tooltip. -->
+              <UTooltip
+                text="CV import needs an English-primary profile. Change the CV language below."
+                :disabled="importAvailable"
+              >
+                <span
+                  :tabindex="importAvailable ? undefined : 0"
+                  data-testid="profile-import-cv-wrap"
+                >
+                  <UButton
+                    icon="i-lucide-clipboard-paste"
+                    variant="subtle"
+                    :disabled="!importAvailable"
+                    data-testid="profile-import-cv"
+                    @click="cvImportOpen = true"
+                    >Import CV</UButton
+                  >
+                </span>
+              </UTooltip>
             </div>
-          </div>
-
-          <p
-            v-if="profile.contentLanguage !== 'ENGLISH'"
-            class="text-sm text-muted"
-            data-testid="profile-import-cv-hint"
-          >
-            CV import requires an English-primary profile. Use the content language control below
-            when permitted.
-          </p>
-
-          <div class="flex flex-wrap items-center gap-2" data-testid="profile-translation-controls">
-            <USelect
-              :model-value="profile.contentLanguage"
-              :items="[...LANGUAGE_OPTIONS]"
-              :disabled="hasTranslations || languageLoading"
-              aria-label="Content language"
-              size="sm"
-              class="w-36"
-              data-testid="profile-content-language"
-              @update:model-value="changeContentLanguage"
-            />
-            <span
-              v-if="hasTranslations"
-              class="text-sm text-muted"
-              data-testid="profile-content-language-hint"
-              >Delete all translations before changing the content language.</span
-            >
-            <UChip :show="!translating && staleCount > 0" color="warning" inset>
-              <UButton
-                icon="i-lucide-languages"
-                color="neutral"
-                :variant="translating ? 'solid' : 'subtle'"
-                size="sm"
-                data-testid="profile-translate-toggle"
-                @click="translating = !translating"
-                >{{ translating ? 'Done translating' : `Translate to ${targetLabel}` }}</UButton
-              >
-            </UChip>
           </div>
 
           <ul v-if="contact.length" class="flex flex-wrap gap-x-6 gap-y-1 text-sm">
@@ -218,6 +195,41 @@ const contact = computed(() => {
           </div>
         </header>
 
+        <!-- Rarely changed settings, kept apart from the CV itself. -->
+        <div
+          class="flex flex-wrap items-center gap-2 border-y border-default py-2"
+          data-testid="profile-translation-controls"
+        >
+          <span class="text-sm text-muted">CV language</span>
+          <USelect
+            :model-value="profile.contentLanguage"
+            :items="[...LANGUAGE_OPTIONS]"
+            :disabled="hasTranslations || languageLoading"
+            aria-label="Content language"
+            size="sm"
+            class="w-36"
+            data-testid="profile-content-language"
+            @update:model-value="changeContentLanguage"
+          />
+          <UChip :show="!translating && staleCount > 0" color="warning" inset>
+            <UButton
+              icon="i-lucide-languages"
+              color="neutral"
+              :variant="translating ? 'solid' : 'ghost'"
+              size="sm"
+              data-testid="profile-translate-toggle"
+              @click="translating = !translating"
+              >{{ translating ? 'Done translating' : `Translate to ${targetLabel}` }}</UButton
+            >
+          </UChip>
+          <span
+            v-if="hasTranslations"
+            class="basis-full text-xs text-muted"
+            data-testid="profile-content-language-hint"
+            >Delete all translations before changing the content language.</span
+          >
+        </div>
+
         <div class="grid items-start gap-4 lg:grid-cols-3">
           <div class="space-y-4 lg:col-span-2">
             <ProfileSection
@@ -227,7 +239,7 @@ const contact = computed(() => {
               :empty="!profile.summary"
               empty-message="No summary yet."
               add-label="Add summary"
-              @add="basicsOpen = true"
+              @add="summaryOpen = true"
             >
               <template v-if="profile.summary" #actions>
                 <UButton
@@ -237,7 +249,7 @@ const contact = computed(() => {
                   size="sm"
                   aria-label="Edit summary"
                   data-testid="profile-summary-edit"
-                  @click="basicsOpen = true"
+                  @click="summaryOpen = true"
                 />
               </template>
               <LazyAppMarkdownContent v-if="profile.summary" :source="profile.summary" />
@@ -259,8 +271,6 @@ const contact = computed(() => {
           </div>
 
           <div class="space-y-4">
-            <ProfilePreferencesCard :profile="profile" @saved="onSaved" @changed="refresh" />
-
             <ProfileSkillList :skills="profile.skills" @changed="refresh" />
 
             <ProfileLanguageList :languages="profile.languages" @changed="refresh" />
@@ -272,7 +282,7 @@ const contact = computed(() => {
               :empty="!profile.hobbies.length"
               empty-message="No hobbies yet."
               add-label="Add hobbies"
-              @add="basicsOpen = true"
+              @add="hobbiesOpen = true"
             >
               <template v-if="profile.hobbies.length" #actions>
                 <UButton
@@ -282,7 +292,7 @@ const contact = computed(() => {
                   size="sm"
                   aria-label="Edit hobbies"
                   data-testid="profile-hobbies-edit"
-                  @click="basicsOpen = true"
+                  @click="hobbiesOpen = true"
                 />
               </template>
               <div class="flex flex-wrap gap-2">
@@ -293,6 +303,8 @@ const contact = computed(() => {
             </ProfileSection>
 
             <ProfileCertificationList :certifications="profile.certifications" @changed="refresh" />
+
+            <ProfilePreferencesCard :profile="profile" @saved="onSaved" @changed="refresh" />
           </div>
         </div>
 
@@ -305,6 +317,18 @@ const contact = computed(() => {
         />
         <ProfileBasicsModal
           v-model:open="basicsOpen"
+          :profile="profile"
+          @saved="onSaved"
+          @changed="refresh"
+        />
+        <ProfileSummaryModal
+          v-model:open="summaryOpen"
+          :profile="profile"
+          @saved="onSaved"
+          @changed="refresh"
+        />
+        <ProfileHobbiesModal
+          v-model:open="hobbiesOpen"
           :profile="profile"
           @saved="onSaved"
           @changed="refresh"

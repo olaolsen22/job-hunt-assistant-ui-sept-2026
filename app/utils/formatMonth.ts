@@ -1,6 +1,7 @@
 // Same local-time parsing trick as `formatDate`, so a first-of-month date never renders a month early.
-export const formatMonth = (iso: string) =>
-  new Intl.DateTimeFormat('nb-NO', { month: 'short', year: 'numeric' }).format(
+// The profile passes the locale of its content language; elsewhere dates are Norwegian.
+export const formatMonth = (iso: string, locale = 'nb-NO') =>
+  new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric' }).format(
     new Date(`${iso}T00:00:00`)
   )
 
@@ -8,10 +9,11 @@ export const formatMonth = (iso: string) =>
 export const formatMonthRange = (
   start: string | null | undefined,
   end: string | null | undefined,
-  openLabel?: string
+  openLabel?: string,
+  locale?: string
 ) => {
-  const from = start ? formatMonth(start) : null
-  const to = end ? formatMonth(end) : (openLabel ?? null)
+  const from = start ? formatMonth(start, locale) : null
+  const to = end ? formatMonth(end, locale) : (openLabel ?? null)
   if (from && to) return `${from} – ${to}`
   return from ?? to ?? ''
 }

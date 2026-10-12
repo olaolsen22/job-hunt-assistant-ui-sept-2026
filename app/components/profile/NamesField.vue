@@ -14,6 +14,9 @@ const addName = (name?: string) => {
 }
 
 const addTyped = () => addName(next.value?.trim())
+
+// Saving with a typed but not yet added name keeps it: the parent calls this before saving.
+defineExpose({ commit: addTyped })
 </script>
 
 <template>
@@ -46,21 +49,23 @@ const addTyped = () => addName(next.value?.trim())
       :placeholder="placeholder"
       @update:model-value="addName"
     />
-    <form v-else class="flex gap-2" @submit.prevent="addTyped">
+    <!-- Not a <form>: it sits inside the modal's form, and Enter here adds rather than saves. -->
+    <div v-else class="flex gap-2">
       <UInput
         v-model="next"
         :placeholder="placeholder"
         class="flex-1"
         data-testid="names-field-input"
+        @keydown.enter.prevent="addTyped"
       />
       <UButton
-        type="submit"
         icon="i-lucide-plus"
         color="neutral"
         variant="subtle"
         :disabled="!next?.trim()"
         aria-label="Add"
+        @click="addTyped"
       />
-    </form>
+    </div>
   </div>
 </template>

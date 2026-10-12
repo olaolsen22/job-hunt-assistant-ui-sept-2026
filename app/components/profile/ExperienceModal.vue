@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ProfileExperience } from '~/composables/useProfile'
 
-// Without `experience` it adds one; with it, it edits that one. Bullets are edited on the card.
+// Without `experience` it adds one; with it, it edits that one and its bullets, which save on their own.
 const { experience } = defineProps<{ experience: ProfileExperience | null }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
@@ -46,6 +46,8 @@ const startMonth = ref<string | null>(null)
 const endMonth = ref<string | null>(null)
 const current = ref(false)
 const skills = ref<string[]>([])
+const startPartial = ref(false)
+const endPartial = ref(false)
 
 watch(open, (isOpen) => {
   if (!isOpen) return
@@ -62,6 +64,25 @@ watch(open, (isOpen) => {
 watch(current, (isCurrent) => {
   if (isCurrent) endMonth.value = null
 })
+
+const state = computed(() => ({
+  employer: employer.value,
+  title: title.value,
+  countryCode: countryCode.value,
+  city: city.value,
+  startMonth: startMonth.value,
+  endMonth: endMonth.value,
+  current: current.value,
+  skills: skills.value
+}))
+
+const validate = () =>
+  formErrors({
+    employer: requiredError(employer.value, 'an employer'),
+    title: requiredError(title.value, 'a title'),
+    startMonth: monthError(startMonth.value, startPartial.value, true),
+    endMonth: !current.value && monthError(endMonth.value, endPartial.value)
+  })
 
 const { run, loading } = useMutation(() => emit('changed'))
 
@@ -93,34 +114,56 @@ const submit = async () => {
 </script>
 
 <template>
-  <AppConfirmModal
+  <AppFormModal
     v-model:open="open"
     :title="experience ? 'Edit experience' : 'Add experience'"
-    confirm-label="Save"
+    :state="state"
+    :validate="validate"
     :loading="loading"
-    :disabled="!employer.trim() || !title.trim() || !startMonth"
-    @confirm="submit"
+    @submit="submit"
   >
     <div class="space-y-4">
-      <UFormField label="Employer" required>
-        <UInput v-model="employer" class="w-full" data-testid="experience-employer" />
-      </UFormField>
-      <UFormField label="Title" required>
-        <UInput v-model="title" class="w-full" data-testid="experience-title" />
-      </UFormField>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <UFormField label="Employer" name="employer" required>
+          <UInput v-model="employer" class="w-full" data-testid="experience-employer" />
+        </UFormField>
+        <UFormField label="Title" name="title" required>
+          <UInput v-model="title" class="w-full" data-testid="experience-title" />
+        </UFormField>
+      </div>
       <ProfileLocationField v-model:country-code="countryCode" v-model:city="city" />
-      <UFormField label="Start" required>
-        <AppMonthField v-model="startMonth" data-testid="experience-start" />
-      </UFormField>
-      <UFormField label="End">
-        <div class="space-y-2">
-          <AppMonthField v-model="endMonth" :disabled="current" />
-          <UCheckbox v-model="current" label="Current" data-testid="experience-current" />
-        </div>
-      </UFormField>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <UFormField label="Start" name="startMonth" required>
+          <AppMonthField
+            v-model="startMonth"
+            v-model:partial="startPartial"
+            data-testid="experience-start"
+          />
+        </UFormField>
+        <UFormField label="End" name="endMonth">
+          <div class="space-y-2">
+            <AppMonthField
+              v-model="endMonth"
+              v-model:partial="endPartial"
+              :disabled="current"
+              data-testid="experience-end"
+            />
+            <UCheckbox v-model="current" label="Current" data-testid="experience-current" />
+          </div>
+        </UFormField>
+      </div>
       <UFormField label="Skills">
         <ProfileNamesField v-model="skills" lookup="skills" placeholder="Search or add a skill" />
       </UFormField>
     </div>
-  </AppConfirmModal>
+
+    <template #after>
+      <ProfileEntryBullets
+        kind="EXPERIENCE"
+        :entry="experience"
+        class="mt-6 border-t border-default pt-4"
+        @changed="emit('changed')"
+      />
+    </template>
+  </AppFormModal>
 </template>

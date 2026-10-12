@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-10-12 · Last logged commit: cd2fbb0
+Updated: 2026-10-12 · Last logged commit: e900e65
 
 ## Pages
 
@@ -15,14 +15,14 @@ Updated: 2026-10-12 · Last logged commit: cd2fbb0
 - `/companies` — list (name, industry, locations, listing/application counts), debounced search, numbered pager over cursors (walks forward to jump, stops at the last page); search and page in the URL, page size like /listings (measurePageSize); rows open `/listings?search=<name>`; star toggles a company favorite
 - `/companies/add` — paste (built-in parser or copy-paste prompt) → editable preview rows (name, industry, locations) → one `createCompanies`; result cards
 - `/companies/[id]` — company page (stats, positions incl. archived, Locations card, Contacts card with add/edit/delete, notes, Avoid / Stop avoiding) · `/companies/[id]/edit` — name, industry, locations
-- `/profile` — one `profile` query shown as cards: header (name, headline, contact, links; Basics modal), Summary (Markdown), Preferences (+ target locations via `saveLocation`), Experience, Projects, Education, Certifications (modal add/edit, confirmed delete, inline drag-reorderable plain-text bullets), Skills (level, derived years), Languages (inline levels), References (drag-reorder), Hobbies; links have a kind, header shows date of birth / nationality / work authorization, entries have a location; content-language picker + Translate mode (per-bullet, headline/summary translations, stale/machine badges); Import CV (English-primary only): pasted text/Markdown or external prompt + JSON → editable review (plain-language issues inline beside fields/items, section issue counts, compact skill/language/bullet rows, collapsed entry headers with dates, missing skill levels default to the saved level or 1, imported links/hobbies previewed before opt-in), footer status that focuses the first issue, manual add/update/skip and one atomic Save import (server errors routed to fields); omitted content and Norwegian translations preserved, no upload or automatic matching; sidebar + user menu link
+- `/profile` — one `profile` query shown as a read-first CV: header (name, headline, contact, links; Edit details + Import CV with tooltip when unavailable), CV language row (content language, Translate), main column Summary / Experience / Projects / Education / References (drag-reorder), side column Skills / Languages / Hobbies / Certifications / Preferences; rows have one ⋮ menu (Edit / Delete or Remove, always confirmed); all edits in form modals (Enter saves, inline required errors, "Discard changes?" guard, full screen on phones); Details / Summary / Hobbies forms each send the whole profile; entry forms hold the bullets (add/edit/drag/delete, saved immediately); Preferences form holds target locations (`saveLocation`, saved immediately); Languages form for add/level; card bullets plain text; links have a kind, header shows date of birth / nationality / work authorization, entries have a location; content-language picker + Translate mode (per-bullet, headline/summary translations, stale/machine badges); Import CV (English-primary only; full screen on phones): pasted text/Markdown or external prompt + JSON → editable review (plain-language issues inline beside fields/items, section issue counts, compact skill/language/bullet rows, collapsed entry headers with dates, missing skill levels default to the saved level or 1, imported links/hobbies previewed before opt-in), footer status that focuses the first issue, manual add/update/skip and one atomic Save import (server errors routed to fields); omitted content and Norwegian translations preserved, no upload or automatic matching; sidebar + user menu link
 - `middleware/auth.global.ts` redirects to `/login` without a session
 
 ## Components (`app/components`)
 
-- `app/`: Card (`actions` slot), AiCostNotice (Analyze ad + CV import), MonthField, ConfirmModal, MarkdownContent, MarkdownEditor
+- `app/`: Card (`actions` slot), AiCostNotice (Analyze ad + CV import), MonthField (`partial`), ConfirmModal, FormModal (profile forms), MarkdownContent, MarkdownEditor
 - `companies/`: FavoriteButton, AvoidedBadge, NotesModal, ContactList, ContactModal
-- `profile/`: LocationField, ReferenceList/Modal, Section, Entry, Bullets, NamesField, BasicsModal, PreferencesCard/Modal, Experience/Education/Certification/Project List + Modal, SkillList/Modal, LanguageList, BulletTranslation, TranslationBlock, CvImportModal, CvReview, CvEntryReview, CvField, CvSection
+- `profile/`: LocationField, ReferenceList/Modal, Section, Entry, RowActions, Bullets (card / `editable`), EntryBullets, NamesField, BasicsModal (Details), SummaryModal, HobbiesModal, PreferencesCard/Modal, TargetLocations, Experience/Education/Certification/Project List + Modal, SkillList/Modal, LanguageList/Modal, BulletTranslation, TranslationBlock, CvImportModal, CvReview, CvEntryReview, CvField, CvSection
 - `dashboard/`: ApiHealth, Widget (shell), Row, ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, Editor
 - `listings/`: Card, Form, Dates (server `dueOn`), Location, LocationsField, LanguagesField, SkillsField, ContactsField, NameCombobox,
   FilterPanel (toolbar + facets), FilterCombobox,
@@ -32,8 +32,8 @@ Updated: 2026-10-12 · Last logged commit: cd2fbb0
 ## Stores & composables
 
 - Pinia: `stores/auth.ts`
-- Composables: useDashboardLayout, useListing, useListingForm, useLlmUsage, useListingsList (presets, facets, sort, search, page ↔ URL query; `useListingsView` last list URL; runtime-built query), useMutation, useNewNames, useProfileTranslation (provide/inject), CONTACT_FIELDS (`contactFields.ts`), LISTING_COMPARE_FIELDS (`listingCompareFields.ts`), useProfile (`PROFILE_FIELDS`, entry types), useProfileCvImport (prompt, parse, preview, atomic save; inline errors), useParsePrompt (listing, quick, company prompts; `parse` / `parseFromUrl` / `parseNewUrl` return `{ result }` or `{ error }`), useCollectedJobProcessing (local sequential runner, staged drafts, paused recovery, counts, stale-run disposal)
-- Utils: profileCvImport (local draft, explicit targets, omission-safe selection validation, issue model + server path routing), isHttpUrl, parseDraft, formatMonth / formatMonthRange / formatYears, daysFromToday, formatDate, formatDateTime, toDateTimeLocal, todayIso, daysAgoIso, localDayStartIso, graphql (`gql`), collectedJobs (validate, check/filter batches, prepare posting), collectedJobBatches (plan by count/serialized size, compact posting, validate full reply/count)
+- Composables: useDashboardLayout, useListing, useListingForm, useLlmUsage, useListingsList (presets, facets, sort, search, page ↔ URL query; `useListingsView` last list URL; runtime-built query), useMutation, useNewNames, useProfileTranslation (provide/inject), CONTACT_FIELDS (`contactFields.ts`), LISTING_COMPARE_FIELDS (`listingCompareFields.ts`), useProfile (`PROFILE_FIELDS`, entry types, `profileUpdateInput`, `useProfileUpdate`), useProfileCvImport (prompt, parse, preview, atomic save; inline errors), useParsePrompt (listing, quick, company prompts; `parse` / `parseFromUrl` / `parseNewUrl` return `{ result }` or `{ error }`), useCollectedJobProcessing (local sequential runner, staged drafts, paused recovery, counts, stale-run disposal)
+- Utils: formErrors (`formErrors`, `monthError`, `requiredError`), profileCvImport (local draft, explicit targets, omission-safe selection validation, issue model + server path routing), isHttpUrl, parseDraft, formatMonth / formatMonthRange / formatYears, daysFromToday, formatDate, formatDateTime, toDateTimeLocal, todayIso, daysAgoIso, localDayStartIso, graphql (`gql`), collectedJobs (validate, check/filter batches, prepare posting), collectedJobBatches (plan by count/serialized size, compact posting, validate full reply/count)
 
 ## API operations in use
 
@@ -72,16 +72,17 @@ Updated: 2026-10-12 · Last logged commit: cd2fbb0
 | Collected-job AI batching (`batch-collected-job-processing`)                                        | Done; 64 focused unit tests pass; E2E/live UI not run                              |
 | Reviewed English CV import (`import-profile-cv`)                                                    | Done; 47 focused tests pass; E2E/live UI not run                                   |
 | CV import review refinement (`improve-cv-import-review`, `refine-cv-import-review`)                 | Done; 223 unit tests pass; E2E/live UI not run                                     |
+| Profile edit UX rework (`rework-profile-edit-ux`)                                                   | Done; 240 unit tests pass; E2E/live UI not run                                     |
 
 ## Next up
 
 - Parse queue + `onParseJobUpdated` over SSE (waiting on the backend)
 - `job-listings-cards-layout-rework` (two-column cards, measured page size)
-- Sync/archive `import-profile-cv` → `improve-cv-import-review` → `refine-cv-import-review` in that order.
 - Sync/archive dependencies `quick-add-save-flow` and `precheck-collected-job-urls` before syncing `batch-collected-job-processing` (expanded Leaving quick-add requirement).
 
 ## Decisions log
 
+- 2026-10-12 — Profile is read-first: cards are read-only with a ⋮ menu per row; bullets and target locations are edited in their forms but still save immediately (labelled), Cancel never undoes them.
 - 2026-10-12 — CV review blockers show as warnings until the first Save attempt; Save stays clickable and focuses the first issue; disabled Save uses neutral-subtle, not inline styles.
 - 2026-10-12 — CV import keeps candidates local until one reviewed atomic save; manual IDs select updates, links/hobbies require explicit replacement opt-in, and imported English sources preserve Norwegian translations.
 
@@ -91,7 +92,7 @@ Updated: 2026-10-12 · Last logged commit: cd2fbb0
 - 2026-10-10 — Quick-add after save: flagged rows first in full, clean ones in a closed `UCollapsible` receipt list; one primary Compare per duplicate note (modal switches matches).
 - 2026-10-10 — Quick-add has no submit button (Save calls `form.submit()`), so Enter can't save the batch; no Done/Cancel, leave action named by destination.
 - 2026-10-10 — Duplicate compare: one row-per-field grid that stacks on phones (no tabs/drawer, both sides stay visible); data from the save response.
-- 2026-10-08 — Profile: one page and query, edits in modals; Basics/Preferences swap in the returned profile, everything else refetches. Bullets are plain text, edited inline. Months use a custom select + year field (native month input is a text box in desktop Firefox/Safari).
+- 2026-10-08 — Profile: one page and query, edits in modals; Basics/Preferences swap in the returned profile, everything else refetches. Months use a custom select + year field (native month input is a text box in desktop Firefox/Safari).
 - 2026-10-07 — Listing page: Edit is the only solid primary action; Analyze ad is neutral subtle, rarely used actions sit in a More menu. Optional selects use clearable `USelectMenu`; the edit save keeps its confirm.
 - 2026-10-06 — Analyzing an existing listing merges into the edit form (parsed values win, saved ones kept where the parse is empty, URL kept); saved only on "Save changes".
 - 2026-10-06 — Dashboard groups removed: with a user-chosen order they can't hold, so it is one 2-column grid (Pipeline full row). An odd gap beside Pipeline is the user's choice, not handled.

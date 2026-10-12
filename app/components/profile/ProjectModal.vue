@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ProfileProject } from '~/composables/useProfile'
 
-// Without `project` it adds one; with it, it edits that one. Bullets are edited on the card.
+// Without `project` it adds one; with it, it edits that one. Its bullets save on their own.
 const { project } = defineProps<{ project: ProfileProject | null }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
@@ -45,6 +45,8 @@ const city = ref<string>()
 const startMonth = ref<string | null>(null)
 const endMonth = ref<string | null>(null)
 const skills = ref<string[]>([])
+const startPartial = ref(false)
+const endPartial = ref(false)
 
 watch(open, (isOpen) => {
   if (!isOpen) return
@@ -56,6 +58,23 @@ watch(open, (isOpen) => {
   endMonth.value = project?.endMonth ?? null
   skills.value = project?.skills.map((s) => s.name) ?? []
 })
+
+const state = computed(() => ({
+  name: name.value,
+  url: url.value,
+  countryCode: countryCode.value,
+  city: city.value,
+  startMonth: startMonth.value,
+  endMonth: endMonth.value,
+  skills: skills.value
+}))
+
+const validate = () =>
+  formErrors({
+    name: requiredError(name.value, 'a name'),
+    startMonth: monthError(startMonth.value, startPartial.value),
+    endMonth: monthError(endMonth.value, endPartial.value)
+  })
 
 const { run, loading } = useMutation(() => emit('changed'))
 
@@ -87,31 +106,44 @@ const submit = async () => {
 </script>
 
 <template>
-  <AppConfirmModal
+  <AppFormModal
     v-model:open="open"
     :title="project ? 'Edit project' : 'Add project'"
-    confirm-label="Save"
+    :state="state"
+    :validate="validate"
     :loading="loading"
-    :disabled="!name.trim()"
-    @confirm="submit"
+    @submit="submit"
   >
     <div class="space-y-4">
-      <UFormField label="Name" required>
-        <UInput v-model="name" class="w-full" />
-      </UFormField>
-      <UFormField label="URL">
-        <UInput v-model="url" placeholder="https://" class="w-full" />
-      </UFormField>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <UFormField label="Name" name="name" required>
+          <UInput v-model="name" class="w-full" data-testid="project-name" />
+        </UFormField>
+        <UFormField label="URL">
+          <UInput v-model="url" placeholder="https://" class="w-full" />
+        </UFormField>
+      </div>
       <ProfileLocationField v-model:country-code="countryCode" v-model:city="city" />
-      <UFormField label="Start">
-        <AppMonthField v-model="startMonth" />
-      </UFormField>
-      <UFormField label="End">
-        <AppMonthField v-model="endMonth" />
-      </UFormField>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <UFormField label="Start" name="startMonth">
+          <AppMonthField v-model="startMonth" v-model:partial="startPartial" />
+        </UFormField>
+        <UFormField label="End" name="endMonth">
+          <AppMonthField v-model="endMonth" v-model:partial="endPartial" />
+        </UFormField>
+      </div>
       <UFormField label="Skills">
         <ProfileNamesField v-model="skills" lookup="skills" placeholder="Search or add a skill" />
       </UFormField>
     </div>
-  </AppConfirmModal>
+
+    <template #after>
+      <ProfileEntryBullets
+        kind="PROJECT"
+        :entry="project"
+        class="mt-6 border-t border-default pt-4"
+        @changed="emit('changed')"
+      />
+    </template>
+  </AppFormModal>
 </template>

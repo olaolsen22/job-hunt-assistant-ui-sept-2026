@@ -75,13 +75,17 @@ const subtitle = computed(() =>
       ? entry.value.issuer
       : ''
 )
+// CV import only runs on English-primary profiles, so its dates are English like the profile's.
+const CV_LOCALE = 'en-GB'
+
 const dates = computed(() =>
   props.kind === 'certifications'
-    ? formatMonthRange(entry.value.issuedMonth, entry.value.expiresMonth)
+    ? formatMonthRange(entry.value.issuedMonth, entry.value.expiresMonth, undefined, CV_LOCALE)
     : formatMonthRange(
         entry.value.startMonth,
         entry.value.endMonth,
-        entry.value.confirmedOngoing ? 'Present' : undefined
+        entry.value.confirmedOngoing ? 'Present' : undefined,
+        CV_LOCALE
       )
 )
 </script>
@@ -148,8 +152,13 @@ const dates = computed(() =>
             <dd>
               {{
                 ('startMonth' in target
-                  ? formatMonthRange(target.startMonth, target.endMonth)
-                  : formatMonthRange(target.issuedMonth, target.expiresMonth)) || '—'
+                  ? formatMonthRange(target.startMonth, target.endMonth, undefined, CV_LOCALE)
+                  : formatMonthRange(
+                      target.issuedMonth,
+                      target.expiresMonth,
+                      undefined,
+                      CV_LOCALE
+                    )) || '—'
               }}
             </dd>
             <template v-if="'location' in target"

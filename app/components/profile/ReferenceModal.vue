@@ -55,6 +55,21 @@ watch(open, (isOpen) => {
   note.value = reference?.note ?? ''
 })
 
+const state = computed(() => ({
+  name: name.value,
+  relationship: relationship.value,
+  company: company.value,
+  email: email.value,
+  phone: phone.value,
+  note: note.value
+}))
+
+const validate = () =>
+  formErrors({
+    name: requiredError(name.value, 'a name'),
+    relationship: requiredError(relationship.value, 'the relationship')
+  })
+
 const { run, loading } = useMutation(() => emit('changed'))
 
 const submit = async () => {
@@ -83,20 +98,20 @@ const submit = async () => {
 </script>
 
 <template>
-  <AppConfirmModal
+  <AppFormModal
     v-model:open="open"
     :title="reference ? 'Edit reference' : 'Add reference'"
-    confirm-label="Save"
+    :state="state"
+    :validate="validate"
     :loading="loading"
-    :disabled="!name.trim() || !relationship.trim()"
-    @confirm="submit"
+    @submit="submit"
   >
     <div class="space-y-4">
       <div class="grid gap-4 sm:grid-cols-2">
-        <UFormField label="Name" required>
+        <UFormField label="Name" name="name" required>
           <UInput v-model="name" class="w-full" data-testid="reference-name" />
         </UFormField>
-        <UFormField label="Relationship" required>
+        <UFormField label="Relationship" name="relationship" required>
           <UInput
             v-model="relationship"
             placeholder="Former manager"
@@ -120,5 +135,5 @@ const submit = async () => {
         <UTextarea v-model="note" :rows="2" autoresize class="w-full" />
       </UFormField>
     </div>
-  </AppConfirmModal>
+  </AppFormModal>
 </template>

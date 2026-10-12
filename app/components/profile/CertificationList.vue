@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { ProfileCertification } from '~/composables/useProfile'
 
-defineProps<{ certifications: readonly ProfileCertification[] }>()
+const props = defineProps<{ certifications: readonly ProfileCertification[] }>()
 const emit = defineEmits<{ changed: [] }>()
+
+const { locale } = useProfileTranslation()
 
 const DELETE_CERTIFICATION = graphql(`
   mutation DeleteProfileCertification($input: DeleteProfileCertificationInput!) {
@@ -19,7 +21,9 @@ const DELETE_CERTIFICATION = graphql(`
 `)
 
 const formOpen = ref(false)
-const editing = ref<ProfileCertification | null>(null)
+// By id, so the open form shows the refetched entry (its bullets save while it is open).
+const editingId = ref<number | null>(null)
+const editing = computed(() => props.certifications.find((e) => e.id === editingId.value) ?? null)
 const deleting = ref<ProfileCertification | null>(null)
 const deleteOpen = computed({
   get: () => !!deleting.value,
@@ -29,7 +33,7 @@ const deleteOpen = computed({
 })
 
 const openForm = (entry: ProfileCertification | null) => {
-  editing.value = entry
+  editingId.value = entry?.id ?? null
   formOpen.value = true
 }
 
@@ -66,8 +70,8 @@ const remove = async () => {
         :subtitle="e.issuer"
         :dates="
           [
-            e.issuedMonth && `Issued ${formatMonth(e.issuedMonth)}`,
-            e.expiresMonth && `Expires ${formatMonth(e.expiresMonth)}`
+            e.issuedMonth && `Issued ${formatMonth(e.issuedMonth, locale)}`,
+            e.expiresMonth && `Expires ${formatMonth(e.expiresMonth, locale)}`
           ]
             .filter(Boolean)
             .join(' · ')
