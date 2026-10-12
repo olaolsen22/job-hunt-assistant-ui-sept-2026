@@ -3,7 +3,11 @@ import { print } from '@0no-co/graphql.web'
 import type { ResultOf } from 'gql.tada'
 import type { ListingDetail } from '~/composables/useListing'
 
-const { listing } = defineProps<{ listing: ListingDetail }>()
+// `cvDocumentId` preselects a CV, e.g. the PDF just generated for this listing.
+const { listing, cvDocumentId = undefined } = defineProps<{
+  listing: ListingDetail
+  cvDocumentId?: number
+}>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
 
@@ -57,7 +61,8 @@ const note = ref('')
 
 watch(open, (isOpen) => {
   if (!isOpen) return
-  cvId.value = coverId.value = undefined
+  cvId.value = cvDocumentId
+  coverId.value = undefined
   cvFile.value = coverFile.value = null
   appliedAt.value = now.value = toDateTimeLocal()
   note.value = ''

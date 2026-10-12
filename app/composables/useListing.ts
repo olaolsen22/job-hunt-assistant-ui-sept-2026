@@ -46,6 +46,7 @@ const LISTING = graphql(
           id
           kind
           fileName
+          createdAt
           sentAt
         }
         locations {

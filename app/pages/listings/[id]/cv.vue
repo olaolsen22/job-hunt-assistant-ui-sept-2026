@@ -38,7 +38,22 @@ const loadError = computed(
 )
 const busy = computed(() => analyzing.value || !!analyzingKey.value || state.previewing.value)
 
-// Open PDF stays available when only the documents refresh fails, and retrying that never regenerates.
+// The PDF to preview and apply with: the one just generated, else the listing's newest unsent CV.
+// It's current when created after the last save and nothing is edited since, so Generate has
+// nothing new to make (server timestamps on both sides).
+const pdf = computed(
+  () => state.generated.value ?? (listing.value && latestCvDocument(listing.value.documents))
+)
+const pdfCurrent = computed(
+  () =>
+    !!pdf.value &&
+    !!state.draft.value &&
+    !dirty.value &&
+    Date.parse(pdf.value.createdAt) >= Date.parse(state.draft.value.updatedAt)
+)
+const canApply = computed(() => listing.value?.status === 'SAVED')
+
+// The preview still works when only the documents refresh fails, and retrying that never regenerates.
 const pdfOpen = ref(false)
 const refreshFailed = ref(false)
 const refreshDocuments = async () => {
@@ -47,11 +62,44 @@ const refreshDocuments = async () => {
 }
 const generatePdf = async () => {
   refreshFailed.value = false
-  if (await state.generate()) await refreshDocuments()
+  if (!(await state.generate())) return
+  pdfOpen.value = true
+  await refreshDocuments()
 }
-const canGenerate = computed(
-  () => !!state.draft.value && !dirty.value && !busy.value && !state.saving.value
+const generateLabel = computed(() =>
+  state.generatePhase.value === 'saving'
+    ? 'Saving and generating…'
+    : state.generating.value
+      ? 'Generating PDF…'
+      : 'Generate PDF'
 )
+
+// Applying from here returns to the listing, refreshed so it shows Applied.
+const applyOpen = ref(false)
+const openApply = () => {
+  pdfOpen.value = false
+  applyOpen.value = true
+}
+const onApplied = async () => {
+  await refreshListing()
+  await navigateTo(`/listings/${id}`)
+}
+
+// Pending AI suggestions in page order; Next walks through them and wraps around.
+const pendingLabel = computed(() => {
+  const n = suggestions.value.length
+  return `${n} ${n === 1 ? 'suggestion' : 'suggestions'}`
+})
+const acceptAll = () => suggestions.value.map((s) => s.key).forEach(state.accept)
+const dismissAll = () => suggestions.value.map((s) => s.key).forEach(state.dismiss)
+let nextSuggestion = 0
+const showNextSuggestion = () => {
+  const items = document.querySelectorAll('[data-testid="tailored-cv-suggestion"]')
+  if (!items.length) return
+  nextSuggestion %= items.length
+  items[nextSuggestion]!.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  nextSuggestion++
+}
 
 // One AI choice modal for the whole CV (no scope) or a section.
 const aiOpen = ref(false)
@@ -162,566 +210,622 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         <AppCard>
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p class="text-sm text-muted">
-              Prefilled from your profile. Let AI pick what fits this listing, or edit it yourself.
+              Prefilled from your profile. Let AI tailor the whole CV to this listing, or use the AI
+              button on a section.
             </p>
             <UButton
               icon="i-lucide-sparkles"
               class="justify-center"
+              :loading="analyzing"
               :disabled="busy"
               data-testid="tailored-cv-optimize"
               @click="openAi()"
-              >Optimize with AI</UButton
+              >Whole CV</UButton
+            >
+          </div>
+          <div
+            v-if="analyzing"
+            class="mt-3 flex flex-wrap items-center gap-x-2 text-sm"
+            role="status"
+            aria-live="polite"
+            data-testid="tailored-cv-progress"
+          >
+            <span class="font-medium text-highlighted">{{ progress?.label ?? 'Analyzing' }}</span>
+            <span v-if="progress" class="text-muted"
+              >Step {{ progress.step }} of {{ progress.total }} · Nothing is saved yet</span
+            >
+          </div>
+          <div
+            v-if="pdf"
+            class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-default pt-3"
+            data-testid="tailored-cv-latest-pdf"
+          >
+            <p class="flex min-w-0 items-center gap-2 text-sm">
+              <UIcon name="i-lucide-file-text" class="size-4 shrink-0 text-muted" />
+              <span class="truncate">{{ pdf.fileName }}</span>
+              <span class="shrink-0 text-muted"
+                >{{ formatDateTime(pdf.createdAt)
+                }}{{ pdfCurrent ? '' : ' · older than the draft' }}</span
+              >
+            </p>
+            <UButton
+              icon="i-lucide-eye"
+              color="neutral"
+              variant="subtle"
+              size="sm"
+              data-testid="tailored-cv-latest-pdf-preview"
+              @click="pdfOpen = true"
+              >Preview</UButton
             >
           </div>
         </AppCard>
 
-        <ListingsTailoredCvSection title="Contact and headline" testid="tailored-cv-contact">
-          <template #suggestions>
-            <ListingsTailoredCvSuggestion
-              v-for="s in suggestionsFor((k) => k === 'headline')"
-              :key="s.key"
-              label="Headline"
-              :current="s.current"
-              :suggested="s.suggested"
-              @accept="state.accept(s.key)"
-              @dismiss="state.dismiss(s.key)"
-            />
-          </template>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <UFormField label="Full name">
-              <UInput v-model="cv.fullName" class="w-full" autocomplete="name" />
-            </UFormField>
-            <UFormField label="Headline">
-              <UInput v-model="cv.headline" class="w-full" data-testid="tailored-cv-headline" />
-            </UFormField>
-            <UFormField label="Email">
-              <UInput v-model="cv.email" type="email" class="w-full" autocomplete="email" />
-            </UFormField>
-            <UFormField label="Phone">
-              <UInput v-model="cv.phone" type="tel" class="w-full" autocomplete="tel" />
-            </UFormField>
-            <UFormField label="Location" class="sm:col-span-2">
-              <UInput v-model="cv.location" class="w-full" />
-            </UFormField>
-          </div>
-          <fieldset class="mt-4 space-y-2">
-            <legend class="mb-2 text-sm font-medium">Links</legend>
-            <div
-              v-for="(link, i) in cv.links"
-              :key="i"
-              class="flex flex-col gap-2 sm:flex-row sm:items-start"
-            >
-              <UInput
-                v-model="link.label"
-                placeholder="Label"
-                class="sm:w-40"
-                :aria-label="`Link ${i + 1} label`"
+        <!-- A native disabled fieldset turns off every field and button inside while whole-CV
+             analysis runs, so edits can't race it while the page stays readable. -->
+        <fieldset :disabled="analyzing" class="min-w-0 space-y-4 sm:space-y-6">
+          <UAlert
+            v-if="suggestions.length"
+            color="info"
+            variant="subtle"
+            icon="i-lucide-sparkles"
+            :title="`${pendingLabel} to review`"
+            :actions="[
+              { label: 'Accept all', color: 'neutral', variant: 'outline', onClick: acceptAll },
+              { label: 'Dismiss all', color: 'neutral', variant: 'ghost', onClick: dismissAll },
+              {
+                label: 'Next',
+                icon: 'i-lucide-arrow-down',
+                color: 'neutral',
+                variant: 'ghost',
+                onClick: showNextSuggestion
+              }
+            ]"
+            data-testid="tailored-cv-suggestions"
+          />
+
+          <ListingsTailoredCvSection title="Contact and headline" testid="tailored-cv-contact">
+            <template #suggestions>
+              <ListingsTailoredCvSuggestion
+                v-for="s in suggestionsFor((k) => k === 'headline')"
+                :key="s.key"
+                label="Headline"
+                :current="s.current"
+                :suggested="s.suggested"
+                @accept="state.accept(s.key)"
+                @dismiss="state.dismiss(s.key)"
               />
-              <div class="flex flex-1 gap-2">
+            </template>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <UFormField label="Full name">
+                <UInput v-model="cv.fullName" class="w-full" autocomplete="name" />
+              </UFormField>
+              <UFormField label="Headline">
+                <UInput v-model="cv.headline" class="w-full" data-testid="tailored-cv-headline" />
+              </UFormField>
+              <UFormField label="Email">
+                <UInput v-model="cv.email" type="email" class="w-full" autocomplete="email" />
+              </UFormField>
+              <UFormField label="Phone">
+                <UInput v-model="cv.phone" type="tel" class="w-full" autocomplete="tel" />
+              </UFormField>
+              <UFormField label="Location" class="sm:col-span-2">
+                <UInput v-model="cv.location" class="w-full" />
+              </UFormField>
+            </div>
+            <fieldset class="mt-4 space-y-2">
+              <legend class="mb-2 text-sm font-medium">Links</legend>
+              <div
+                v-for="(link, i) in cv.links"
+                :key="i"
+                class="flex flex-col gap-2 sm:flex-row sm:items-start"
+              >
                 <UInput
-                  v-model="link.url"
-                  type="url"
-                  placeholder="https://"
-                  class="flex-1"
-                  :aria-label="`Link ${i + 1} URL`"
+                  v-model="link.label"
+                  placeholder="Label"
+                  class="sm:w-40"
+                  :aria-label="`Link ${i + 1} label`"
+                />
+                <div class="flex flex-1 gap-2">
+                  <UInput
+                    v-model="link.url"
+                    type="url"
+                    placeholder="https://"
+                    class="flex-1"
+                    :aria-label="`Link ${i + 1} URL`"
+                  />
+                  <UButton
+                    icon="i-lucide-x"
+                    color="neutral"
+                    variant="ghost"
+                    :aria-label="`Remove link ${i + 1}`"
+                    @click="cv.links.splice(i, 1)"
+                  />
+                </div>
+              </div>
+              <UButton
+                icon="i-lucide-plus"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+                @click="cv.links.push({ label: '', url: '' })"
+                >Add link</UButton
+              >
+            </fieldset>
+          </ListingsTailoredCvSection>
+
+          <ListingsTailoredCvSection
+            title="Summary"
+            testid="tailored-cv-summary"
+            analyzable
+            :analyzing="analyzingKey === 'summary'"
+            :disabled="busy"
+            :error="sectionErrors.summary"
+            @analyze="openAi('summary', 'the summary')"
+          >
+            <template #suggestions>
+              <ListingsTailoredCvSuggestion
+                v-for="s in suggestionsFor((k) => k === 'summary')"
+                :key="s.key"
+                :current="s.current"
+                :suggested="s.suggested"
+                @accept="state.accept(s.key)"
+                @dismiss="state.dismiss(s.key)"
+              />
+            </template>
+            <UTextarea
+              v-model="cv.summary"
+              :rows="4"
+              autoresize
+              class="w-full"
+              aria-label="Summary"
+              data-testid="tailored-cv-summary-input"
+            />
+          </ListingsTailoredCvSection>
+
+          <ListingsTailoredCvSection
+            title="Experience"
+            testid="tailored-cv-experience"
+            :empty-message="cv.experiences.length ? undefined : 'No experience in this CV.'"
+          >
+            <template #suggestions>
+              <ListingsTailoredCvSuggestion
+                v-for="s in suggestionsFor((k) => k === 'experiences')"
+                :key="s.key"
+                label="All experience"
+                :current="s.current"
+                :suggested="s.suggested"
+                @accept="state.accept(s.key)"
+                @dismiss="state.dismiss(s.key)"
+              />
+            </template>
+            <ul class="divide-y divide-default">
+              <ListingsTailoredCvEntry
+                v-for="(e, i) in cv.experiences"
+                :key="e.sourceEntryId ?? `new-${i}`"
+                v-model:bullets="e.bullets"
+                :title="e.title"
+                :subtitle="e.employer"
+                :dates="dates(e.startMonth, e.endMonth, 'Present')"
+                :analyzable="e.sourceEntryId != null"
+                :analyzing="analyzingKey === `experience:${e.sourceEntryId}`"
+                :disabled="busy"
+                @analyze="openAi(`experience:${e.sourceEntryId!}`, e.title)"
+                @remove="cv.experiences.splice(i, 1)"
+              >
+                <UAlert
+                  v-if="sectionErrors[`experience:${e.sourceEntryId!}`]"
+                  color="error"
+                  variant="subtle"
+                  icon="i-lucide-circle-alert"
+                  :title="sectionErrors[`experience:${e.sourceEntryId!}`]"
+                  data-testid="tailored-cv-entry-error"
+                />
+                <ListingsTailoredCvSuggestion
+                  v-for="s in suggestionsFor((k) => k === `experience:${e.sourceEntryId}`)"
+                  :key="s.key"
+                  :current="s.current"
+                  :suggested="s.suggested"
+                  @accept="state.accept(s.key)"
+                  @dismiss="state.dismiss(s.key)"
+                />
+                <template #fields>
+                  <UFormField label="Title"><UInput v-model="e.title" class="w-full" /></UFormField>
+                  <UFormField label="Employer"
+                    ><UInput v-model="e.employer" class="w-full"
+                  /></UFormField>
+                  <UFormField label="Start"><AppMonthField v-model="e.startMonth" /></UFormField>
+                  <UFormField label="End" help="Empty means present."
+                    ><AppMonthField v-model="e.endMonth"
+                  /></UFormField>
+                </template>
+              </ListingsTailoredCvEntry>
+            </ul>
+          </ListingsTailoredCvSection>
+
+          <ListingsTailoredCvSection
+            title="Skills"
+            testid="tailored-cv-skills"
+            analyzable
+            :analyzing="analyzingKey === 'skills'"
+            :disabled="busy"
+            :error="sectionErrors.skills"
+            :empty-message="cv.skills.length ? undefined : 'No skills in this CV.'"
+            @analyze="openAi('skills', 'skills')"
+          >
+            <template #suggestions>
+              <ListingsTailoredCvSuggestion
+                v-for="s in suggestionsFor((k) => k === 'skills')"
+                :key="s.key"
+                :current="s.current"
+                :suggested="s.suggested"
+                @accept="state.accept(s.key)"
+                @dismiss="state.dismiss(s.key)"
+              />
+            </template>
+            <div class="space-y-2">
+              <div class="flex flex-wrap gap-2" data-testid="tailored-cv-skill-list">
+                <UBadge
+                  v-for="(skill, i) in cv.skills"
+                  :key="`${skill.sourceSkillId ?? skill.name}-${i}`"
+                  color="neutral"
+                  variant="subtle"
+                  size="lg"
+                  class="gap-1"
+                >
+                  {{ skill.name }}
+                  <UButton
+                    icon="i-lucide-x"
+                    color="neutral"
+                    variant="link"
+                    size="xs"
+                    class="p-0"
+                    :aria-label="`Remove ${skill.name}`"
+                    @click="cv.skills.splice(i, 1)"
+                  />
+                </UBadge>
+              </div>
+            </div>
+          </ListingsTailoredCvSection>
+
+          <ListingsTailoredCvSection
+            title="Education"
+            testid="tailored-cv-education"
+            :empty-message="cv.educations.length ? undefined : 'No education in this CV.'"
+          >
+            <template #suggestions>
+              <ListingsTailoredCvSuggestion
+                v-for="s in suggestionsFor((k) => k === 'educations')"
+                :key="s.key"
+                :current="s.current"
+                :suggested="s.suggested"
+                @accept="state.accept(s.key)"
+                @dismiss="state.dismiss(s.key)"
+              />
+            </template>
+            <ul class="divide-y divide-default">
+              <ListingsTailoredCvEntry
+                v-for="(e, i) in cv.educations"
+                :key="e.sourceEntryId ?? `new-${i}`"
+                v-model:bullets="e.bullets"
+                :title="e.school"
+                :subtitle="[e.degree, e.field].filter(Boolean).join(', ')"
+                :dates="dates(e.startMonth, e.endMonth)"
+                :analyzable="e.sourceEntryId != null"
+                :analyzing="analyzingKey === `education:${e.sourceEntryId}`"
+                :disabled="busy"
+                @analyze="openAi(`education:${e.sourceEntryId!}`, e.school)"
+                @remove="cv.educations.splice(i, 1)"
+              >
+                <UAlert
+                  v-if="sectionErrors[`education:${e.sourceEntryId!}`]"
+                  color="error"
+                  variant="subtle"
+                  icon="i-lucide-circle-alert"
+                  :title="sectionErrors[`education:${e.sourceEntryId!}`]"
+                  data-testid="tailored-cv-entry-error"
+                />
+                <ListingsTailoredCvSuggestion
+                  v-for="s in suggestionsFor((k) => k === `education:${e.sourceEntryId}`)"
+                  :key="s.key"
+                  :current="s.current"
+                  :suggested="s.suggested"
+                  @accept="state.accept(s.key)"
+                  @dismiss="state.dismiss(s.key)"
+                />
+                <template #fields>
+                  <UFormField label="School"
+                    ><UInput v-model="e.school" class="w-full"
+                  /></UFormField>
+                  <UFormField label="Degree"
+                    ><UInput
+                      :model-value="e.degree ?? undefined"
+                      class="w-full"
+                      @update:model-value="e.degree = $event"
+                  /></UFormField>
+                  <UFormField label="Field" class="sm:col-span-2"
+                    ><UInput
+                      :model-value="e.field ?? undefined"
+                      class="w-full"
+                      @update:model-value="e.field = $event"
+                  /></UFormField>
+                  <UFormField label="Start"><AppMonthField v-model="e.startMonth" /></UFormField>
+                  <UFormField label="End"><AppMonthField v-model="e.endMonth" /></UFormField>
+                </template>
+              </ListingsTailoredCvEntry>
+            </ul>
+          </ListingsTailoredCvSection>
+
+          <ListingsTailoredCvSection
+            title="Certifications"
+            testid="tailored-cv-certifications"
+            :empty-message="cv.certifications.length ? undefined : 'No certifications in this CV.'"
+          >
+            <template #suggestions>
+              <ListingsTailoredCvSuggestion
+                v-for="s in suggestionsFor((k) => k === 'certifications')"
+                :key="s.key"
+                :current="s.current"
+                :suggested="s.suggested"
+                @accept="state.accept(s.key)"
+                @dismiss="state.dismiss(s.key)"
+              />
+            </template>
+            <ul class="divide-y divide-default">
+              <ListingsTailoredCvEntry
+                v-for="(c, i) in cv.certifications"
+                :key="c.sourceEntryId ?? `new-${i}`"
+                v-model:bullets="c.bullets"
+                :title="c.name"
+                :subtitle="c.issuer"
+                :dates="dates(c.issuedMonth, c.expiresMonth)"
+                @remove="cv.certifications.splice(i, 1)"
+              >
+                <template #fields>
+                  <UFormField label="Name"><UInput v-model="c.name" class="w-full" /></UFormField>
+                  <UFormField label="Issuer"
+                    ><UInput
+                      :model-value="c.issuer ?? undefined"
+                      class="w-full"
+                      @update:model-value="c.issuer = $event"
+                  /></UFormField>
+                  <UFormField label="Issued"><AppMonthField v-model="c.issuedMonth" /></UFormField>
+                  <UFormField label="Expires"
+                    ><AppMonthField v-model="c.expiresMonth"
+                  /></UFormField>
+                  <UFormField label="URL" class="sm:col-span-2"
+                    ><UInput
+                      :model-value="c.url ?? undefined"
+                      type="url"
+                      class="w-full"
+                      @update:model-value="c.url = $event"
+                  /></UFormField>
+                </template>
+              </ListingsTailoredCvEntry>
+            </ul>
+          </ListingsTailoredCvSection>
+
+          <ListingsTailoredCvSection
+            title="Projects"
+            testid="tailored-cv-projects"
+            :empty-message="cv.projects.length ? undefined : 'No projects in this CV.'"
+          >
+            <template #suggestions>
+              <ListingsTailoredCvSuggestion
+                v-for="s in suggestionsFor((k) => k === 'projects')"
+                :key="s.key"
+                :current="s.current"
+                :suggested="s.suggested"
+                @accept="state.accept(s.key)"
+                @dismiss="state.dismiss(s.key)"
+              />
+            </template>
+            <ul class="divide-y divide-default">
+              <ListingsTailoredCvEntry
+                v-for="(p, i) in cv.projects"
+                :key="p.sourceEntryId ?? `new-${i}`"
+                v-model:bullets="p.bullets"
+                :title="p.name"
+                :subtitle="p.url"
+                :dates="dates(p.startMonth, p.endMonth)"
+                @remove="cv.projects.splice(i, 1)"
+              >
+                <template #fields>
+                  <UFormField label="Name"><UInput v-model="p.name" class="w-full" /></UFormField>
+                  <UFormField label="URL"
+                    ><UInput
+                      :model-value="p.url ?? undefined"
+                      type="url"
+                      class="w-full"
+                      @update:model-value="p.url = $event"
+                  /></UFormField>
+                  <UFormField label="Start"><AppMonthField v-model="p.startMonth" /></UFormField>
+                  <UFormField label="End"><AppMonthField v-model="p.endMonth" /></UFormField>
+                </template>
+              </ListingsTailoredCvEntry>
+            </ul>
+          </ListingsTailoredCvSection>
+
+          <ListingsTailoredCvSection
+            title="Languages"
+            testid="tailored-cv-languages"
+            :empty-message="cv.languages.length ? undefined : 'No languages in this CV.'"
+          >
+            <template #suggestions>
+              <ListingsTailoredCvSuggestion
+                v-for="s in suggestionsFor((k) => k === 'languages')"
+                :key="s.key"
+                :current="s.current"
+                :suggested="s.suggested"
+                @accept="state.accept(s.key)"
+                @dismiss="state.dismiss(s.key)"
+              />
+            </template>
+            <div class="space-y-2">
+              <div v-for="(l, i) in cv.languages" :key="l.language" class="flex items-center gap-2">
+                <span class="flex-1 text-sm">{{
+                  LANGUAGE_OPTIONS.find((o) => o.value === l.language)?.label ?? l.language
+                }}</span>
+                <USelect
+                  :model-value="l.level ?? undefined"
+                  :items="[...CEFR_LEVELS]"
+                  placeholder="Level"
+                  class="w-28"
+                  :aria-label="`Level for language ${i + 1}`"
+                  @update:model-value="l.level = $event"
                 />
                 <UButton
                   icon="i-lucide-x"
                   color="neutral"
                   variant="ghost"
-                  :aria-label="`Remove link ${i + 1}`"
-                  @click="cv.links.splice(i, 1)"
+                  :aria-label="`Remove language ${i + 1}`"
+                  @click="cv.languages.splice(i, 1)"
                 />
               </div>
-            </div>
-            <UButton
-              icon="i-lucide-plus"
-              color="neutral"
-              variant="subtle"
-              size="sm"
-              @click="cv.links.push({ label: '', url: '' })"
-              >Add link</UButton
-            >
-          </fieldset>
-        </ListingsTailoredCvSection>
-
-        <ListingsTailoredCvSection
-          title="Summary"
-          testid="tailored-cv-summary"
-          analyzable
-          :analyzing="analyzingKey === 'summary'"
-          :disabled="busy"
-          :error="sectionErrors.summary"
-          @analyze="openAi('summary', 'the summary')"
-        >
-          <template #suggestions>
-            <ListingsTailoredCvSuggestion
-              v-for="s in suggestionsFor((k) => k === 'summary')"
-              :key="s.key"
-              :current="s.current"
-              :suggested="s.suggested"
-              @accept="state.accept(s.key)"
-              @dismiss="state.dismiss(s.key)"
-            />
-          </template>
-          <UTextarea
-            v-model="cv.summary"
-            :rows="4"
-            autoresize
-            class="w-full"
-            aria-label="Summary"
-            data-testid="tailored-cv-summary-input"
-          />
-        </ListingsTailoredCvSection>
-
-        <ListingsTailoredCvSection
-          title="Experience"
-          testid="tailored-cv-experience"
-          :empty-message="cv.experiences.length ? undefined : 'No experience in this CV.'"
-        >
-          <template #suggestions>
-            <ListingsTailoredCvSuggestion
-              v-for="s in suggestionsFor((k) => k === 'experiences')"
-              :key="s.key"
-              label="All experience"
-              :current="s.current"
-              :suggested="s.suggested"
-              @accept="state.accept(s.key)"
-              @dismiss="state.dismiss(s.key)"
-            />
-          </template>
-          <ul class="divide-y divide-default">
-            <ListingsTailoredCvEntry
-              v-for="(e, i) in cv.experiences"
-              :key="e.sourceEntryId ?? `new-${i}`"
-              v-model:bullets="e.bullets"
-              :title="e.title"
-              :subtitle="e.employer"
-              :dates="dates(e.startMonth, e.endMonth, 'Present')"
-              :analyzable="e.sourceEntryId != null"
-              :analyzing="analyzingKey === `experience:${e.sourceEntryId}`"
-              :disabled="busy"
-              @analyze="openAi(`experience:${e.sourceEntryId!}`, e.title)"
-              @remove="cv.experiences.splice(i, 1)"
-            >
-              <UAlert
-                v-if="sectionErrors[`experience:${e.sourceEntryId!}`]"
-                color="error"
-                variant="subtle"
-                icon="i-lucide-circle-alert"
-                :title="sectionErrors[`experience:${e.sourceEntryId!}`]"
-                data-testid="tailored-cv-entry-error"
-              />
-              <ListingsTailoredCvSuggestion
-                v-for="s in suggestionsFor((k) => k === `experience:${e.sourceEntryId}`)"
-                :key="s.key"
-                :current="s.current"
-                :suggested="s.suggested"
-                @accept="state.accept(s.key)"
-                @dismiss="state.dismiss(s.key)"
-              />
-              <template #fields>
-                <UFormField label="Title"><UInput v-model="e.title" class="w-full" /></UFormField>
-                <UFormField label="Employer"
-                  ><UInput v-model="e.employer" class="w-full"
-                /></UFormField>
-                <UFormField label="Start"><AppMonthField v-model="e.startMonth" /></UFormField>
-                <UFormField label="End" help="Empty means present."
-                  ><AppMonthField v-model="e.endMonth"
-                /></UFormField>
-              </template>
-            </ListingsTailoredCvEntry>
-          </ul>
-        </ListingsTailoredCvSection>
-
-        <ListingsTailoredCvSection
-          title="Skills"
-          testid="tailored-cv-skills"
-          analyzable
-          :analyzing="analyzingKey === 'skills'"
-          :disabled="busy"
-          :error="sectionErrors.skills"
-          :empty-message="cv.skills.length ? undefined : 'No skills in this CV.'"
-          @analyze="openAi('skills', 'skills')"
-        >
-          <template #suggestions>
-            <ListingsTailoredCvSuggestion
-              v-for="s in suggestionsFor((k) => k === 'skills')"
-              :key="s.key"
-              :current="s.current"
-              :suggested="s.suggested"
-              @accept="state.accept(s.key)"
-              @dismiss="state.dismiss(s.key)"
-            />
-          </template>
-          <div class="space-y-2">
-            <div class="flex flex-wrap gap-2" data-testid="tailored-cv-skill-list">
-              <UBadge
-                v-for="(skill, i) in cv.skills"
-                :key="`${skill.sourceSkillId ?? skill.name}-${i}`"
-                color="neutral"
-                variant="subtle"
-                size="lg"
-                class="gap-1"
-              >
-                {{ skill.name }}
-                <UButton
-                  icon="i-lucide-x"
-                  color="neutral"
-                  variant="link"
-                  size="xs"
-                  class="p-0"
-                  :aria-label="`Remove ${skill.name}`"
-                  @click="cv.skills.splice(i, 1)"
-                />
-              </UBadge>
-            </div>
-          </div>
-        </ListingsTailoredCvSection>
-
-        <ListingsTailoredCvSection
-          title="Education"
-          testid="tailored-cv-education"
-          :empty-message="cv.educations.length ? undefined : 'No education in this CV.'"
-        >
-          <template #suggestions>
-            <ListingsTailoredCvSuggestion
-              v-for="s in suggestionsFor((k) => k === 'educations')"
-              :key="s.key"
-              :current="s.current"
-              :suggested="s.suggested"
-              @accept="state.accept(s.key)"
-              @dismiss="state.dismiss(s.key)"
-            />
-          </template>
-          <ul class="divide-y divide-default">
-            <ListingsTailoredCvEntry
-              v-for="(e, i) in cv.educations"
-              :key="e.sourceEntryId ?? `new-${i}`"
-              v-model:bullets="e.bullets"
-              :title="e.school"
-              :subtitle="[e.degree, e.field].filter(Boolean).join(', ')"
-              :dates="dates(e.startMonth, e.endMonth)"
-              :analyzable="e.sourceEntryId != null"
-              :analyzing="analyzingKey === `education:${e.sourceEntryId}`"
-              :disabled="busy"
-              @analyze="openAi(`education:${e.sourceEntryId!}`, e.school)"
-              @remove="cv.educations.splice(i, 1)"
-            >
-              <UAlert
-                v-if="sectionErrors[`education:${e.sourceEntryId!}`]"
-                color="error"
-                variant="subtle"
-                icon="i-lucide-circle-alert"
-                :title="sectionErrors[`education:${e.sourceEntryId!}`]"
-                data-testid="tailored-cv-entry-error"
-              />
-              <ListingsTailoredCvSuggestion
-                v-for="s in suggestionsFor((k) => k === `education:${e.sourceEntryId}`)"
-                :key="s.key"
-                :current="s.current"
-                :suggested="s.suggested"
-                @accept="state.accept(s.key)"
-                @dismiss="state.dismiss(s.key)"
-              />
-              <template #fields>
-                <UFormField label="School"><UInput v-model="e.school" class="w-full" /></UFormField>
-                <UFormField label="Degree"
-                  ><UInput
-                    :model-value="e.degree ?? undefined"
-                    class="w-full"
-                    @update:model-value="e.degree = $event"
-                /></UFormField>
-                <UFormField label="Field" class="sm:col-span-2"
-                  ><UInput
-                    :model-value="e.field ?? undefined"
-                    class="w-full"
-                    @update:model-value="e.field = $event"
-                /></UFormField>
-                <UFormField label="Start"><AppMonthField v-model="e.startMonth" /></UFormField>
-                <UFormField label="End"><AppMonthField v-model="e.endMonth" /></UFormField>
-              </template>
-            </ListingsTailoredCvEntry>
-          </ul>
-        </ListingsTailoredCvSection>
-
-        <ListingsTailoredCvSection
-          title="Certifications"
-          testid="tailored-cv-certifications"
-          :empty-message="cv.certifications.length ? undefined : 'No certifications in this CV.'"
-        >
-          <template #suggestions>
-            <ListingsTailoredCvSuggestion
-              v-for="s in suggestionsFor((k) => k === 'certifications')"
-              :key="s.key"
-              :current="s.current"
-              :suggested="s.suggested"
-              @accept="state.accept(s.key)"
-              @dismiss="state.dismiss(s.key)"
-            />
-          </template>
-          <ul class="divide-y divide-default">
-            <ListingsTailoredCvEntry
-              v-for="(c, i) in cv.certifications"
-              :key="c.sourceEntryId ?? `new-${i}`"
-              v-model:bullets="c.bullets"
-              :title="c.name"
-              :subtitle="c.issuer"
-              :dates="dates(c.issuedMonth, c.expiresMonth)"
-              @remove="cv.certifications.splice(i, 1)"
-            >
-              <template #fields>
-                <UFormField label="Name"><UInput v-model="c.name" class="w-full" /></UFormField>
-                <UFormField label="Issuer"
-                  ><UInput
-                    :model-value="c.issuer ?? undefined"
-                    class="w-full"
-                    @update:model-value="c.issuer = $event"
-                /></UFormField>
-                <UFormField label="Issued"><AppMonthField v-model="c.issuedMonth" /></UFormField>
-                <UFormField label="Expires"><AppMonthField v-model="c.expiresMonth" /></UFormField>
-                <UFormField label="URL" class="sm:col-span-2"
-                  ><UInput
-                    :model-value="c.url ?? undefined"
-                    type="url"
-                    class="w-full"
-                    @update:model-value="c.url = $event"
-                /></UFormField>
-              </template>
-            </ListingsTailoredCvEntry>
-          </ul>
-        </ListingsTailoredCvSection>
-
-        <ListingsTailoredCvSection
-          title="Projects"
-          testid="tailored-cv-projects"
-          :empty-message="cv.projects.length ? undefined : 'No projects in this CV.'"
-        >
-          <template #suggestions>
-            <ListingsTailoredCvSuggestion
-              v-for="s in suggestionsFor((k) => k === 'projects')"
-              :key="s.key"
-              :current="s.current"
-              :suggested="s.suggested"
-              @accept="state.accept(s.key)"
-              @dismiss="state.dismiss(s.key)"
-            />
-          </template>
-          <ul class="divide-y divide-default">
-            <ListingsTailoredCvEntry
-              v-for="(p, i) in cv.projects"
-              :key="p.sourceEntryId ?? `new-${i}`"
-              v-model:bullets="p.bullets"
-              :title="p.name"
-              :subtitle="p.url"
-              :dates="dates(p.startMonth, p.endMonth)"
-              @remove="cv.projects.splice(i, 1)"
-            >
-              <template #fields>
-                <UFormField label="Name"><UInput v-model="p.name" class="w-full" /></UFormField>
-                <UFormField label="URL"
-                  ><UInput
-                    :model-value="p.url ?? undefined"
-                    type="url"
-                    class="w-full"
-                    @update:model-value="p.url = $event"
-                /></UFormField>
-                <UFormField label="Start"><AppMonthField v-model="p.startMonth" /></UFormField>
-                <UFormField label="End"><AppMonthField v-model="p.endMonth" /></UFormField>
-              </template>
-            </ListingsTailoredCvEntry>
-          </ul>
-        </ListingsTailoredCvSection>
-
-        <ListingsTailoredCvSection
-          title="Languages"
-          testid="tailored-cv-languages"
-          :empty-message="cv.languages.length ? undefined : 'No languages in this CV.'"
-        >
-          <template #suggestions>
-            <ListingsTailoredCvSuggestion
-              v-for="s in suggestionsFor((k) => k === 'languages')"
-              :key="s.key"
-              :current="s.current"
-              :suggested="s.suggested"
-              @accept="state.accept(s.key)"
-              @dismiss="state.dismiss(s.key)"
-            />
-          </template>
-          <div class="space-y-2">
-            <div v-for="(l, i) in cv.languages" :key="l.language" class="flex items-center gap-2">
-              <span class="flex-1 text-sm">{{
-                LANGUAGE_OPTIONS.find((o) => o.value === l.language)?.label ?? l.language
-              }}</span>
-              <USelect
-                :model-value="l.level ?? undefined"
-                :items="[...CEFR_LEVELS]"
-                placeholder="Level"
-                class="w-28"
-                :aria-label="`Level for language ${i + 1}`"
-                @update:model-value="l.level = $event"
-              />
               <UButton
-                icon="i-lucide-x"
+                v-if="cv.languages.length < LANGUAGE_OPTIONS.length"
+                icon="i-lucide-plus"
                 color="neutral"
-                variant="ghost"
-                :aria-label="`Remove language ${i + 1}`"
-                @click="cv.languages.splice(i, 1)"
-              />
+                variant="subtle"
+                size="sm"
+                @click="addLanguage"
+                >Add language</UButton
+              >
             </div>
+          </ListingsTailoredCvSection>
+
+          <div v-if="refreshFailed || state.generateError.value" class="space-y-2">
+            <UAlert
+              v-if="refreshFailed"
+              color="warning"
+              description="The PDF was created, but the listing's documents could not be refreshed."
+              :actions="[
+                {
+                  label: 'Retry refresh',
+                  color: 'neutral',
+                  variant: 'outline',
+                  onClick: refreshDocuments
+                }
+              ]"
+              data-testid="tailored-cv-refresh-failed"
+            />
+            <UAlert
+              v-if="state.generateError.value"
+              color="error"
+              :description="
+                state.generateError.value.kind === 'draft'
+                  ? 'The saved draft was missing. Generate PDF saves it again.'
+                  : state.generateError.value.kind === 'listing'
+                    ? 'This listing is no longer available.'
+                    : state.generateError.value.message
+              "
+              :actions="
+                state.generateError.value.kind === 'listing'
+                  ? [
+                      {
+                        label: 'Back to listings',
+                        to: '/listings',
+                        color: 'neutral',
+                        variant: 'outline'
+                      }
+                    ]
+                  : []
+              "
+              data-testid="tailored-cv-generate-error"
+            />
+          </div>
+
+          <!-- Sticky so the next step stays in reach on long drafts; translucent like the dashboard
+             header. On phones the status takes its own line above equal buttons. Generate saves
+             first; once the PDF matches the draft, the next step is applying with it. -->
+          <div
+            class="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-md border border-default bg-default/90 p-3 backdrop-blur"
+            data-testid="tailored-cv-save-bar"
+          >
+            <span
+              class="order-first w-full text-sm text-muted sm:order-none sm:w-auto sm:flex-1 sm:text-right"
+              ><span data-testid="tailored-cv-save-status">{{
+                dirty ? 'Unsaved changes' : 'Saved'
+              }}</span
+              ><span
+                v-if="suggestions.length"
+                class="text-warning"
+                data-testid="tailored-cv-pending"
+              >
+                · {{ pendingLabel }} not reviewed</span
+              ></span
+            >
             <UButton
-              v-if="cv.languages.length < LANGUAGE_OPTIONS.length"
-              icon="i-lucide-plus"
+              icon="i-lucide-copy"
               color="neutral"
               variant="subtle"
-              size="sm"
-              @click="addLanguage"
-              >Add language</UButton
+              class="flex-1 justify-center sm:order-first sm:flex-none"
+              data-testid="tailored-cv-copy"
+              @click="copy(cv)"
+              >Copy as text</UButton
             >
+            <template v-if="pdfCurrent && pdf">
+              <UButton
+                icon="i-lucide-eye"
+                :color="canApply ? 'neutral' : 'primary'"
+                :variant="canApply ? 'subtle' : 'solid'"
+                class="flex-1 justify-center sm:flex-none"
+                data-testid="tailored-cv-preview-pdf"
+                @click="pdfOpen = true"
+                >Preview PDF</UButton
+              >
+              <UButton
+                v-if="canApply"
+                icon="i-lucide-send"
+                class="flex-1 justify-center sm:flex-none"
+                data-testid="tailored-cv-apply"
+                @click="openApply"
+                >Apply with this CV</UButton
+              >
+            </template>
+            <template v-else>
+              <UButton
+                v-if="dirty"
+                icon="i-lucide-save"
+                color="neutral"
+                variant="subtle"
+                :loading="state.saving.value && !state.generating.value"
+                :disabled="busy || state.generating.value"
+                class="flex-1 justify-center sm:flex-none"
+                data-testid="tailored-cv-save"
+                @click="state.save()"
+                >Save draft</UButton
+              >
+              <UButton
+                icon="i-lucide-file-down"
+                :loading="state.generating.value"
+                :disabled="busy || state.saving.value"
+                class="flex-1 justify-center sm:flex-none"
+                data-testid="tailored-cv-generate"
+                @click="generatePdf"
+                >{{ generateLabel }}</UButton
+              >
+            </template>
           </div>
-        </ListingsTailoredCvSection>
-
-        <!-- Sticky so Save stays in reach on long drafts; translucent like the dashboard header.
-             On phones the status takes its own line above two equal buttons. -->
-        <div class="space-y-2" data-testid="tailored-cv-pdf">
-          <p v-if="state.draft.value" class="text-sm text-muted">
-            {{
-              dirty
-                ? 'Save your changes to generate a PDF from them.'
-                : 'Generate PDF uses the saved draft. Each time adds a new unsent PDF and keeps the earlier ones.'
-            }}
-          </p>
-          <UAlert
-            v-if="state.generated.value"
-            color="success"
-            icon="i-lucide-check"
-            title="PDF created"
-            :description="state.generated.value.fileName"
-            :actions="[
-              {
-                label: 'View PDF',
-                icon: 'i-lucide-eye',
-                color: 'neutral',
-                variant: 'outline',
-                onClick: () => (pdfOpen = true)
-              },
-              {
-                label: 'Open PDF',
-                to: `/api/documents/${state.generated.value.id}`,
-                target: '_blank',
-                icon: 'i-lucide-external-link',
-                color: 'neutral',
-                variant: 'outline'
-              }
-            ]"
-            data-testid="tailored-cv-generated"
-          />
-          <UAlert
-            v-if="refreshFailed"
-            color="warning"
-            description="The PDF was created, but the listing's documents could not be refreshed."
-            :actions="[
-              {
-                label: 'Retry refresh',
-                color: 'neutral',
-                variant: 'outline',
-                onClick: refreshDocuments
-              }
-            ]"
-            data-testid="tailored-cv-refresh-failed"
-          />
-          <UAlert
-            v-if="state.generateError.value"
-            color="error"
-            :description="
-              state.generateError.value.kind === 'draft'
-                ? 'The saved draft no longer exists. Save the draft first, then generate the PDF.'
-                : state.generateError.value.kind === 'listing'
-                  ? 'This listing is no longer available.'
-                  : state.generateError.value.message
-            "
-            :actions="
-              state.generateError.value.kind === 'listing'
-                ? [
-                    {
-                      label: 'Back to listings',
-                      to: '/listings',
-                      color: 'neutral',
-                      variant: 'outline'
-                    }
-                  ]
-                : []
-            "
-            data-testid="tailored-cv-generate-error"
-          />
-        </div>
-
-        <div
-          class="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-md border border-default bg-default/90 p-3 backdrop-blur"
-          data-testid="tailored-cv-save-bar"
-        >
-          <span
-            class="order-first w-full text-sm text-muted sm:order-none sm:w-auto sm:flex-1 sm:text-right"
-            data-testid="tailored-cv-save-status"
-            >{{ dirty ? 'Unsaved changes' : 'Saved' }}</span
-          >
-          <UButton
-            icon="i-lucide-copy"
-            color="neutral"
-            variant="subtle"
-            class="flex-1 justify-center sm:order-first sm:flex-none"
-            data-testid="tailored-cv-copy"
-            @click="copy(cv)"
-            >Copy as text</UButton
-          >
-          <UButton
-            v-if="state.draft.value"
-            icon="i-lucide-file-down"
-            :color="dirty ? 'neutral' : 'primary'"
-            :variant="dirty ? 'subtle' : 'solid'"
-            :loading="state.generating.value"
-            :disabled="!canGenerate"
-            class="flex-1 justify-center sm:flex-none"
-            data-testid="tailored-cv-generate"
-            @click="generatePdf"
-            >{{ state.generating.value ? 'Generating PDF…' : 'Generate PDF' }}</UButton
-          >
-          <UButton
-            icon="i-lucide-save"
-            :loading="state.saving.value"
-            :disabled="!dirty || busy"
-            class="flex-1 justify-center sm:flex-none"
-            data-testid="tailored-cv-save"
-            @click="state.save()"
-            >Save draft</UButton
-          >
-        </div>
+        </fieldset>
       </template>
     </div>
 
     <LazyListingsTailoredCvPdfModal
-      v-if="state.generated.value"
+      v-if="pdf"
       v-model:open="pdfOpen"
-      :document-id="state.generated.value.id"
-      :file-name="state.generated.value.fileName"
+      :document-id="pdf.id"
+      :file-name="pdf.fileName"
+      :applicable="canApply"
+      @apply="openApply"
     />
 
-    <!-- Whole-CV analysis takes one AI call per section; blocking the page keeps edits from racing it. -->
-    <Teleport to="body">
-      <div
-        v-if="analyzing"
-        class="fixed inset-0 z-50 flex items-center justify-center bg-default/60 backdrop-blur-sm"
-        data-testid="tailored-cv-overlay"
-      >
-        <div class="flex flex-col items-center gap-3 text-center" role="status" aria-live="polite">
-          <UIcon name="i-lucide-loader-circle" class="size-10 animate-spin text-primary" />
-          <p class="font-medium text-highlighted">{{ progress?.label ?? 'Analyzing' }}</p>
-          <p v-if="progress" class="text-sm text-muted">
-            Step {{ progress.step }} of {{ progress.total }} · Nothing is saved yet
-          </p>
-        </div>
-      </div>
-    </Teleport>
+    <LazyListingsApplyModal
+      v-if="listing && canApply"
+      v-model:open="applyOpen"
+      :listing="listing"
+      :cv-document-id="pdf?.id"
+      @changed="onApplied"
+    />
 
     <ListingsTailoredCvAiModal
       v-model:open="aiOpen"

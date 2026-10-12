@@ -16,8 +16,8 @@ let releaseAnalysis: () => void
 let analysisGate: Promise<void>
 let previewReply: unknown
 let generateReply: () => unknown
-
-const listing = { id: 5, title: 'Frontend Developer', company: { id: 3, name: 'Acme' } }
+let listing: Record<string, unknown> & { documents: Record<string, unknown>[] }
+let appliedInput: Record<string, unknown> | undefined
 
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
 registerEndpoint('/graphql', {
@@ -55,13 +55,21 @@ registerEndpoint('/graphql', {
       return {
         data: {
           saveTailoredCvDraft: {
-            tailoredCvDraft: { id: 1, updatedAt: '2026-10-12T10:00:00Z', content: input.content },
+            tailoredCvDraft: { id: 1, updatedAt: new Date().toISOString(), content: input.content },
             errors: null
           }
         }
       }
-    if (query.includes('mutation GenerateCvDocument'))
-      return { data: { generateCvDocument: generateReply() } }
+    if (query.includes('mutation GenerateCvDocument')) {
+      const reply = generateReply() as { document: Record<string, unknown> | null }
+      // Like the API: the new PDF is one of the listing's documents on the next fetch.
+      if (reply.document) listing.documents.push({ ...reply.document, kind: 'CV', sentAt: null })
+      return { data: { generateCvDocument: reply } }
+    }
+    if (query.includes('mutation ApplyToListing')) {
+      appliedInput = input
+      return { data: { applyToListing: { listing: { id: 5 }, errors: null } } }
+    }
     if (query.includes('query TailoredCvExternalPrompt'))
       return { data: { tailoredCvExternalPrompt: { instructions: 'Tailor this CV' } } }
     return {
@@ -107,8 +115,20 @@ beforeEach(() => {
   calls = []
   savedDraft = null
   previewReply = null
+  appliedInput = undefined
+  listing = {
+    id: 5,
+    title: 'Frontend Developer',
+    status: 'SAVED',
+    company: { id: 3, name: 'Acme' },
+    documents: []
+  }
+  document.cookie = 'tailored-cv-ai=; Max-Age=0; path=/'
   let nextId = 70
-  generateReply = () => ({ document: { id: nextId++, fileName: 'cv.pdf' }, errors: null })
+  generateReply = () => ({
+    document: { id: nextId++, fileName: 'cv.pdf', createdAt: new Date().toISOString() },
+    errors: null
+  })
   analysisGate = new Promise((resolve) => (releaseAnalysis = resolve))
 })
 afterEach(() => {
@@ -123,10 +143,10 @@ describe('Tailored CV page', () => {
     expect(values).toContain('Existing owner')
     expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
     expect(ops('AnalyzeTailoredCvSection')).toHaveLength(0)
-    expect(el('tailored-cv-overlay')).toBeNull()
+    expect(el('tailored-cv-progress')).toBeNull()
   })
 
-  it('optimizes the whole CV with built-in AI behind an overlay after showing usage', async () => {
+  it('optimizes the whole CV with built-in AI after showing usage, keeping the page readable', async () => {
     await mountPage()
     await vi.waitFor(() => expect(el('tailored-cv-optimize')).not.toBeNull())
     await click('tailored-cv-optimize')
@@ -136,11 +156,15 @@ describe('Tailored CV page', () => {
     expect(ops('AnalyzeTailoredCvSection')).toHaveLength(0)
 
     await click('tailored-cv-ai-run')
-    await vi.waitFor(() => expect(el('tailored-cv-overlay')).not.toBeNull())
-    expect(el('tailored-cv-overlay')!.textContent).toContain('Analyzing experience 1 of 1')
+    await vi.waitFor(() => expect(el('tailored-cv-progress')).not.toBeNull())
+    expect(el('tailored-cv-progress')!.textContent).toContain('Analyzing experience 1 of 1')
+    expect(el('tailored-cv-overlay')).toBeNull()
+    expect(
+      (el('tailored-cv-summary-input') as HTMLTextAreaElement).closest('fieldset')!.disabled
+    ).toBe(true)
 
     releaseAnalysis()
-    await vi.waitFor(() => expect(el('tailored-cv-overlay')).toBeNull())
+    await vi.waitFor(() => expect(el('tailored-cv-progress')).toBeNull())
     await flushPromises()
 
     expect(summaryValue()).toBe('Tailored summary')
@@ -169,9 +193,52 @@ describe('Tailored CV page', () => {
       'SUMMARY'
     ])
     expect(summaryValue()).toBe('Mine')
+    expect(el('tailored-cv-suggestions')!.textContent).toContain('1 suggestion to review')
+    expect(el('tailored-cv-pending')!.textContent).toContain('1 suggestion not reviewed')
+    expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(false)
     await click('tailored-cv-accept')
     expect(summaryValue()).toBe('Tailored summary')
+    expect(el('tailored-cv-suggestions')).toBeNull()
     expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+  })
+
+  it('accepts every pending suggestion at once', async () => {
+    savedDraft = savedSummary()
+    releaseAnalysis()
+    await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-summary-analyze')).not.toBeNull())
+    await click('tailored-cv-summary-analyze')
+    await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
+    await click('tailored-cv-ai-run')
+    await vi.waitFor(() => expect(el('tailored-cv-suggestions')).not.toBeNull())
+
+    const acceptAll = [...el('tailored-cv-suggestions')!.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Accept all')
+    )!
+    acceptAll.click()
+    await flushPromises()
+    expect(summaryValue()).toBe('Tailored summary')
+    expect(el('tailored-cv-suggestions')).toBeNull()
+  })
+
+  it('remembers the AI choice and shows it as one line with Change', async () => {
+    savedDraft = savedSummary()
+    releaseAnalysis()
+    await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-summary-analyze')).not.toBeNull())
+    await click('tailored-cv-summary-analyze')
+    await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
+    await click('tailored-cv-ai-run')
+    await vi.waitFor(() => expect(el('tailored-cv-suggestion')).not.toBeNull())
+
+    await click('tailored-cv-optimize')
+    await vi.waitFor(() => expect(el('tailored-cv-ai-choice')).not.toBeNull())
+    expect(el('tailored-cv-ai-choice')!.textContent).toContain('Built-in AI · 3 requests')
+    expect(document.body.querySelector('button[role="tab"]')).toBeNull()
+    expect(el('tailored-cv-ai-usage')).not.toBeNull()
+
+    await click('tailored-cv-ai-change')
+    expect(document.body.querySelectorAll('button[role="tab"]')).toHaveLength(2)
   })
 
   it('opens a saved draft and saves the complete edited candidate', async () => {
@@ -272,68 +339,81 @@ describe('Tailored CV page', () => {
       summary.dispatchEvent(new Event('input'))
       await flushPromises()
     }
+    // A saved draft with a PDF made after it, as after a reload.
+    const currentPdf = () => {
+      savedDraft = savedSummary()
+      listing.documents = [
+        {
+          id: 60,
+          kind: 'CV',
+          fileName: 'tailored.pdf',
+          createdAt: '2026-10-12T11:00:00Z',
+          sentAt: null
+        }
+      ]
+    }
 
-    it('is hidden until a draft exists and appears after the first save', async () => {
+    it('saves unsaved work first, then generates and opens the preview', async () => {
       await mountPage()
-      await vi.waitFor(() => expect(el('tailored-cv-summary-input')).not.toBeNull())
-      expect(el('tailored-cv-generate')).toBeNull()
-      await click('tailored-cv-save')
       await vi.waitFor(() => expect(el('tailored-cv-generate')).not.toBeNull())
       expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(false)
-    })
-
-    it('is disabled with save-first guidance while edits are unsaved', async () => {
-      savedDraft = savedSummary()
-      await mountPage()
-      await vi.waitFor(() => expect(el('tailored-cv-generate')).not.toBeNull())
-      expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(false)
-      await edit()
-      expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(true)
-      expect(el('tailored-cv-pdf')!.textContent).toContain('Save your changes')
-    })
-
-    it('links each created PDF, refreshes the listing and keeps older ones', async () => {
-      savedDraft = savedSummary()
-      await mountPage()
-      await vi.waitFor(() => expect(el('tailored-cv-generate')).not.toBeNull())
       const listingFetches = () => calls.filter((c) => c.query.includes('query ListingById')).length
       const before = listingFetches()
 
       await click('tailored-cv-generate')
-      await vi.waitFor(() => expect(el('tailored-cv-generated')).not.toBeNull())
-      expect(el('tailored-cv-generated')!.querySelector('a')!.getAttribute('href')).toBe(
-        '/api/documents/70'
-      )
-      expect(listingFetches()).toBe(before + 1)
-
-      await click('tailored-cv-generate')
-      await vi.waitFor(() =>
-        expect(el('tailored-cv-generated')!.querySelector('a')!.getAttribute('href')).toBe(
-          '/api/documents/71'
-        )
-      )
-      expect(generate()).toHaveLength(2)
-      expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
-    })
-
-    it('previews the created PDF in a dialog and keeps Open PDF', async () => {
-      savedDraft = savedSummary()
-      await mountPage()
-      await vi.waitFor(() => expect(el('tailored-cv-generate')).not.toBeNull())
-      await click('tailored-cv-generate')
-      await vi.waitFor(() => expect(el('tailored-cv-generated')).not.toBeNull())
-      expect(el('cv-pdf-frame')).toBeNull()
-
-      const view = [...el('tailored-cv-generated')!.querySelectorAll('button')].find((b) =>
-        b.textContent?.includes('View PDF')
-      )!
-      view.click()
       await vi.waitFor(() => expect(el('cv-pdf-frame')).not.toBeNull())
+      expect(ops('SaveTailoredCvDraft')).toHaveLength(1)
+      expect(generate()).toHaveLength(1)
       expect(el('cv-pdf-frame')!.getAttribute('src')).toBe('/api/documents/70')
-      expect(el('cv-pdf-open')!.getAttribute('href')).toBe('/api/documents/70')
+      await vi.waitFor(() => expect(listingFetches()).toBe(before + 1))
+
+      // The PDF now matches the draft: the next step is applying, not another PDF.
+      expect(el('tailored-cv-generate')).toBeNull()
+      expect(el('tailored-cv-preview-pdf')).not.toBeNull()
+      expect(el('tailored-cv-apply')).not.toBeNull()
+      expect(el('tailored-cv-latest-pdf')!.textContent).toContain('cv.pdf')
     })
 
-    it('asks to save first when the draft is gone and offers Back to listings when the listing is', async () => {
+    it('shows a current PDF after a reload, and offers Generate again once edited', async () => {
+      currentPdf()
+      await mountPage()
+      await vi.waitFor(() => expect(el('tailored-cv-apply')).not.toBeNull())
+      expect(el('tailored-cv-generate')).toBeNull()
+      expect(el('tailored-cv-latest-pdf')!.textContent).toContain('tailored.pdf')
+      expect(el('tailored-cv-latest-pdf')!.textContent).not.toContain('older than the draft')
+
+      await edit()
+      expect(el('tailored-cv-apply')).toBeNull()
+      expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(false)
+      expect(el('tailored-cv-latest-pdf')!.textContent).toContain('older than the draft')
+    })
+
+    it('applies with the PDF selected, from the bar or the preview', async () => {
+      currentPdf()
+      await mountPage()
+      await vi.waitFor(() => expect(el('tailored-cv-preview-pdf')).not.toBeNull())
+      await click('tailored-cv-preview-pdf')
+      await vi.waitFor(() => expect(el('cv-pdf-apply')).not.toBeNull())
+      await click('cv-pdf-apply')
+
+      await vi.waitFor(() => expect(el('confirm-modal-confirm')).not.toBeNull())
+      expect(el('cv-pdf-frame')).toBeNull()
+      await click('confirm-modal-confirm')
+      await vi.waitFor(() => expect(appliedInput).toMatchObject({ cvDocumentId: 60 }))
+    })
+
+    it('offers no Apply once the listing is past Saved', async () => {
+      currentPdf()
+      listing.status = 'APPLIED'
+      await mountPage()
+      await vi.waitFor(() => expect(el('tailored-cv-preview-pdf')).not.toBeNull())
+      expect(el('tailored-cv-apply')).toBeNull()
+      await click('tailored-cv-preview-pdf')
+      await vi.waitFor(() => expect(el('cv-pdf-frame')).not.toBeNull())
+      expect(el('cv-pdf-apply')).toBeNull()
+    })
+
+    it('treats a missing draft as unsaved, and offers Back to listings when the listing is gone', async () => {
       savedDraft = savedSummary()
       await mountPage()
       await vi.waitFor(() => expect(el('tailored-cv-generate')).not.toBeNull())
@@ -343,22 +423,17 @@ describe('Tailored CV page', () => {
       })
       await click('tailored-cv-generate')
       await vi.waitFor(() => expect(el('tailored-cv-generate-error')).not.toBeNull())
-      expect(el('tailored-cv-generate-error')!.textContent).toContain('Save the draft first')
+      expect(el('tailored-cv-generate-error')!.textContent).toContain('Generate PDF saves it again')
       expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
-      expect(el('tailored-cv-generate')).toBeNull()
-    })
 
-    it('shows the listing as unavailable', async () => {
-      savedDraft = savedSummary()
-      await mountPage()
-      await vi.waitFor(() => expect(el('tailored-cv-generate')).not.toBeNull())
       generateReply = () => ({
         document: null,
         errors: [{ __typename: 'ListingNotFoundError', message: 'Gone' }]
       })
       await click('tailored-cv-generate')
-      await vi.waitFor(() => expect(el('tailored-cv-generate-error')).not.toBeNull())
-      expect(el('tailored-cv-generate-error')!.textContent).toContain('no longer available')
+      await vi.waitFor(() =>
+        expect(el('tailored-cv-generate-error')!.textContent).toContain('no longer available')
+      )
       expect(el('tailored-cv-generate-error')!.querySelector('a')!.getAttribute('href')).toBe(
         '/listings'
       )

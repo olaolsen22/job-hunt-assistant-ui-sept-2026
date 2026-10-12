@@ -169,6 +169,7 @@ const GENERATE = graphql(`
       document {
         id
         fileName
+        createdAt
       }
       errors {
         __typename
@@ -429,16 +430,23 @@ export const useTailoredCvDraft = (
     return true
   }
 
-  // Every call adds another PDF, so a failure is never retried automatically. `useMutation` can't
-  // tell a missing draft from a missing listing (both are *NotFoundError), hence the explicit handling.
-  const generating = ref(false)
-  const generated = ref<{ id: number; fileName: string }>()
+  // Every call adds another PDF, so a failure is never retried automatically. Unsaved edits (or no
+  // draft yet) are saved first, since the API generates from the saved draft; a failed save stops it.
+  // `useMutation` can't tell a missing draft from a missing listing (both are *NotFoundError), hence
+  // the explicit handling.
+  const generatePhase = ref<'saving' | 'generating'>()
+  const generating = computed(() => !!generatePhase.value)
+  const generated = ref<{ id: number; fileName: string; createdAt: string }>()
   const generateError = ref<{ kind: 'draft' | 'listing' | 'other'; message: string }>()
   const generate = async () => {
-    if (generating.value || !draft.value) return false
-    generating.value = true
+    if (generatePhase.value || !cv.value) return false
     generated.value = generateError.value = undefined
     try {
+      if (dirty.value || !draft.value) {
+        generatePhase.value = 'saving'
+        if (!(await save())) return false
+      }
+      generatePhase.value = 'generating'
       const { generateCvDocument } = await gql(GENERATE, { listingId })
       const error = generateCvDocument.errors?.[0]
       if (error) {
@@ -449,7 +457,7 @@ export const useTailoredCvDraft = (
               ? 'listing'
               : 'other'
         generateError.value = { kind, message: error.message }
-        // The draft is gone: keep the candidate and count it as unsaved, so Save draft recreates it.
+        // The draft is gone: keep the candidate and count it as unsaved, so the next try saves it again.
         if (kind === 'draft') {
           draft.value = null
           saved.value = null
@@ -462,7 +470,7 @@ export const useTailoredCvDraft = (
       generateError.value = { kind: 'other', message: ERROR_MESSAGES.generic }
       return false
     } finally {
-      generating.value = false
+      generatePhase.value = undefined
     }
   }
 
@@ -492,6 +500,7 @@ export const useTailoredCvDraft = (
     preview,
     saving,
     save,
+    generatePhase,
     generating,
     generated,
     generateError,

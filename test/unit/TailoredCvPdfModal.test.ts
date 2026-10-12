@@ -5,16 +5,19 @@ import TailoredCvPdfModal from '~/components/listings/TailoredCvPdfModal.vue'
 
 const el = (id: string) => document.body.querySelector<HTMLElement>(`[data-testid="${id}"]`)
 
-const mountOpen = async () => {
+const mountOpen = async (applicable = false) => {
   const wrapper = await mountSuspended(TailoredCvPdfModal, {
-    props: { open: true, documentId: 70, fileName: 'cv.pdf' },
+    props: { open: true, documentId: 70, fileName: 'cv.pdf', applicable },
     attachTo: document.body
   })
   await flushPromises()
   return wrapper
 }
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 describe('TailoredCvPdfModal', () => {
   it('shows a skeleton until the frame loads', async () => {
@@ -49,6 +52,31 @@ describe('TailoredCvPdfModal', () => {
     await vi.advanceTimersByTimeAsync(40_000)
     expect(el('cv-pdf-gave-up')).toBeNull()
     expect(el('cv-pdf-frame')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('offers Apply with this CV only when applicable', async () => {
+    let wrapper = await mountOpen()
+    expect(el('cv-pdf-apply')).toBeNull()
+    wrapper.unmount()
+
+    wrapper = await mountOpen(true)
+    el('cv-pdf-apply')!.click()
+    expect(wrapper.emitted('apply')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('downloads only on request, and skips the frame in a browser without a PDF viewer', async () => {
+    let wrapper = await mountOpen()
+    expect(el('cv-pdf-download')!.hasAttribute('download')).toBe(true)
+    expect(el('cv-pdf-download')!.getAttribute('href')).toBe('/api/documents/70')
+    wrapper.unmount()
+
+    vi.stubGlobal('navigator', { ...navigator, pdfViewerEnabled: false })
+    wrapper = await mountOpen()
+    expect(el('cv-pdf-frame')).toBeNull()
+    expect(el('cv-pdf-no-viewer')).not.toBeNull()
+    expect(el('cv-pdf-download')).not.toBeNull()
     wrapper.unmount()
   })
 })

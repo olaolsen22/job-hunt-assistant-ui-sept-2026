@@ -11,6 +11,7 @@ type Body = { query: string; variables: { input?: Record<string, unknown> } }
 let savedDraft: unknown = null
 let calls: Body[] = []
 let generateReply: () => unknown
+let saveErrors: unknown = null
 let analyze: (input: Record<string, unknown>) => unknown
 
 const succeeded = (input: Record<string, unknown>) => ({
@@ -60,7 +61,7 @@ registerEndpoint('/graphql', {
               updatedAt: '2026-10-12T10:00:00Z',
               content: body.variables.input!.content
             },
-            errors: null
+            errors: saveErrors
           }
         }
       }
@@ -92,6 +93,7 @@ const operations = () =>
 beforeEach(() => {
   calls = []
   savedDraft = null
+  saveErrors = null
   analyze = succeeded
   let nextId = 70
   generateReply = () => ({
@@ -240,19 +242,45 @@ describe('useTailoredCvDraft', () => {
       expect(state.generating.value).toBe(false)
     })
 
-    it('ignores a second call while one is running, and without a saved draft', async () => {
+    it('ignores a second call while one is running', async () => {
       const state = await savedState()
       await Promise.all([state.generate(), state.generate()])
       expect(generations()).toHaveLength(1)
-
-      savedDraft = null
-      const unsaved = await setup()
-      unsaved.init()
-      expect(await unsaved.generate()).toBe(false)
-      expect(generations()).toHaveLength(1)
     })
 
-    it('keeps edits and lets Save draft recreate a draft that no longer exists', async () => {
+    it('generates from a clean saved draft without saving again', async () => {
+      const state = await savedState()
+      await state.generate()
+      expect(operations()).toEqual(['GenerateCvDocument:'])
+    })
+
+    it('saves unsaved edits, or a first draft, before generating', async () => {
+      const state = await savedState()
+      state.cv.value!.phone = '+47 400 00 000'
+      expect(await state.generate()).toBe(true)
+      expect(operations()).toEqual(['SaveTailoredCvDraft:', 'GenerateCvDocument:'])
+      expect(state.dirty.value).toBe(false)
+
+      calls = []
+      savedDraft = null
+      const fresh = await setup()
+      fresh.init()
+      expect(await fresh.generate()).toBe(true)
+      expect(operations()).toEqual(['SaveTailoredCvDraft:', 'GenerateCvDocument:'])
+    })
+
+    it('sends no generation when the save fails, and keeps the edits', async () => {
+      const state = await savedState()
+      state.cv.value!.phone = '+47 400 00 000'
+      saveErrors = [{ __typename: 'ValidationError', message: 'Bad phone' }]
+      expect(await state.generate()).toBe(false)
+      expect(generations()).toHaveLength(0)
+      expect(state.cv.value!.phone).toBe('+47 400 00 000')
+      expect(state.dirty.value).toBe(true)
+      expect(state.generating.value).toBe(false)
+    })
+
+    it('keeps edits and saves a draft that no longer exists on the next generate', async () => {
       const state = await savedState()
       state.cv.value!.phone = '+47 400 00 000'
       generateReply = () => ({
@@ -263,7 +291,11 @@ describe('useTailoredCvDraft', () => {
       expect(state.generateError.value).toEqual({ kind: 'draft', message: 'No draft' })
       expect(state.draft.value).toBeNull()
       expect(state.dirty.value).toBe(true)
-      expect(await state.save()).toBe(true)
+
+      calls = []
+      generateReply = () => ({ document: { id: 72, fileName: 'cv.pdf' }, errors: null })
+      expect(await state.generate()).toBe(true)
+      expect(operations()).toEqual(['SaveTailoredCvDraft:', 'GenerateCvDocument:'])
       expect(state.cv.value!.phone).toBe('+47 400 00 000')
       expect(state.draft.value).not.toBeNull()
     })

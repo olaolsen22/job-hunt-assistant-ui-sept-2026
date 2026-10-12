@@ -17,9 +17,13 @@ registerEndpoint('/graphql', {
   }
 })
 
-const mountOpen = async (documents: unknown[] = []) => {
+const mountOpen = async (documents: unknown[] = [], cvDocumentId?: number) => {
   const wrapper = await mountSuspended(ApplyModal, {
-    props: { open: false, listing: { id: 5, documents } as unknown as ListingDetail },
+    props: {
+      open: false,
+      listing: { id: 5, documents } as unknown as ListingDetail,
+      cvDocumentId
+    },
     attachTo: document.body
   })
   // The form resets (and fills in the applied date) when the modal opens.
@@ -79,6 +83,20 @@ describe('ApplyModal', () => {
       { id: 71, kind: 'CV', fileName: 'old.pdf', sentAt: '2026-10-01T10:00:00Z' }
     ])
     expect(document.body.textContent).not.toContain('Pick an uploaded file')
+    wrapper.unmount()
+  })
+  it('sends a preselected CV, and starts empty without one', async () => {
+    const documents = [{ id: 70, kind: 'CV', fileName: 'cv.pdf', sentAt: null }]
+    let wrapper = await mountOpen(documents, 70)
+    document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
+    await vi.waitFor(() => expect(wrapper.emitted('changed')).toBeTruthy())
+    expect(sentInput).toMatchObject({ cvDocumentId: 70 })
+    wrapper.unmount()
+
+    wrapper = await mountOpen(documents)
+    document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
+    await vi.waitFor(() => expect(wrapper.emitted('changed')).toBeTruthy())
+    expect(sentInput).toMatchObject({ cvDocumentId: null })
     wrapper.unmount()
   })
 })
