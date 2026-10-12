@@ -274,6 +274,7 @@ const skillsByRequirement = computed(() => {
         </header>
 
         <ListingsApplication :listing="listing" @changed="refresh" />
+        <ListingsTailoredCvCard :listing-id="listing.id" />
 
         <div
           class="space-y-4 sm:space-y-6 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0"

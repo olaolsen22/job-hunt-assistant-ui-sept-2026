@@ -41,6 +41,10 @@ const APPLY = graphql(`
 
 type Kind = ListingDetail['documents'][number]['kind']
 
+// Same shared fetch as the listing's Tailored CV card, so opening the modal costs no request.
+const { data: tailoredCv, status: tailoredCvStatus } = useTailoredCvDraftQuery(listing.id)
+const offerTailoring = computed(() => tailoredCvStatus.value === 'success' && !tailoredCv.value)
+
 const unsent = (kind: Kind) => listing.documents.filter((d) => d.kind === kind && !d.sentAt)
 
 const cvId = ref<number>()
@@ -122,6 +126,16 @@ const submit = async () => {
     @confirm="submit"
   >
     <div class="space-y-4">
+      <p
+        v-if="offerTailoring"
+        class="flex flex-wrap items-center gap-x-1 text-sm text-muted"
+        data-testid="apply-tailor-cv"
+      >
+        No tailored CV for this listing.
+        <ULink :to="`/listings/${listing.id}/cv`" class="text-primary" @click="open = false"
+          >Tailor a CV first</ULink
+        >
+      </p>
       <ListingsDocumentPicker
         v-model:document-id="cvId"
         v-model:file="cvFile"
