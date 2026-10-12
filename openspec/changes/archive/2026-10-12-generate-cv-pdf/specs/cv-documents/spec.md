@@ -48,6 +48,20 @@ The UI SHALL open generated PDFs through authenticated same-origin GET `/api/doc
 - **WHEN** the owner selects Open PDF after generation
 - **THEN** a new tab opens the authenticated document endpoint for the returned id, with browser preview and download available
 
+### Requirement: In-app PDF preview
+
+After generation the UI SHALL offer View PDF beside Open PDF. It SHALL open a dialog on the editor, fullscreen on phones, showing the returned document through the authenticated endpoint and titled with its file name, while Open PDF remains available inside the dialog. If the preview has not loaded after 10 seconds, the dialog SHALL show a prominent Open PDF fallback; after 30 seconds it SHALL replace the loading state with a notice offering Open PDF. Opening the PDF in a new tab SHALL NOT close the dialog, and closing it SHALL return to the editor with its unsaved state intact.
+
+#### Scenario: Preview generated PDF
+
+- **WHEN** the owner selects View PDF after generation
+- **THEN** a dialog shows the returned document with a loading state until it appears, and Close returns to the editor unchanged
+
+#### Scenario: Preview is slow or blocked
+
+- **WHEN** the PDF has not loaded after 10 seconds
+- **THEN** the dialog shows an Open PDF fallback, and after 30 seconds the loading state is replaced with a notice offering Open PDF
+
 ### Requirement: Repeated generation preserves versions
 
 Each explicit successful generation SHALL create a new unsent CV document, preserve all older documents, and leave application status and sent documents unchanged. The generation UI SHALL explain that each generation adds a new PDF and keeps previous versions.

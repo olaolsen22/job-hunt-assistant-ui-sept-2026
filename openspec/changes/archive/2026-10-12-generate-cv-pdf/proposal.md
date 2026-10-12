@@ -10,9 +10,10 @@ The reviewed tailored CV can be saved, but the UI cannot turn it into an applica
 - Confirm successful generation, refresh `listing.documents`, and offer an authenticated Open PDF link. Existing document links provide browser preview and download.
 - Explain that each generation creates a new unsent CV and keeps older documents.
 - Show save-first recovery for `TailoredCvDraftNotFoundError` and listing-unavailable recovery for `ListingNotFoundError`.
+- Add View PDF to the success message: an in-app preview dialog of the generated PDF (browser PDF reader in an iframe, no new package), with Open PDF kept as the fallback and download route.
 - Regenerate GraphQL types from the updated backend schema during implementation.
 
-Out of scope: PDF layout customization, automatic generation after save, automatic application submission, a new document manager, and backend changes.
+Out of scope: PDF layout customization, automatic generation after save, automatic application submission, a new document manager, a PDF library such as PDF.js, a viewer for older listing documents, and backend changes.
 
 ## Capabilities
 
@@ -26,6 +27,7 @@ None. This adds generation to the editor delivered by the pending `tailored-cv-d
 
 ## Impact
 
+- Add `TailoredCvPdfModal.vue` (lazy-loaded) opened from `cv.vue`.
 - Extend `app/pages/listings/[id]/cv.vue` and its existing draft composable with generation state and typed error handling; refresh the shared `useListing` query.
 - Reuse `app/components/listings/Application.vue` document links and `DocumentPicker.vue` unsent document selection.
 - Use `generateCvDocument(input: { listingId })`, returning `document { id fileName }` and typed error messages; regenerate `app/graphql-env.d.ts` with `pnpm gql:gen`.

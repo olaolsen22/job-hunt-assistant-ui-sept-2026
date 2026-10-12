@@ -1,0 +1,54 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
+import { mountSuspended } from '@nuxt/test-utils/runtime'
+import TailoredCvPdfModal from '~/components/listings/TailoredCvPdfModal.vue'
+
+const el = (id: string) => document.body.querySelector<HTMLElement>(`[data-testid="${id}"]`)
+
+const mountOpen = async () => {
+  const wrapper = await mountSuspended(TailoredCvPdfModal, {
+    props: { open: true, documentId: 70, fileName: 'cv.pdf' },
+    attachTo: document.body
+  })
+  await flushPromises()
+  return wrapper
+}
+
+afterEach(() => vi.useRealTimers())
+
+describe('TailoredCvPdfModal', () => {
+  it('shows a skeleton until the frame loads', async () => {
+    const wrapper = await mountOpen()
+    expect(el('cv-pdf-loading')).not.toBeNull()
+    el('cv-pdf-frame')!.dispatchEvent(new Event('load'))
+    await flushPromises()
+    expect(el('cv-pdf-loading')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('highlights the Open PDF link after 10 s and gives up on the preview after 30 s', async () => {
+    vi.useFakeTimers()
+    const wrapper = await mountOpen()
+    expect(document.body.textContent).not.toContain('Taking a while')
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(document.body.textContent).toContain('Taking a while')
+    expect(el('cv-pdf-frame')).not.toBeNull()
+
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(el('cv-pdf-gave-up')).not.toBeNull()
+    expect(el('cv-pdf-frame')).toBeNull()
+    expect(el('cv-pdf-open')!.getAttribute('href')).toBe('/api/documents/70')
+    wrapper.unmount()
+  })
+
+  it('does not show the fallback once the frame has loaded', async () => {
+    vi.useFakeTimers()
+    const wrapper = await mountOpen()
+    el('cv-pdf-frame')!.dispatchEvent(new Event('load'))
+    await vi.advanceTimersByTimeAsync(40_000)
+    expect(el('cv-pdf-gave-up')).toBeNull()
+    expect(el('cv-pdf-frame')).not.toBeNull()
+    wrapper.unmount()
+  })
+})

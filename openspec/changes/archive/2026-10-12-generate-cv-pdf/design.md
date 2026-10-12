@@ -20,9 +20,12 @@ The API schema already exposes `generateCvDocument`, returning a nullable docume
 - **Refresh boundary:** The page obtains `refresh` from its existing `useListing(id)` call. After creation, retain `{ id, fileName }`, confirm success, and refresh that shared listing query. Separate creation failure from refresh failure; offer refresh-only retry and keep Open PDF visible. Do not automatically retry the mutation, since each call creates another document.
 - **Document access:** Use the existing same-origin endpoint and new-tab link pattern; browser PDF controls supply download. Avoid automatic tab opening after the asynchronous mutation, which can be blocked. Explain version retention near the generation control. No auto-selection or application submission occurs.
 
+- **PDF preview:** Following UX advice, View PDF is the first action on the "PDF created" alert (not the crowded sticky bar) and opens a new lazy-loaded `TailoredCvPdfModal.vue` (`documentId`, `fileName`, `v-model:open`) built on `UModal`: `PHONE_FULLSCREEN_MODAL` on phones, large dialog with a tall body on sm+ (comment the arbitrary height). The `<iframe>` of `/api/documents/{id}` mounts only while open so each open fetches fresh bytes, shows a `USkeleton` until `@load`, has an accessible `title`, and takes no autofocus. Footer: Open PDF (visible button, the real route on iOS where the frame may show page 1 only) and Close. Iframe errors are undetectable, so use timers: Open PDF fallback prominent at 10 s, loading state replaced by a notice at 30 s. Single use for now; a viewer for older documents would be the second use.
+
 ## Risks / Trade-offs
 
 - [Unsaved edits could produce a stale PDF] → Require a clean saved draft before generation; indicate that the output uses the saved draft and preserve any edits made while the request runs.
+- [The API or proxy may send frame-blocking headers (`X-Frame-Options`, `frame-ancestors`)] → Check the response headers on `/api/documents/{id}` first; if framing is blocked the preview cannot work and Open PDF stays the only path (stop and ask).
 - [Creation succeeds but refresh fails] → Retain returned metadata and provide refresh-only retry.
 - [A transport error can leave creation outcome unknown] → No automatic retry; the next document refresh can reveal a created file.
 - [Base editor is uncommitted and its spec is not in main specs] → Build on the current `tailored-cv-drafts` change and archive it before this change; `cv-documents` owns the new requirements without duplicating the draft capability.

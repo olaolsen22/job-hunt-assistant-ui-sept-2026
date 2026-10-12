@@ -316,6 +316,23 @@ describe('Tailored CV page', () => {
       expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
     })
 
+    it('previews the created PDF in a dialog and keeps Open PDF', async () => {
+      savedDraft = savedSummary()
+      await mountPage()
+      await vi.waitFor(() => expect(el('tailored-cv-generate')).not.toBeNull())
+      await click('tailored-cv-generate')
+      await vi.waitFor(() => expect(el('tailored-cv-generated')).not.toBeNull())
+      expect(el('cv-pdf-frame')).toBeNull()
+
+      const view = [...el('tailored-cv-generated')!.querySelectorAll('button')].find((b) =>
+        b.textContent?.includes('View PDF')
+      )!
+      view.click()
+      await vi.waitFor(() => expect(el('cv-pdf-frame')).not.toBeNull())
+      expect(el('cv-pdf-frame')!.getAttribute('src')).toBe('/api/documents/70')
+      expect(el('cv-pdf-open')!.getAttribute('href')).toBe('/api/documents/70')
+    })
+
     it('asks to save first when the draft is gone and offers Back to listings when the listing is', async () => {
       savedDraft = savedSummary()
       await mountPage()

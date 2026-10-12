@@ -39,6 +39,7 @@ const loadError = computed(
 const busy = computed(() => analyzing.value || !!analyzingKey.value || state.previewing.value)
 
 // Open PDF stays available when only the documents refresh fails, and retrying that never regenerates.
+const pdfOpen = ref(false)
 const refreshFailed = ref(false)
 const refreshDocuments = async () => {
   await refreshListing()
@@ -598,6 +599,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             :description="state.generated.value.fileName"
             :actions="[
               {
+                label: 'View PDF',
+                icon: 'i-lucide-eye',
+                color: 'neutral',
+                variant: 'outline',
+                onClick: () => (pdfOpen = true)
+              },
+              {
                 label: 'Open PDF',
                 to: `/api/documents/${state.generated.value.id}`,
                 target: '_blank',
@@ -690,6 +698,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         </div>
       </template>
     </div>
+
+    <LazyListingsTailoredCvPdfModal
+      v-if="state.generated.value"
+      v-model:open="pdfOpen"
+      :document-id="state.generated.value.id"
+      :file-name="state.generated.value.fileName"
+    />
 
     <!-- Whole-CV analysis takes one AI call per section; blocking the page keeps edits from racing it. -->
     <Teleport to="body">
