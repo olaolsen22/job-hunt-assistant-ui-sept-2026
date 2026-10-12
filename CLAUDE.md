@@ -6,26 +6,40 @@ SSE subscriptions for parse-job updates.
 
 ## Scope and communication
 
-- Prefer clear, idiomatic, maintainable code, useful behavior tests, and a usable responsive UI.
-  No production hardening, speculative architecture, new packages, or unrelated cleanup.
+- This is a personal project and portfolio showcase of effective AI-assisted development and
+  proper Nuxt standards. Optimize for understandable code, useful behavior tests, a usable UI,
+  and reviewable decisions. Keep rigor proportional to a single-owner app; no enterprise process,
+  speculative architecture, production hardening, new packages, or unrelated cleanup.
 - Answer briefly: result, relevant checks, remaining limitations. Explain a new Vue 3 / Nuxt 4
   concept once in 1–2 lines, with the Vue 2 equivalent when useful; the owner knows Vue 2 well.
-- Implement clear requests directly. Ask only for material ambiguity or actions requiring approval;
-  existing authorization carries forward. Use OpenSpec when requested or continuing an existing
-  change; tiny fixes and documentation edits need no new proposal.
+- Treat clear action requests as authorization to finish the work, including fixes and relevant
+  validation. Do not stop at a plan or offer to continue. Existing authorization carries forward;
+  ask only when a missing answer changes behavior/scope or host permissions require approval.
+  Prepare a concrete reviewable result before asking for final approval. Explain any required
+  pause with its source. Use OpenSpec when requested or continuing an existing change; load only
+  the selected workflow, and keep planning separate from implementation.
+- Give short updates for meaningful findings or blockers; final replies cover outcome, checks,
+  and limitations. Status questions and corrections steer ongoing work unless the owner cancels it.
 
 ## Context and efficiency
 
-- At session start or after context loss, read `.claude/state/work-log.md`, run `git status --short`
-  and `git log -5 --oneline`. Reconcile only entries relevant to the task; code and git outrank notes.
+- Main session: check `git status --short` and relevant work-log entries once; read
+  `git log -5 --oneline` only to reconcile commit state. After compaction, continue from the summary and read
+  only missing/stale context. Code and git outrank notes; do not restart completed work.
 - Search with `rg` first, then read relevant ranges. Batch independent reads. Reuse findings within
-  the session; reread only after changes or when uncertain. Avoid whole-repo dumps.
+  the session; reread only after changes or when uncertain. Scope searches to likely paths, return
+  filenames when sufficient, and limit noisy output without hiding failures. Avoid whole-repo dumps.
 - For UI work, search `.claude/state/ui-inventory.md` and confirm relevant paths in `app/`.
   Read `docs/REUSABLES.md` for needed prop details and `docs/STATUS.md` for feature scope only.
 - Reuse or extend existing code. New shared abstractions need two real uses.
   Use `ui-controller` for difficult reuse questions, `ui-ux-expert` for substantial new flows/layouts,
   and `ui-reviewer` only when a meaningful review helps. No mandatory advisor pipeline.
-  Apply their instructions inline; delegate only when the owner asks.
+  Apply their instructions inline; delegate only when the owner asks, including built-in agents
+  and agent teams. Give delegated agents one question, relevant paths, known findings, and a
+  completion criterion. Do not duplicate their investigation or automatically resume a capped run.
+- Efficiency means eliminating redundant work, not dropping requested behavior or useful checks.
+  Keep durable rules here and task details in the log/specs. Usage troubleshooting and sources:
+  `.claude/usage-guide.md` (read only when needed).
 - Keep the work log to pending work, relevant decisions, files, checks, and a draft commit message.
   Update once before editing and at handoff; add intermediate updates only for decisions/blockers
   worth preserving. After a verified commit, clear only covered work and record hash + subject.
@@ -50,6 +64,10 @@ SSE subscriptions for parse-job updates.
 
 ## Frontend conventions
 
+- Use idiomatic Vue 3 / Nuxt 4: `<script setup lang="ts">`, typed props/emits, composables for
+  reusable logic, and Nuxt auto-imports. Respect SSR: browser APIs belong in client lifecycle/code;
+  use Nuxt data helpers where appropriate and preserve the existing GraphQL/cache conventions.
+  Avoid duplicate fetches, hydration mismatches, hand-written API types, and Vue 2 workarounds.
 - App code is under `app/`; path-based component auto-imports:
   `components/<feature>/<Name>.vue` → `<FeatureName>`.
 - Prefer Nuxt/Nuxt UI built-ins, then Tailwind defaults and theme tokens (`--ui-*`);
@@ -65,11 +83,12 @@ SSE subscriptions for parse-job updates.
 
 ## Validation and commands
 
-- Code changes: run relevant Vitest tests, `pnpm lint`, and `pnpm typecheck` once after edits.
+- Code changes: run relevant Vitest tests, `pnpm lint`, and `pnpm typecheck` once after a coherent
+  batch of edits, not after each file, task checkbox, or advisor pass.
   Repeat only for failures or subsequent relevant changes. Run `pnpm test` for broad/shared changes
   or when requested; one file: `pnpm vitest run test/unit/<Name>.test.ts`.
-- Add a few tests for observable changed behavior and likely regressions; no snapshots or tests
-  mirroring implementation. Existing Nuxt helpers: `mountSuspended`, `registerEndpoint`;
+- Add tests for consequential behavior and likely regressions; reversible low-impact edits need
+  no new tests. No snapshots or tests mirroring implementation. Existing Nuxt helpers: `mountSuspended`, `registerEndpoint`;
   select by role or `data-testid`. Styling/docs-only changes need no new behavior tests.
 - Docs/instructions-only changes: check changed-file formatting and references; skip app tests,
   lint, typecheck, and build. `pnpm format:check` checks the repo; prefer changed-file checks.
@@ -78,9 +97,11 @@ SSE subscriptions for parse-job updates.
   skill-format validation proves workflow behavior.
 - `pnpm gql:gen` regenerates `app/graphql-env.d.ts` after schema changes; include it in the next
   requested commit. Never run `pnpm dev` / `nuxt dev` or stop the owner's dev server.
-- Local sessions: no build/preview. Remote sessions only, after code changes: `pnpm build`,
-  then `pnpm preview --port 3000`. Check `lsof -i :3000` before stopping an identified stale
-  preview process; leave the dev server alone. Do not infer remote mode from missing Claude vars.
+- After completing app code changes in a session, run `pnpm build` once, then serve the built app with
+  `HOST=0.0.0.0 pnpm preview --port 3000` and leave it running for the owner.
+  Check `lsof -i :3000` before starting or replacing a preview; stop only an identified stale
+  preview process and leave the owner's dev server alone. Report a port conflict if it prevents
+  serving the build. Docs/instructions-only changes still skip build/preview.
 
 ## Boundaries and commits
 
@@ -90,3 +111,9 @@ SSE subscriptions for parse-job updates.
 - Preserve unrelated owner edits. Commit only when asked; review the diff first.
   Subject says why, blank line, short change bullets, then the owner's chosen footer:
   `Co-Authored-By: Claude <noreply@anthropic.com>`.
+
+## Compact instructions
+
+Preserve the active goal, owner decisions/authorization, changed paths, checks and their outcomes,
+unresolved blockers, and next step. Drop verbose tool output and abandoned approaches. Compaction
+does not finish or reset the task; continue without repeating exploration, edits, or passing checks.
