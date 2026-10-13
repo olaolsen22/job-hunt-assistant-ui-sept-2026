@@ -92,8 +92,8 @@ const PROMPT = graphql(`
 `)
 const PARSE = graphql(
   `
-    mutation ParseProfileCv($text: String!) {
-      parseProfileCv(input: { text: $text }) {
+    mutation ParseProfileCv($text: String!, $requestId: UUID) {
+      parseProfileCv(input: { text: $text, requestId: $requestId }) {
         result {
           status
           error
@@ -105,6 +105,9 @@ const PARSE = graphql(
           __typename
           ... on Error {
             message
+          }
+          ... on AiSafetyError {
+            code
           }
         }
       }
@@ -156,9 +159,18 @@ export type CvSaveError = NonNullable<
 >[number]
 type Outcome<T> =
   | { value: T; error?: never; stale?: never; apiErrors?: never }
-  | { error: string; stale?: boolean; value?: never; apiErrors?: CvSaveError[] }
+  | {
+      error: string
+      stale?: boolean
+      value?: never
+      apiErrors?: CvSaveError[]
+      // The API's AiSafetyError code, for a built-in parse.
+      code?: string
+    }
 
 export const useProfileCvImport = () => {
+  const llm = useLlmModels()
+  const { attempt, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
   const busy = ref(false)
   const instructions = ref('')
   const promptLoading = ref(false)
@@ -188,8 +200,15 @@ export const useProfileCvImport = () => {
   const parse = async (text: string): Promise<Outcome<CvCandidate>> => {
     busy.value = true
     try {
-      const { parseProfileCv: payload } = await gql(PARSE, { text: text.trim() })
-      if (payload.errors?.length) return { error: payload.errors[0]!.message }
+      const input = { text: text.trim() }
+      const payload = await attempt(
+        input,
+        async (requestId) => (await gql(PARSE, { ...input, requestId })).parseProfileCv
+      )
+      // The saved default model is gone: show the message and fetch the list again.
+      if (isUnknownModel(payload.errors)) await llm.refresh()
+      if (payload.errors?.length)
+        return { error: payload.errors[0]!.message, code: aiSafetyCode(payload.errors) }
       if (payload.result?.status === 'SUCCEEDED' && payload.result.candidate)
         return { value: payload.result.candidate }
       return { error: payload.result?.error ?? ERROR_MESSAGES.generic }
@@ -244,6 +263,9 @@ export const useProfileCvImport = () => {
     copyPrompt,
     parse,
     preview,
-    save
+    save,
+    needsConfirm,
+    safetyMessage,
+    confirmRetry
   }
 }

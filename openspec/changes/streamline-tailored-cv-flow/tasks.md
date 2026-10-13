@@ -22,7 +22,8 @@
       `ApplyModal.test.ts` covers preselected and default-empty opens.
 - [x] 3.2 Add an optional `applicable` prop and an `apply` emit to `TailoredCvPdfModal`, rendering Apply with this CV
       in the footer. Verify: `TailoredCvPdfModal.test.ts` checks the button shows only when applicable and emits.
-- [x] 3.3 Never download a PDF on its own: add a manual Download action to `TailoredCvPdfModal`, and show a notice
+- [x] 3.3 Never download a PDF on its own: frame a fetched blob copy (so the API's Content-Disposition can't force a
+      download), add a manual Download action to `TailoredCvPdfModal`, and show a notice
       instead of the frame when `navigator.pdfViewerEnabled` is false. Verify: `TailoredCvPdfModal.test.ts` covers the
       download link and the no-viewer notice.
 

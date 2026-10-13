@@ -1,7 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { mountSuspended } from '@nuxt/test-utils/runtime'
+import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
+import { setResponseHeader } from 'h3'
 import TailoredCvPdfModal from '~/components/listings/TailoredCvPdfModal.vue'
+
+// Served the way a download would be, to prove the preview still only displays it.
+let documentReply: () => unknown = () => '%PDF-1.4'
+registerEndpoint('/api/documents/70', (event) => {
+  setResponseHeader(event, 'content-type', 'application/pdf')
+  setResponseHeader(event, 'content-disposition', 'attachment; filename="cv.pdf"')
+  return documentReply()
+})
 
 const el = (id: string) => document.body.querySelector<HTMLElement>(`[data-testid="${id}"]`)
 
@@ -14,7 +23,14 @@ const mountOpen = async (applicable = false) => {
   return wrapper
 }
 
+// Node's URL rejects the test DOM's Blob, so object URLs are stubbed; browsers make real ones.
+beforeEach(() => {
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:cv-preview')
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+})
 afterEach(() => {
+  vi.restoreAllMocks()
+  documentReply = () => '%PDF-1.4'
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
@@ -41,7 +57,7 @@ describe('TailoredCvPdfModal', () => {
     await vi.advanceTimersByTimeAsync(20_000)
     expect(el('cv-pdf-gave-up')).not.toBeNull()
     expect(el('cv-pdf-frame')).toBeNull()
-    expect(el('cv-pdf-open')!.getAttribute('href')).toBe('/api/documents/70')
+    expect(el('cv-pdf-open')!.getAttribute('href')).toBe('blob:cv-preview')
     wrapper.unmount()
   })
 
@@ -77,6 +93,24 @@ describe('TailoredCvPdfModal', () => {
     expect(el('cv-pdf-frame')).toBeNull()
     expect(el('cv-pdf-no-viewer')).not.toBeNull()
     expect(el('cv-pdf-download')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('frames a local copy of the PDF, never the download URL', async () => {
+    const wrapper = await mountOpen()
+    await vi.waitFor(() => expect(el('cv-pdf-frame')).not.toBeNull())
+    expect(el('cv-pdf-frame')!.getAttribute('src')).toBe('blob:cv-preview')
+    expect(el('cv-pdf-open')!.getAttribute('href')).toBe('blob:cv-preview')
+    wrapper.unmount()
+  })
+
+  it('offers Open PDF when the file cannot be fetched', async () => {
+    documentReply = () => {
+      throw createError({ statusCode: 500 })
+    }
+    const wrapper = await mountOpen()
+    await vi.waitFor(() => expect(el('cv-pdf-gave-up')).not.toBeNull())
+    expect(el('cv-pdf-open')!.getAttribute('href')).toBe('/api/documents/70')
     wrapper.unmount()
   })
 })

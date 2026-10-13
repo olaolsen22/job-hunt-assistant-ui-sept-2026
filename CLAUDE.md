@@ -97,11 +97,8 @@ SSE subscriptions for parse-job updates.
   skill-format validation proves workflow behavior.
 - `pnpm gql:gen` regenerates `app/graphql-env.d.ts` after schema changes; include it in the next
   requested commit. Never run `pnpm dev` / `nuxt dev` or stop the owner's dev server.
-- After completing app code changes in a session, run `pnpm build` once, then serve the built app with
-  `HOST=0.0.0.0 pnpm preview --port 3000` and leave it running for the owner.
-  Check `lsof -i :3000` before starting or replacing a preview; stop only an identified stale
-  preview process and leave the owner's dev server alone. Report a port conflict if it prevents
-  serving the build. Docs/instructions-only changes still skip build/preview.
+- The owner runs `pnpm build` and `pnpm preview` themselves (background processes get killed
+  after a while). Do not build or start a preview after changes; say the UI was not built or checked.
 
 ## Boundaries and commits
 

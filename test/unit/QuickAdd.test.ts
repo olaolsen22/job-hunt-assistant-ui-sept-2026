@@ -4,6 +4,7 @@ import type { VueWrapper } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import QuickAddPage from '~/pages/listings/quick-add.vue'
+import { llmModels, unknownModelError } from '../fixtures/llmModels'
 
 const { navigation, routing } = vi.hoisted(() => ({
   navigation: vi.fn(),
@@ -60,6 +61,7 @@ const mockApi = (results: unknown[]) => {
       if (query.includes('ListingQuickParsePrompt')) {
         return { data: { prompt: { instructions: 'x' } } }
       }
+      if (query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
       if (query.includes('QuickAddListings')) {
         saves.count++
         return { data: Object.fromEntries(results.map((r, i) => [`r${i}`, r])) }
@@ -198,7 +200,8 @@ describe('Quick add', () => {
 })
 
 type CheckRow = { index: number; normalizedUrl: string; shouldProcess: boolean }
-type ParseReply = { result: string } | { error: string }
+type ParseReply =
+  { result: string } | { error: string } | { unknownModel: true } | { safety: string }
 const collectedApi = (
   respond: (urls: string[]) => Promise<CheckRow[]> | CheckRow[],
   parseReply: (posting: string, attempt: number) => ParseReply | Promise<ParseReply> = (
@@ -209,6 +212,8 @@ const collectedApi = (
     checks: [] as string[][],
     parses: [] as string[],
     modes: [] as string[],
+    models: [] as (string | undefined)[],
+    requestIds: [] as string[],
     saves: 0
   }
   registerEndpoint('/graphql', {
@@ -218,6 +223,7 @@ const collectedApi = (
       if (query.includes('ListingQuickParsePrompt')) {
         return { data: { prompt: { instructions: 'Parse these jobs' } } }
       }
+      if (query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
       if (query.includes('CheckListingUrls')) {
         requests.checks.push(variables.urls)
         try {
@@ -229,7 +235,19 @@ const collectedApi = (
       if (query.includes('mutation ParseListing')) {
         requests.parses.push(variables.text)
         requests.modes.push(variables.mode)
+        requests.models.push(variables.model)
+        requests.requestIds.push(variables.requestId)
         const reply = await parseReply(variables.text, requests.parses.length)
+        if ('unknownModel' in reply)
+          return { data: { parseListing: { parseJob: null, errors: [unknownModelError] } } }
+        if ('safety' in reply) {
+          const error = {
+            __typename: 'AiSafetyError',
+            message: `Stopped: ${reply.safety}`,
+            code: reply.safety
+          }
+          return { data: { parseListing: { parseJob: null, errors: [error] } } }
+        }
         return {
           data: {
             parseListing: {
@@ -518,6 +536,49 @@ describe('Quick add collected batch processing', () => {
     expect(requests.saves).toBe(0)
   })
 
+  it('pauses on an unknown default model and retries the batch', async () => {
+    const requests = collectedApi(allEligible, (posting, attempt) =>
+      attempt === 1 ? { unknownModel: true } : { result: posting }
+    )
+    const w = await openCollected(JSON.stringify(manyJobs(2)))
+    await w.get('[data-testid="quick-add-builtin"]').trigger('click')
+    await checkCollection(w)
+    await w.get('[data-testid="quick-add-builtin-run"]').trigger('click')
+    await paused(w)
+    expect(w.get('[data-testid="quick-add-batch-error"]').text()).toContain('isn’t available')
+
+    await w.get('[data-testid="quick-add-retry"]').trigger('click')
+    await finished(w)
+    expect(requests.models).toEqual([undefined, undefined])
+  })
+
+  it('pauses on a reached daily limit with a way to Settings', async () => {
+    const requests = collectedApi(allEligible, () => ({ safety: 'daily-limit-reached' }))
+    const w = await openCollected(JSON.stringify(manyJobs(21)))
+    await startCollected(w)
+    await paused(w)
+    expect(requests.parses).toHaveLength(1)
+    const error = w.get('[data-testid="quick-add-batch-error"]')
+    expect(error.text()).toContain('Stopped: daily-limit-reached')
+    expect(error.get('[data-testid="ai-limit-settings"]').attributes('href')).toBe('/settings')
+  })
+
+  it('asks before retrying an interrupted batch, with a new request id', async () => {
+    const requests = collectedApi(allEligible, (posting, attempt) =>
+      attempt === 1 ? { safety: 'result-unavailable' } : { result: posting }
+    )
+    const w = await openCollected(JSON.stringify(manyJobs(2)))
+    await startCollected(w)
+    await vi.waitFor(() => expect(w.find('[data-testid="ai-retry-confirm"]').exists()).toBe(true))
+    expect(w.find('[data-testid="quick-add-retry"]').exists()).toBe(false)
+    expect(requests.parses).toHaveLength(1)
+
+    await w.get('[data-testid="ai-retry-confirm-run"]').trigger('click')
+    await finished(w)
+    expect(requests.parses).toHaveLength(2)
+    expect(requests.requestIds[1]).not.toBe(requests.requestIds[0])
+  })
+
   it('keeps skipped failures below full successful progress and retains input for editing', async () => {
     const input = manyJobs(43)
     collectedApi(allEligible, (posting, attempt) =>
@@ -601,6 +662,8 @@ describe('Quick add collected batch processing', () => {
       expect(wrapper!.findAll('[data-testid="quick-add-row"]')).toHaveLength(1)
     )
     expect(requests.parses).toEqual(['Two ads in unstructured pasted text'])
+    // No per-run model: the server's own default applies.
+    expect(requests.models).toEqual([undefined])
     expect(requests.checks).toEqual([])
     expect(wrapper.find('[data-testid="quick-add-processing"]').exists()).toBe(false)
   })

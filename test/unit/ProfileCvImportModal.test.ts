@@ -7,9 +7,12 @@ import CvImportModal from '~/components/profile/CvImportModal.vue'
 import CvReview from '~/components/profile/CvReview.vue'
 import { cvCandidate, cvExperience, cvProfile } from '../fixtures/profileCv'
 import type { CvCandidate } from '~/composables/useProfileCvImport'
+import { llmModels, unknownModelError } from '../fixtures/llmModels'
 
 let candidate: CvCandidate
 let parseError = ''
+let parseUnknownModel = false
+let parseSafetyCode = ''
 let previewError = ''
 let saveError = ''
 let saveNetworkFails = false
@@ -25,6 +28,17 @@ registerEndpoint('/graphql', {
       return promptFails
         ? { errors: [{ message: 'Unavailable' }] }
         : { data: { profileCvParsePrompt: { version: 1, instructions: 'CV instructions' } } }
+    if (body.query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
+    if (body.query.includes('mutation ParseProfileCv') && parseSafetyCode) {
+      const error = {
+        __typename: 'AiSafetyError',
+        message: `Stopped: ${parseSafetyCode}`,
+        code: parseSafetyCode
+      }
+      return { data: { parseProfileCv: { result: null, errors: [error] } } }
+    }
+    if (body.query.includes('mutation ParseProfileCv') && parseUnknownModel)
+      return { data: { parseProfileCv: { result: null, errors: [unknownModelError] } } }
     if (body.query.includes('mutation ParseProfileCv'))
       return {
         data: {
@@ -72,6 +86,7 @@ registerEndpoint('/graphql', {
     return {
       data: {
         llmUsageToday: {
+          model: 'fast',
           requests: 3,
           inputTokens: 100,
           outputTokens: 20,
@@ -129,10 +144,11 @@ beforeEach(() => {
     value: vi.fn()
   })
   candidate = cvCandidate()
-  parseError = previewError = saveError = ''
-  promptFails = saveNetworkFails = false
+  parseError = previewError = saveError = parseSafetyCode = ''
+  promptFails = saveNetworkFails = parseUnknownModel = false
   saveWait = undefined
   requests.length = 0
+  clearNuxtData('llm-models')
 })
 
 describe('CV import modal', () => {
@@ -189,6 +205,57 @@ describe('CV import modal', () => {
     expect((query('cv-text') as HTMLTextAreaElement).value).toBe('Keep this CV')
     expect(wrapper.emitted('saved')).toBeUndefined()
     wrapper.unmount()
+  })
+
+  it('shows an unknown default model inline, keeps the text and refetches the models', async () => {
+    await mountOpen()
+    await vi.waitFor(() =>
+      expect(requests.filter((r) => r.query.includes('query LlmModels'))).toHaveLength(1)
+    )
+    parseUnknownModel = true
+    await setText('cv-text', 'Keep this CV')
+    await click('cv-parse')
+
+    await vi.waitFor(() => expect(query('cv-error').textContent).toContain('isn’t available'))
+    const parses = requests.filter((r) => r.query.includes('mutation ParseProfileCv'))
+    expect(parses.map((r) => r.variables?.model)).toEqual([undefined])
+    expect(requests.filter((r) => r.query.includes('query LlmModels'))).toHaveLength(2)
+    expect((query('cv-text') as HTMLTextAreaElement).value).toBe('Keep this CV')
+  })
+
+  it('links a reached daily limit to Settings', async () => {
+    parseSafetyCode = 'daily-limit-reached'
+    await mountOpen()
+    await setText('cv-text', 'Keep this CV')
+    await click('cv-parse')
+
+    await vi.waitFor(() => expect(query('cv-error').textContent).toContain('Stopped'))
+    expect(
+      query('cv-error').querySelector('[data-testid="ai-limit-settings"]')?.getAttribute('href')
+    ).toBe('/settings')
+    expect((query('cv-text') as HTMLTextAreaElement).value).toBe('Keep this CV')
+  })
+
+  it('asks before another parse after an interrupted one and sends a new request id', async () => {
+    parseSafetyCode = 'operation-interrupted'
+    await mountOpen()
+    await setText('cv-text', 'English CV text')
+    await click('cv-parse')
+
+    await vi.waitFor(() => expect(query('ai-retry-confirm')).not.toBeNull())
+    expect((query('cv-parse') as HTMLButtonElement).disabled).toBe(true)
+
+    parseSafetyCode = ''
+    await click('ai-retry-confirm-run')
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[data-testid="cv-review"]')).not.toBeNull()
+    )
+    const ids = requests
+      .filter((r) => r.query.includes('mutation ParseProfileCv'))
+      .map((r) => r.variables?.requestId)
+    expect(ids).toHaveLength(2)
+    expect(ids[0]).toEqual(expect.any(String))
+    expect(ids[1]).not.toBe(ids[0])
   })
 
   it('keeps invalid external JSON and shows the API error', async () => {

@@ -2,6 +2,8 @@
 const { data, status, error, refresh } = useLlmUsage()
 const usage = computed(() => data.value?.llmUsageToday)
 const tokens = new Intl.NumberFormat()
+// The numbers are for the user's current default model.
+const { label } = useLlmModels()
 </script>
 
 <template>
@@ -16,11 +18,16 @@ const tokens = new Intl.NumberFormat()
     @retry="refresh()"
   >
     <div v-if="usage" class="space-y-3" data-testid="dashboard-llm-usage">
-      <p class="text-sm text-muted">
-        <span class="text-2xl font-semibold text-highlighted">{{ usage.requests }}</span>
-        <template v-if="usage.requestsLimit != null"> of {{ usage.requestsLimit }}</template>
-        requests today
-      </p>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <p class="text-sm text-muted">
+          <span class="text-2xl font-semibold text-highlighted">{{ usage.requests }}</span>
+          <template v-if="usage.requestsLimit != null"> of {{ usage.requestsLimit }}</template>
+          requests today
+        </p>
+        <UBadge color="neutral" variant="subtle" data-testid="dashboard-llm-usage-model">{{
+          label(usage.model)
+        }}</UBadge>
+      </div>
       <UProgress
         v-if="usage.requestsLimit"
         :model-value="usage.requests"
@@ -34,9 +41,7 @@ const tokens = new Intl.NumberFormat()
         {{ tokens.format(usage.inputTokens) }} tokens in ·
         {{ tokens.format(usage.outputTokens) }} out
       </p>
-      <p class="text-xs text-muted">
-        Resets {{ formatDateTime(usage.resetsAt) }}. Counts all users of the API.
-      </p>
+      <p class="text-xs text-muted">Resets {{ formatDateTime(usage.resetsAt) }}.</p>
     </div>
   </DashboardWidget>
 </template>

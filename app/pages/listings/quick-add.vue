@@ -176,8 +176,18 @@ const toRow = (d: Record<string, unknown>): Row => ({
     .map((l) => ({ countryCode: l.countryCode, city: text(l.city) }))
 })
 
-const { instructions, copied, load, copy, parsing, parse } =
-  useParsePrompt('listingQuickParsePrompt')
+const {
+  instructions,
+  copied,
+  load,
+  copy,
+  parsing,
+  parse,
+  needsConfirm,
+  safetyMessage,
+  confirmRetry,
+  toastError
+} = useParsePrompt('listingQuickParsePrompt')
 const batchRun = useCollectedJobProcessing(parse)
 onMounted(load)
 
@@ -210,6 +220,7 @@ const runBatchCount = computed(() => batchRun.batches.value.length)
 const runSkipped = batchRun.skipped
 const runUnprocessed = batchRun.unprocessed
 const runError = batchRun.error
+const runErrorCode = batchRun.errorCode
 const runTitle = computed(() => {
   if (runStatus.value === 'stopped') return 'Processing incomplete'
   if (runStatus.value === 'paused') return 'Processing paused'
@@ -229,7 +240,8 @@ const posting = computed(() =>
   collectedMode.value ? collectedJobsPosting(prepared.value?.rows ?? []) : ad.value.trim()
 )
 const aiDisabled = computed(
-  () => checking.value || parsing.value || batchRun.busy.value || !posting.value
+  () =>
+    checking.value || parsing.value || batchRun.busy.value || !posting.value || needsConfirm.value
 )
 watch(collected, () => {
   prepared.value = null
@@ -301,11 +313,19 @@ const addRows = async (reply: string) => {
 const parseBuiltIn = async () => {
   if (aiDisabled.value) return
   const reply = await parse(posting.value)
-  if ('error' in reply) {
-    toast.add({ title: reply.error, color: 'error', icon: 'i-lucide-circle-alert' })
-  }
+  // An interrupted or lost run shows the retry warning by the run button instead.
+  if (needsConfirm.value) return
+  if ('error' in reply) toastError(reply)
   // Failed: show the copy-paste steps, with the ads still filled in.
   if ('error' in reply || !(await addRows(reply.result))) builtIn.value = false
+}
+
+// The last run may have been billed without a result; only this explicit choice sends another.
+const retryConfirmed = () => {
+  confirmRetry()
+  if (batchRun.status.value === 'paused') batchRun.retry()
+  else if (collectedMode.value) startCollectedProcessing()
+  else void parseBuiltIn()
 }
 
 const startCollectedProcessing = () => {
@@ -635,6 +655,12 @@ const onConfirmRemove = async () => {
           >
             {{ collectedMode ? `Process ${prepared?.remaining ?? 0} jobs` : 'Parse into rows' }}
           </UButton>
+          <AppAiRetryConfirm
+            v-if="builtIn && needsConfirm && runStatus === 'idle'"
+            :message="safetyMessage"
+            :loading="parsing"
+            @retry="retryConfirmed"
+          />
           <p v-if="builtIn && collectedMode" class="text-sm text-muted">
             Creates drafts for review. Nothing is saved until you choose Save.
           </p>
@@ -734,16 +760,27 @@ const onConfirmRemove = async () => {
           {{ prepared.remaining + prepared.skipped }} collected · {{ prepared.skipped }} skipped
           before AI · {{ prepared.remaining }} ready
         </p>
+        <AppAiRetryConfirm
+          v-if="runStatus === 'paused' && needsConfirm"
+          :message="safetyMessage"
+          @retry="retryConfirmed"
+        />
         <UAlert
-          v-if="runStatus === 'paused'"
+          v-else-if="runStatus === 'paused'"
           color="error"
           icon="i-lucide-circle-alert"
           :title="`Batch ${runCurrentBatch} failed`"
           :description="runError"
           data-testid="quick-add-batch-error"
-        />
+        >
+          <template v-if="runErrorCode === 'daily-limit-reached'" #actions>
+            <AppAiLimitLink />
+          </template>
+        </UAlert>
         <div v-if="runStatus === 'paused'" class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <UButton data-testid="quick-add-retry" @click="batchRun.retry()">Retry batch</UButton>
+          <UButton v-if="!needsConfirm" data-testid="quick-add-retry" @click="batchRun.retry()"
+            >Retry batch</UButton
+          >
           <UButton
             color="neutral"
             variant="subtle"

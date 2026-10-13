@@ -6,7 +6,9 @@ import {
   planCollectedJobBatches
 } from '~/utils/collectedJobBatches'
 
-export type CollectedParse = (posting: string) => Promise<{ result: string } | { error: string }>
+export type CollectedParse = (
+  posting: string
+) => Promise<{ result: string } | { error: string; code?: string }>
 export type CollectedRunStatus = 'idle' | 'running' | 'paused' | 'finished' | 'stopped'
 
 export const useCollectedJobProcessing = (parse: CollectedParse) => {
@@ -17,6 +19,8 @@ export const useCollectedJobProcessing = (parse: CollectedParse) => {
   const skipped = ref(0)
   const completed = ref(0)
   const error = ref('')
+  // The API's AiSafetyError code for the failed batch, if that is why it failed.
+  const errorCode = ref<string>()
   const published = ref(false)
   const generation = ref(0)
   const total = computed(() => batches.value.flat().length)
@@ -30,10 +34,14 @@ export const useCollectedJobProcessing = (parse: CollectedParse) => {
       const batch = batches.value[cursor.value]!
       status.value = 'running'
       error.value = ''
+      errorCode.value = undefined
       try {
         const response = await parse(collectedJobBatchPosting(batch))
         if (token !== generation.value) return
-        if ('error' in response) throw new Error(response.error)
+        if ('error' in response) {
+          errorCode.value = response.code
+          throw new Error(response.error)
+        }
         const decoded = decodeCollectedJobReply(response.result, batch.length)
         accepted.value.push(...decoded)
         completed.value += batch.length
@@ -105,6 +113,7 @@ export const useCollectedJobProcessing = (parse: CollectedParse) => {
     skipped,
     completed,
     error,
+    errorCode,
     published,
     total,
     failedBatch,

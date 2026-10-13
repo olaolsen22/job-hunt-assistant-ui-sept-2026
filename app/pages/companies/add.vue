@@ -76,7 +76,18 @@ const toRow = (d: Record<string, unknown>): Row => ({
     .map((l) => ({ countryCode: l.countryCode, city: text(l.city) }))
 })
 
-const { instructions, copied, load, copy, parsing, parse } = useParsePrompt('companyParsePrompt')
+const {
+  instructions,
+  copied,
+  load,
+  copy,
+  parsing,
+  parse,
+  needsConfirm,
+  safetyMessage,
+  confirmRetry,
+  toastError
+} = useParsePrompt('companyParsePrompt')
 onMounted(load)
 
 const form = useTemplateRef('form')
@@ -120,11 +131,17 @@ const addRows = async (reply: string) => {
 
 const parseBuiltIn = async () => {
   const reply = await parse(ad.value)
-  if ('error' in reply) {
-    toast.add({ title: reply.error, color: 'error', icon: 'i-lucide-circle-alert' })
-  }
+  // An interrupted or lost run shows the retry warning by the run button instead.
+  if (needsConfirm.value) return
+  if ('error' in reply) toastError(reply)
   // Failed: show the copy-paste steps, with the text still filled in.
   if ('error' in reply || !(await addRows(reply.result))) builtIn.value = false
+}
+
+// The last run may have been billed without a result; only this explicit choice sends another.
+const retryConfirmed = () => {
+  confirmRetry()
+  void parseBuiltIn()
 }
 
 const toast = useToast()
@@ -201,12 +218,18 @@ const removeRow = (row: Row) => state.rows.splice(state.rows.indexOf(row), 1)
             v-if="builtIn"
             icon="i-lucide-sparkles"
             :loading="parsing"
-            :disabled="!ad.trim()"
+            :disabled="!ad.trim() || needsConfirm"
             data-testid="companies-add-builtin-run"
             @click="parseBuiltIn"
           >
             Parse into rows
           </UButton>
+          <AppAiRetryConfirm
+            v-if="builtIn && needsConfirm"
+            :message="safetyMessage"
+            :loading="parsing"
+            @retry="retryConfirmed"
+          />
           <UButton
             v-else
             :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"

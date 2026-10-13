@@ -3,6 +3,7 @@ import type { ResultOf } from 'gql.tada'
 const USAGE = graphql(`
   query DashboardLlmUsage {
     llmUsageToday {
+      model
       requests
       inputTokens
       outputTokens

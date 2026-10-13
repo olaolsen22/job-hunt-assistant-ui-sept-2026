@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { PHONE_FULLSCREEN_MODAL } from '~/constants/ui'
 
-// Previews a generated PDF with the browser's own PDF reader in an iframe. An iframe gives no error
-// event (an error page also fires `load`), so a slow or blocked preview is handled with timers
-// that surface the Open PDF link instead. `applicable` offers Apply with this CV (Saved listings).
-// Downloading is always the owner's choice: a browser without a built-in PDF viewer (phones, or one
-// set to download PDFs) would save a framed PDF on its own, so it gets a notice instead of the frame.
+// Previews a generated PDF with the browser's own PDF reader in an iframe. The file is fetched and
+// framed as a local blob, so the API's Content-Disposition can never turn the preview into a
+// download; Download stays a separate, manual action. An iframe gives no error event, so a slow or
+// failed preview is handled with timers and the fetch result, surfacing Open PDF instead.
+// A browser without a built-in PDF viewer (phones, or one set to download PDFs) would still save a
+// framed PDF on its own, so it gets a notice instead of the frame. `applicable` offers Apply with
+// this CV (Saved listings).
 const { documentId, applicable = false } = defineProps<{
   documentId: number
   fileName: string
@@ -16,10 +18,12 @@ const emit = defineEmits<{ apply: [] }>()
 
 // Only read in the browser, where the dialog's body renders (it's closed during SSR).
 const viewer = import.meta.client ? navigator.pdfViewerEnabled !== false : true
+const url = computed(() => `/api/documents/${documentId}`)
 
 const SLOW_MS = 10_000
 const GIVE_UP_MS = 30_000
 
+const blobUrl = ref<string>()
 const loaded = ref(false)
 const slow = ref(false)
 const gaveUp = ref(false)
@@ -28,28 +32,46 @@ const clearTimers = () => {
   timers.forEach(clearTimeout)
   timers = []
 }
+const revoke = () => {
+  if (blobUrl.value) URL.revokeObjectURL(blobUrl.value)
+  blobUrl.value = undefined
+}
 
-// The iframe only exists while open, so every open fetches the file again.
+// Every open fetches the file again; a reply for an earlier open is dropped.
+let request = 0
 watch(
   open,
-  (isOpen) => {
+  async (isOpen) => {
     clearTimers()
+    revoke()
     loaded.value = slow.value = gaveUp.value = false
     if (!isOpen || !viewer) return
+    const current = ++request
     timers = [
       setTimeout(() => (slow.value = true), SLOW_MS),
       setTimeout(() => (gaveUp.value = true), GIVE_UP_MS)
     ]
+    try {
+      const data = await $fetch<Blob>(url.value, { responseType: 'blob' })
+      if (current !== request || !open.value) return
+      blobUrl.value = URL.createObjectURL(new Blob([data], { type: 'application/pdf' }))
+    } catch {
+      if (current !== request) return
+      clearTimers()
+      gaveUp.value = true
+    }
   },
   { immediate: true }
 )
-onScopeDispose(clearTimers)
+onScopeDispose(() => {
+  clearTimers()
+  revoke()
+})
 
 const onLoad = () => {
   loaded.value = true
   clearTimers()
 }
-const url = computed(() => `/api/documents/${documentId}`)
 // Apply stays the one primary action; without it a stuck preview promotes Open PDF.
 const promoteOpen = computed(() => (slow.value || gaveUp.value) && !applicable)
 </script>
@@ -84,7 +106,8 @@ const promoteOpen = computed(() => (slow.value || gaveUp.value) && !applicable)
         <template v-else>
           <USkeleton v-if="!loaded" class="absolute inset-0" data-testid="cv-pdf-loading" />
           <iframe
-            :src="url"
+            v-if="blobUrl"
+            :src="blobUrl"
             title="Tailored CV PDF preview"
             class="relative size-full rounded-md border-0"
             data-testid="cv-pdf-frame"
@@ -109,8 +132,10 @@ const promoteOpen = computed(() => (slow.value || gaveUp.value) && !applicable)
             data-testid="cv-pdf-download"
             >Download</UButton
           >
+          <!-- The fetched copy when there is one, so the new tab shows the PDF instead of saving it. -->
           <UButton
-            :to="url"
+            :to="blobUrl ?? url"
+            external
             target="_blank"
             icon="i-lucide-external-link"
             :color="promoteOpen ? 'primary' : 'neutral'"

@@ -7,6 +7,7 @@ import { readBody } from 'h3'
 import CvPage from '~/pages/listings/[id]/cv.vue'
 import { tailoredCvFromProfile, toTailoredCvInput } from '~/utils/tailoredCv'
 import { cvProfile } from '../fixtures/profileCv'
+import { llmModels } from '../fixtures/llmModels'
 
 type Body = { query: string; variables: { input?: Record<string, unknown> } }
 
@@ -18,6 +19,8 @@ let previewReply: unknown
 let generateReply: () => unknown
 let listing: Record<string, unknown> & { documents: Record<string, unknown>[] }
 let appliedInput: Record<string, unknown> | undefined
+// Replaces the default answer for a section request; undefined keeps the default.
+let analysisOverride: (input: Record<string, unknown>) => unknown
 
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
 registerEndpoint('/graphql', {
@@ -27,11 +30,14 @@ registerEndpoint('/graphql', {
     calls.push(body)
     const { query } = body
     const input = body.variables?.input ?? {}
+    if (query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
     if (query.includes('query ListingById')) return { data: { listingById: listing } }
     if (query.includes('query Profile')) return { data: { profile: cvProfile() } }
     if (query.includes('query TailoredCvDraft')) return { data: { tailoredCvDraft: savedDraft } }
     if (query.includes('mutation AnalyzeTailoredCvSection')) {
       await analysisGate
+      const override = analysisOverride(input)
+      if (override) return { data: { analyzeTailoredCvSection: override } }
       return {
         data: {
           analyzeTailoredCvSection: {
@@ -75,6 +81,7 @@ registerEndpoint('/graphql', {
     return {
       data: {
         llmUsageToday: {
+          model: 'fast',
           requests: 3,
           inputTokens: 100,
           outputTokens: 20,
@@ -116,6 +123,7 @@ beforeEach(() => {
   savedDraft = null
   previewReply = null
   appliedInput = undefined
+  analysisOverride = () => undefined
   listing = {
     id: 5,
     title: 'Frontend Developer',
@@ -175,6 +183,96 @@ describe('Tailored CV page', () => {
     const unload = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(unload)
     expect(unload.defaultPrevented).toBe(true)
+  })
+
+  it('runs the whole CV without a per-run model and links to Settings', async () => {
+    releaseAnalysis()
+    await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-optimize')).not.toBeNull())
+    await click('tailored-cv-optimize')
+    await vi.waitFor(() => expect(el('tailored-cv-ai-usage')?.textContent).toContain('Fast'))
+    expect(el('tailored-cv-ai-usage')!.querySelector('a')?.getAttribute('href')).toBe('/settings')
+    await click('tailored-cv-ai-run')
+    await vi.waitFor(() => expect(el('tailored-cv-progress')).toBeNull())
+
+    expect(
+      ops('AnalyzeTailoredCvSection').map((c) => (c.variables.input as { model?: string }).model)
+    ).toEqual([undefined, undefined, undefined])
+  })
+
+  describe('analysis errors', () => {
+    const safetyError = (code: string) => ({
+      result: null,
+      errors: [{ __typename: 'AiSafetyError', message: `Stopped: ${code}`, code }]
+    })
+    const runWholeCv = async () => {
+      releaseAnalysis()
+      await mountPage()
+      await vi.waitFor(() => expect(el('tailored-cv-optimize')).not.toBeNull())
+      await click('tailored-cv-optimize')
+      await click('tailored-cv-ai-run')
+      await vi.waitFor(() => expect(el('tailored-cv-progress')).toBeNull())
+      await flushPromises()
+    }
+
+    it('shows a skipped section with its code and still analyzes the rest', async () => {
+      analysisOverride = (input) =>
+        input.section === 'SKILLS'
+          ? {
+              result: {
+                status: 'SKIPPED',
+                section: 'SKILLS',
+                sourceEntryId: null,
+                selectedBulletIds: [],
+                selectedSkillIds: [],
+                summary: null,
+                error: 'No skills to match',
+                errorCode: 'no-input'
+              },
+              errors: null
+            }
+          : undefined
+      await runWholeCv()
+
+      expect(el('tailored-cv-skills-error')!.textContent).toContain('No skills to match (no-input)')
+      expect(summaryValue()).toBe('Tailored summary')
+    })
+
+    it('stops at a reached daily limit, keeps earlier results and links to Settings', async () => {
+      analysisOverride = (input) =>
+        input.section === 'SKILLS' ? safetyError('daily-limit-reached') : undefined
+      await runWholeCv()
+
+      expect(ops('AnalyzeTailoredCvSection').map((c) => c.variables.input!.section)).toEqual([
+        'EXPERIENCE',
+        'SKILLS'
+      ])
+      expect(el('tailored-cv-skills-error')!.textContent).toContain('Stopped: daily-limit-reached')
+      expect(el('tailored-cv-ai-error')!.querySelector('a')?.getAttribute('href')).toBe('/settings')
+      expect(el('tailored-cv-entry-error')).toBeNull()
+    })
+
+    it('asks before repeating an interrupted run, with new request ids', async () => {
+      analysisOverride = (input) =>
+        input.section === 'EXPERIENCE' && ops('AnalyzeTailoredCvSection').length === 1
+          ? safetyError('operation-interrupted')
+          : undefined
+      await runWholeCv()
+
+      expect(ops('AnalyzeTailoredCvSection')).toHaveLength(1)
+      expect(el('ai-retry-confirm')!.textContent).toContain('Stopped: operation-interrupted')
+      await click('tailored-cv-optimize')
+      await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
+      expect((el('tailored-cv-ai-run') as HTMLButtonElement).disabled).toBe(true)
+      document.body.querySelector<HTMLElement>('[role="dialog"] button')?.click()
+      await flushPromises()
+
+      await click('ai-retry-confirm-run')
+      await vi.waitFor(() => expect(ops('AnalyzeTailoredCvSection')).toHaveLength(4))
+      const ids = ops('AnalyzeTailoredCvSection').map((c) => c.variables.input!.requestId)
+      expect(new Set(ids).size).toBe(4)
+      await vi.waitFor(() => expect(el('ai-retry-confirm')).toBeNull())
+    })
   })
 
   it('runs one request from a section AI button and offers it as a suggestion over a saved draft', async () => {
@@ -361,10 +459,10 @@ describe('Tailored CV page', () => {
       const before = listingFetches()
 
       await click('tailored-cv-generate')
-      await vi.waitFor(() => expect(el('cv-pdf-frame')).not.toBeNull())
+      await vi.waitFor(() => expect(el('cv-pdf-download')).not.toBeNull())
       expect(ops('SaveTailoredCvDraft')).toHaveLength(1)
       expect(generate()).toHaveLength(1)
-      expect(el('cv-pdf-frame')!.getAttribute('src')).toBe('/api/documents/70')
+      expect(el('cv-pdf-download')!.getAttribute('href')).toBe('/api/documents/70')
       await vi.waitFor(() => expect(listingFetches()).toBe(before + 1))
 
       // The PDF now matches the draft: the next step is applying, not another PDF.
@@ -397,7 +495,7 @@ describe('Tailored CV page', () => {
       await click('cv-pdf-apply')
 
       await vi.waitFor(() => expect(el('confirm-modal-confirm')).not.toBeNull())
-      expect(el('cv-pdf-frame')).toBeNull()
+      expect(el('cv-pdf-download')).toBeNull()
       await click('confirm-modal-confirm')
       await vi.waitFor(() => expect(appliedInput).toMatchObject({ cvDocumentId: 60 }))
     })
@@ -409,7 +507,7 @@ describe('Tailored CV page', () => {
       await vi.waitFor(() => expect(el('tailored-cv-preview-pdf')).not.toBeNull())
       expect(el('tailored-cv-apply')).toBeNull()
       await click('tailored-cv-preview-pdf')
-      await vi.waitFor(() => expect(el('cv-pdf-frame')).not.toBeNull())
+      await vi.waitFor(() => expect(el('cv-pdf-download')).not.toBeNull())
       expect(el('cv-pdf-apply')).toBeNull()
     })
 

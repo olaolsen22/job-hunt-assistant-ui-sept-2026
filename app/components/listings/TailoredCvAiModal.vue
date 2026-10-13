@@ -99,6 +99,9 @@ const preview = async () => {
           <p v-if="showTabs" class="text-sm text-muted" data-testid="tailored-cv-ai-requests">
             Makes {{ requests }} AI {{ requests === 1 ? 'request' : 'requests' }}.
           </p>
+          <p v-if="ai.needsConfirm.value" class="text-sm text-warning">
+            The last run may already have been charged. Confirm the retry on the page first.
+          </p>
         </template>
         <template v-else>
           <p class="text-sm text-muted">
@@ -158,6 +161,7 @@ const preview = async () => {
         <UButton
           v-if="tab === 'builtin'"
           icon="i-lucide-sparkles"
+          :disabled="ai.needsConfirm.value"
           data-testid="tailored-cv-ai-run"
           @click="analyze"
           >Analyze</UButton

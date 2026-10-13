@@ -17,7 +17,10 @@ const {
   parsingUrl,
   parseFromUrl,
   parsingNewUrl,
-  parseNewUrl
+  parseNewUrl,
+  needsConfirm,
+  safetyMessage,
+  confirmRetry
 } = useParsePrompt('listingParsePrompt')
 
 const link = ref('')
@@ -36,6 +39,10 @@ const json = ref('')
 const jsonError = ref('')
 const urlError = ref('')
 const builtInError = ref('')
+// The API's AiSafetyError code for the error shown, if any.
+const errorCode = ref<string>()
+// The technical reason behind a generic error, shown small below it.
+const errorDetail = ref('')
 
 // Closing mid-parse would throw the result away.
 const busy = computed(() => parsing.value || parsingUrl.value || parsingNewUrl.value)
@@ -62,6 +69,11 @@ watch(open, () => (urlError.value = builtInError.value = ''))
 watch(json, () => (jsonError.value = ''))
 watch(ad, () => (builtInError.value = ''))
 watch(link, () => (urlError.value = ''))
+watch([urlError, builtInError], ([url, builtIn]) => {
+  if (url || builtIn) return
+  errorCode.value = undefined
+  errorDetail.value = ''
+})
 
 const apply = (reply: string) => {
   const draft = parseDraft(reply)
@@ -85,16 +97,29 @@ const parseUrl = async () => {
     ? await parseFromUrl(props.listingId)
     : await parseNewUrl(link.value)
   refreshUsage()
-  if ('error' in reply) urlError.value = reply.error
-  else if (!apply(reply.result)) urlError.value = INVALID_DRAFT_JSON
+  if ('error' in reply) {
+    urlError.value = reply.error
+    errorCode.value = reply.code
+    errorDetail.value = reply.detail ?? ''
+  } else if (!apply(reply.result)) urlError.value = INVALID_DRAFT_JSON
 }
 
 const parseBuiltIn = async () => {
   builtInError.value = ''
   const reply = await parse(ad.value)
   refreshUsage()
-  if ('error' in reply) builtInError.value = reply.error
-  else if (!apply(reply.result)) builtInError.value = INVALID_DRAFT_JSON
+  if ('error' in reply) {
+    builtInError.value = reply.error
+    errorCode.value = reply.code
+    errorDetail.value = reply.detail ?? ''
+  } else if (!apply(reply.result)) builtInError.value = INVALID_DRAFT_JSON
+}
+
+// The last run may have been billed without a result; only this explicit choice sends another.
+const retryConfirmed = () => {
+  confirmRetry()
+  if (tab.value === 'link') parseUrl()
+  else parseBuiltIn()
 }
 </script>
 
@@ -112,6 +137,13 @@ const parseBuiltIn = async () => {
 
         <!-- From link and Paste ad both run on the backend's AI key; Use your own AI doesn't. -->
         <AppAiCostNotice v-if="tab !== 'ai'" :usage="usage" data-testid="parse-cost-notice" />
+
+        <AppAiRetryConfirm
+          v-if="needsConfirm && tab !== 'ai'"
+          :message="safetyMessage"
+          :loading="busy"
+          @retry="retryConfirmed"
+        />
 
         <div v-if="tab === 'link'" class="space-y-3">
           <p v-if="listingId" class="text-sm text-muted">
@@ -131,16 +163,24 @@ const parseBuiltIn = async () => {
             </UFormField>
           </template>
           <UAlert
-            v-if="urlError"
+            v-if="urlError && !needsConfirm"
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
             :title="urlError"
             data-testid="parse-url-error"
           >
+            <template v-if="errorDetail" #description>
+              <!-- Muted red: the reason behind a generic message, secondary to the title. -->
+              <p class="text-xs break-words text-error/75" data-testid="parse-error-detail">
+                {{ errorDetail }}
+              </p>
+            </template>
             <!-- Unreadable pages (login walls, JS-built ads) are common; the link is kept for the paste parse. -->
-            <template v-if="!listingId" #actions>
+            <template v-if="!listingId || errorCode === 'daily-limit-reached'" #actions>
+              <AppAiLimitLink v-if="errorCode === 'daily-limit-reached'" />
               <UButton
+                v-else
                 color="neutral"
                 variant="soft"
                 icon="i-lucide-clipboard-paste"
@@ -166,13 +206,23 @@ const parseBuiltIn = async () => {
           </UFormField>
 
           <UAlert
-            v-if="tab === 'paste' && builtInError"
+            v-if="tab === 'paste' && builtInError && !needsConfirm"
             color="error"
             variant="subtle"
             icon="i-lucide-circle-alert"
             :title="builtInError"
             data-testid="parse-builtin-error"
-          />
+          >
+            <template v-if="errorDetail" #description>
+              <!-- Muted red: the reason behind a generic message, secondary to the title. -->
+              <p class="text-xs break-words text-error/75" data-testid="parse-error-detail">
+                {{ errorDetail }}
+              </p>
+            </template>
+            <template v-if="errorCode === 'daily-limit-reached'" #actions>
+              <AppAiLimitLink />
+            </template>
+          </UAlert>
 
           <template v-if="tab === 'ai'">
             <div class="space-y-2">
@@ -225,7 +275,7 @@ const parseBuiltIn = async () => {
           v-if="tab === 'link'"
           icon="i-lucide-link"
           :loading="parsingUrl || parsingNewUrl"
-          :disabled="!listingId && !link.trim()"
+          :disabled="(!listingId && !link.trim()) || needsConfirm"
           data-testid="parse-url"
           @click="parseUrl"
           >Parse from link</UButton
@@ -234,7 +284,7 @@ const parseBuiltIn = async () => {
           v-else-if="tab === 'paste'"
           icon="i-lucide-sparkles"
           :loading="parsing"
-          :disabled="!ad.trim()"
+          :disabled="!ad.trim() || needsConfirm"
           data-testid="parse-builtin-run"
           @click="parseBuiltIn"
           >Parse ad</UButton

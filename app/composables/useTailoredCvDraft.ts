@@ -108,11 +108,15 @@ const ANALYZE = graphql(`
         selectedSkillIds
         summary
         error
+        errorCode
       }
       errors {
         __typename
         ... on Error {
           message
+        }
+        ... on AiSafetyError {
+          code
         }
       }
     }
@@ -230,6 +234,8 @@ export const useTailoredCvDraft = (
   profile: Ref<ProfileData | null | undefined>
 ) => {
   const query = useTailoredCvDraftQuery(listingId)
+  const llm = useLlmModels()
+  const { attempt, safetyCode, safetyMessage, needsConfirm, confirmRetry } = useAiRequest()
   const draft = query.data
   const cv = ref<TailoredCv>()
   // The last saved state; null until the first save, so a new candidate counts as unsaved.
@@ -299,21 +305,36 @@ export const useTailoredCvDraft = (
     ]
   }
 
-  // A failed section keeps its content and shows why; the caller moves on to the next one.
+  // A failed or skipped section keeps its content and shows why; the caller moves on to the next
+  // one. Returns true when every later section would fail the same way, so the caller stops: the
+  // saved model is gone (the list is already refetched) or the API's AI safeguards refused.
   const runStep = async (step: AnalysisStep, direct: boolean) => {
     sectionErrors.value = { ...sectionErrors.value, [step.key]: undefined }
     try {
-      const { analyzeTailoredCvSection } = await gql(ANALYZE, {
-        input: { listingId, section: step.section, sourceEntryId: step.sourceEntryId }
-      })
-      const { result, errors } = analyzeTailoredCvSection
+      const input = { listingId, section: step.section, sourceEntryId: step.sourceEntryId }
+      const { result, errors } = await attempt(
+        input,
+        async (requestId) =>
+          (await gql(ANALYZE, { input: { ...input, requestId } })).analyzeTailoredCvSection
+      )
+      if (isUnknownModel(errors)) {
+        sectionErrors.value[step.key] = errors![0]!.message
+        await llm.refresh()
+        return true
+      }
+      if (aiSafetyCode(errors)) {
+        sectionErrors.value[step.key] = errors![0]!.message
+        return true
+      }
       const value =
         result && profile.value && cv.value
           ? cvSectionFromAnalysis(cv.value, profile.value, result)
           : null
       if (!value) {
-        sectionErrors.value[step.key] =
-          errors?.[0]?.message ?? result?.error ?? ERROR_MESSAGES.generic
+        const message = errors?.[0]?.message ?? result?.error ?? ERROR_MESSAGES.generic
+        sectionErrors.value[step.key] = result?.errorCode
+          ? `${message} (${result.errorCode})`
+          : message
         return
       }
       offer(value.key, value.value, direct)
@@ -331,7 +352,7 @@ export const useTailoredCvDraft = (
     try {
       for (const [i, step] of all.entries()) {
         progress.value = { label: step.label, step: i + 1, total: all.length }
-        await runStep(step, direct)
+        if (await runStep(step, direct)) break
       }
     } finally {
       analyzing.value = false
@@ -490,6 +511,10 @@ export const useTailoredCvDraft = (
     analyzeAll,
     analyzeSection,
     requestCount,
+    safetyCode,
+    safetyMessage,
+    needsConfirm,
+    confirmRetry,
     instructions,
     promptError,
     promptLoading,

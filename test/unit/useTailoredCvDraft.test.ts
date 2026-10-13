@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import { useTailoredCvDraft } from '~/composables/useTailoredCvDraft'
 import { tailoredCvFromProfile, toTailoredCvInput } from '~/utils/tailoredCv'
 import { cvProfile } from '../fixtures/profileCv'
+import { llmModels, unknownModelError } from '../fixtures/llmModels'
 
 type Body = { query: string; variables: { input?: Record<string, unknown> } }
 
@@ -32,6 +33,7 @@ registerEndpoint('/graphql', {
   handler: async (event) => {
     const body = (await readBody(event)) as Body
     calls.push(body)
+    if (body.query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
     if (body.query.includes('query TailoredCvDraft'))
       return { data: { tailoredCvDraft: savedDraft } }
     if (body.query.includes('mutation AnalyzeTailoredCvSection'))
@@ -91,6 +93,7 @@ const operations = () =>
     .map((c) => `${c.query.match(/mutation (\w+)/)![1]}:${c.variables.input?.section ?? ''}`)
 
 beforeEach(() => {
+  clearNuxtData('llm-models')
   calls = []
   savedDraft = null
   saveErrors = null
@@ -149,6 +152,18 @@ describe('useTailoredCvDraft', () => {
     expect(state.sectionErrors.value.skills).toBe('Model timed out')
     expect(state.cv.value!.skills).toHaveLength(1)
     expect(state.cv.value!.summary).toBe('Tailored summary')
+  })
+
+  it('stops the whole-CV run on an unknown default model and refetches the models', async () => {
+    analyze = () => ({ result: null, errors: [unknownModelError] })
+    const state = await setup()
+    await vi.waitFor(() => expect(calls.some((c) => c.query.includes('LlmModels'))).toBe(true))
+    state.init()
+    await state.analyzeAll()
+
+    expect(operations()).toEqual(['AnalyzeTailoredCvSection:EXPERIENCE'])
+    expect(Object.values(state.sectionErrors.value)).toContain(unknownModelError.message)
+    expect(calls.filter((c) => c.query.includes('query LlmModels'))).toHaveLength(2)
   })
 
   it('offers results as suggestions over a saved draft, and Dismiss keeps the content', async () => {

@@ -14,8 +14,8 @@ are not evidence of better AI use. Keep quality checks; remove duplicated explor
 - Advisors run inline unless explicitly delegated. All three custom agents use Sonnet and a
   ten-turn cap. A cap bounds a run, not total tokens; report partial findings instead of restarting
   automatically. Agent requests consume the same allowance as the main session.
-- Run required checks once per coherent implementation batch. Preserve the owner's build/preview
-  requirement and explicit authorization requirement for E2E/live UI checks.
+- Run required checks once per coherent implementation batch. Preserve the explicit
+  authorization requirement for E2E/live UI checks.
 
 ## When usage seems unusually high
 

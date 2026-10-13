@@ -19,7 +19,7 @@ const props = defineProps<{ profile: ProfileData; refreshProfile: () => Promise<
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ saved: [profile: ProfileData] }>()
 const api = useProfileCvImport()
-const { busy, instructions, promptLoading, promptError, copied } = api
+const { busy, instructions, promptLoading, promptError, copied, needsConfirm, safetyMessage } = api
 const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
 const usage = computed(() => usageData.value?.llmUsageToday)
 const toast = useToast()
@@ -27,6 +27,8 @@ const tab = ref('paste')
 const cv = ref('')
 const json = ref('')
 const error = ref('')
+// The API's AiSafetyError code for the error shown, if any.
+const errorCode = ref<string>()
 const attempted = ref(false)
 const reviewComponent = useTemplateRef('reviewComponent')
 const serverIssues = ref<CvIssue[]>([])
@@ -77,8 +79,11 @@ const inputError = computed(() =>
       ? 'JSON must be at most 200,000 characters.'
       : ''
 )
+// After an interrupted or lost built-in parse, only the retry warning may send another one.
 const canParse = computed(
-  () => !inputError.value && (tab.value === 'paste' ? !!cv.value.trim() : !!json.value.trim())
+  () =>
+    !inputError.value &&
+    (tab.value === 'paste' ? !!cv.value.trim() && !needsConfirm.value : !!json.value.trim())
 )
 const confirmOpen = ref(false)
 const pending = ref<'close' | 'replace'>('close')
@@ -108,6 +113,9 @@ watch(
 watch([cv, json, tab], () => {
   error.value = ''
 })
+watch(error, (value) => {
+  if (!value) errorCode.value = undefined
+})
 const runParse = async () => {
   if (locked.value || !canParse.value) return
   error.value = ''
@@ -115,6 +123,7 @@ const runParse = async () => {
   if (tab.value === 'paste') refreshUsage()
   if (result.error !== undefined) {
     error.value = result.error
+    errorCode.value = result.code
     return
   }
   refreshing.value = true
@@ -130,6 +139,10 @@ const runParse = async () => {
   } finally {
     refreshing.value = false
   }
+}
+const retryConfirmed = () => {
+  api.confirmRetry()
+  parse()
 }
 const parse = () => {
   if (draft.value) {
@@ -219,7 +232,23 @@ const save = async () => {
   >
     <template #body>
       <div class="space-y-4">
-        <UAlert v-if="error" color="error" variant="subtle" :title="error" data-testid="cv-error" />
+        <AppAiRetryConfirm
+          v-if="needsConfirm && tab === 'paste' && !reviewing"
+          :message="safetyMessage"
+          :loading="busy"
+          @retry="retryConfirmed"
+        />
+        <UAlert
+          v-else-if="error"
+          color="error"
+          variant="subtle"
+          :title="error"
+          data-testid="cv-error"
+        >
+          <template v-if="errorCode === 'daily-limit-reached'" #actions>
+            <AppAiLimitLink />
+          </template>
+        </UAlert>
         <fieldset :disabled="locked" class="min-w-0 space-y-4">
           <ProfileCvReview
             v-if="reviewing && draft"

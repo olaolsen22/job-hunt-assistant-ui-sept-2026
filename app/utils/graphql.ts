@@ -7,7 +7,7 @@ import type { introspection } from '../graphql-env.d.ts'
 // Masking is off so a fragment's fields read like the query's own, without readFragment().
 export const graphql = initGraphQLTada<{
   introspection: introspection
-  scalars: { DateTime: string; LocalDate: string; Long: number; Upload: File }
+  scalars: { DateTime: string; LocalDate: string; Long: number; Upload: File; UUID: string }
   disableMasking: true
 }>()
 

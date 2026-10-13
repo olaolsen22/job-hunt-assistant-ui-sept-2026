@@ -9,7 +9,9 @@ remove it when you delete one.
   header shows when either is given). Default wrapper for page sections.
 - `<AppMonthField v-model v-model:partial? disabled?>` — month `USelect` + year `UInputNumber`; model is `'YYYY-MM-01' | null`
   and is `null` whenever either part is empty; `partial` is true while only one part is set. Used by every dated profile entry.
-- `<AppAiCostNotice :usage?>` — warning that built-in parsing bills the app's AI key, with today's `LlmUsage` when given; used by `ListingsParseModal` and `ProfileCvImportModal`.
+- `<AppAiCostNotice :usage?>` — says who pays for built-in AI: the app's AI key (warning), or the owner's own provider key when the default model's `keySource` is `USER` (info, with what is left of that provider's daily limit via `useLlmCallLimits`, fetched only then). Shows today's `LlmUsage` (for the default model, named by label) when given, names the default model (via `useLlmModels`) and links to `/settings` to change it. Used by `ListingsParseModal`, `ProfileCvImportModal` and `ListingsTailoredCvAiModal`.
+- `<AppAiRetryConfirm :message loading? @retry>` — warning shown instead of the usual error after an AI call returned `operation-interrupted` or `result-unavailable`; its "Try again (may be charged)" button is the only way to send another attempt (`useAiRequest().needsConfirm`).
+- `<AppAiLimitLink>` — "Daily limits in Settings" button for a `daily-limit-reached` AI error, placed in the error alert's `actions` slot.
 - `<AppConfirmModal v-model:open title description? confirm-label? loading? disabled? @confirm>` — confirm
   dialog with Cancel / confirm buttons; not dismissible while `loading`. The default slot is the
   body, so form modals (`<ListingsApplyModal>` etc.) wrap it too.
@@ -104,13 +106,16 @@ remove it when you delete one.
 
 ## Composables (`app/composables/`)
 
-- `useCollectedJobProcessing(parse)` — page-local sequential runner. `start`, `retry`, `skip`, `stop`, and `invalidate` control `idle`/`running`/`paused`/`finished`/`stopped`; `accepted` holds validated raw drafts in order. `completed`, `skipped`, `unprocessed`, `currentBatch`, `total`, `error`, and `busy` support progress and recovery UI. `markPublished()` is a one-shot guard for appending drafts.
+- `useAiRequest()` → `{ attempt(input, request), safetyCode, safetyMessage, needsConfirm, confirmRetry }` — one per AI action. `attempt` passes a `requestId` to `request`: a new one per action, the same one only when the previous attempt got no answer and `input` is unchanged. It records the `AiSafetyError` code/message of the answer; `needsConfirm` is true after `operation-interrupted` / `result-unavailable` until `confirmRetry()`. `aiSafetyCode(errors)` reads the code. Used by `useParsePrompt`, `useProfileCvImport` and `useTailoredCvDraft`, which also return `needsConfirm`, `safetyMessage` and `confirmRetry`.
+- `useProviderKeys()` → `{ keys, status, error, saving, setKey(provider, apiKey), removing, removeKey(provider) }` — Owner only; `providerKeys` under key `provider-keys`. `setKey` returns the API's message or nothing; both mutations patch the row and refresh the models, limits and usage. `useLlmCallLimits(immediate = true)` → `{ limits, status, error, refresh, execute, saving, setLimit(provider, limit | null) }` — `llmCallLimits` under key `llm-call-limits` (null = no limit, 0 = paused). Types `ProviderKey`, `LlmCallLimit`.
+- `useCollectedJobProcessing(parse)` — page-local sequential runner. `start`, `retry`, `skip`, `stop`, and `invalidate` control `idle`/`running`/`paused`/`finished`/`stopped`; `accepted` holds validated raw drafts in order. `completed`, `skipped`, `unprocessed`, `currentBatch`, `total`, `error`, `errorCode` (the failed batch's `AiSafetyError` code), and `busy` support progress and recovery UI. `markPublished()` is a one-shot guard for appending drafts.
 
 - `LISTING_COMPARE_FIELDS` fragment + `ComparedListing` type (`composables/listingCompareFields.ts`) — fields the compare modal needs.
 - `CONTACT_FIELDS` fragment + `CompanyContact` type (`composables/contactFields.ts`) — contact shape for company and listing queries.
 - `useListing(id)` → `{ listing, loading, error, refresh }` — client-only `listingById` query with every
   field (key `listing-${id}`), incl. application status, history, interviews and documents, for the
   detail and edit pages. Also exports `ListingDetail`.
+- `useLlmModels()` → `{ models, defaultModel, status, error, refresh, label(id), modelToSend(pick), setDefault(model | null), saving }` — `llmModels` under key `llm-models`; `dedupe: 'defer'` plus `getCachedData` make every caller on a page share one request, and only `refresh()` refetches. `modelToSend` turns the default into `undefined` so the server's default applies. `setDefault` (via `useMutation`) writes the returned list and refreshes `dashboard-llm-usage`. `isUnknownModel(errors)` checks for `UnknownLlmModelError`; the parse composables refetch on it and return `unknownModel: true`.
 - `useMutation(onStale?)` → `{ run, loading }` — `run(async () => payload.errors)` toasts the API's
   error message (or a generic one on a network error) and resolves `true` on success; a
   `*NotFoundError` calls `onStale` to refetch.
@@ -153,6 +158,7 @@ remove it when you delete one.
 
 ## Utils (`app/utils/`, auto-imported)
 
+- `providerLabel(provider)` (`aiProviders.ts`) — display name of an AI provider id (`openai` → OpenAI), the id itself when unknown.
 - `collectedJobs.ts` — `parseCollectedJobs(source)` validates full listing JSON objects by URL, preserving every field without requiring text; `prepareCollectedJobs(source)` checks authenticated URL batches (≤100), maps indexes and filters normalized repeats across batches, returns `{ rows, remaining, skipped }` only after all succeed; `collectedJobsPosting(rows)` serializes the retained complete objects as JSON (empty rows yield no payload). Exports `CollectedJob`, `PreparedJobs`.
 - `collectedJobBatches.ts` — `planCollectedJobBatches(rows)` preserves full objects and input order in consecutive batches of at most 20 jobs and 12,000 compact JSON characters; throws `OversizedCollectedJobError(index)` before processing if one object cannot fit. `collectedJobBatchPosting(batch)` is the exact compact request text. `decodeCollectedJobReply(reply, expectedCount)` extracts a JSON array and accepts only the expected count of object values. Exports the two limit constants and `OversizedCollectedJobError`.
 

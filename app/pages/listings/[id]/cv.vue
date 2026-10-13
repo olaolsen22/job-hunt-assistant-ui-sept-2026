@@ -115,6 +115,16 @@ const runBuiltIn = async () => {
   else await state.analyzeAll()
   refreshUsage()
 }
+// The last run may have been billed without a result; only this explicit choice repeats it.
+const {
+  needsConfirm: aiNeedsConfirm,
+  safetyCode: aiErrorCode,
+  safetyMessage: aiErrorMessage
+} = state
+const retryConfirmed = () => {
+  state.confirmRetry()
+  void runBuiltIn()
+}
 
 const suggestionsFor = (match: (key: TailoredCvSectionKey) => boolean) =>
   suggestions.value
@@ -223,6 +233,25 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
               >Whole CV</UButton
             >
           </div>
+          <AppAiRetryConfirm
+            v-if="aiNeedsConfirm && !analyzing"
+            :message="aiErrorMessage"
+            class="mt-3"
+            @retry="retryConfirmed"
+          />
+          <UAlert
+            v-else-if="aiErrorCode && !analyzing"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :title="aiErrorMessage"
+            class="mt-3"
+            data-testid="tailored-cv-ai-error"
+          >
+            <template v-if="aiErrorCode === 'daily-limit-reached'" #actions>
+              <AppAiLimitLink />
+            </template>
+          </UAlert>
           <div
             v-if="analyzing"
             class="mt-3 flex flex-wrap items-center gap-x-2 text-sm"
