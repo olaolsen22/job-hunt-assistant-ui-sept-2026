@@ -9,6 +9,12 @@ remove it when you delete one.
   header shows when either is given). Default wrapper for page sections.
 - `<AppMonthField v-model v-model:partial? disabled?>` — month `USelect` + year `UInputNumber`; model is `'YYYY-MM-01' | null`
   and is `null` whenever either part is empty; `partial` is true while only one part is set. Used by every dated profile entry.
+- `<AppCompareBlock current? suggested? current-label? suggested-label? compare?>` — the one layout for reviewing a
+  saved value against an AI suggestion or CV import: labelled "Current" then "Suggested" columns, side by side from `sm`,
+  muted "Empty" for blanks. `#suggested` replaces the plain text with an editable field; `compare: false` renders only
+  that slot (new item, nothing saved). Columns carry `compare-current` / `compare-suggested` test ids. Screens keep their
+  own include/dismiss/remove controls. Used by `ListingsTailoredCvSuggestion`, `ProfileSkillWordingModal`,
+  `ProfileSkillCleanupModal`, `ProfileCvReview` and `ProfileCvEntryReview`.
 - `<AppAiCostNotice :usage?>` — says who pays for built-in AI: the app's AI key (warning), or the owner's own provider key when the default model's `keySource` is `USER` (info, with what is left of that provider's daily limit via `useLlmCallLimits`, fetched only then). Shows today's `LlmUsage` (for the default model, named by label) when given, names the default model (via `useLlmModels`) and links to `/settings` to change it. Used by `ListingsParseModal`, `ProfileCvImportModal` and `ListingsTailoredCvAiModal`.
 - `<AppAiRetryConfirm :message loading? @retry>` — warning shown instead of the usual error after an AI call returned `operation-interrupted` or `result-unavailable`; its "Try again (may be charged)" button is the only way to send another attempt (`useAiRequest().needsConfirm`).
 - `<AppAiLimitLink>` — "Daily limits in Settings" button for a `daily-limit-reached` AI error, placed in the error alert's `actions` slot.

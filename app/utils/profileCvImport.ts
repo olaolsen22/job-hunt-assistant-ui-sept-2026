@@ -3,6 +3,7 @@ import type { CvCandidate, CvSelection } from '~/composables/useProfileCvImport'
 import type { ProfileData } from '~/composables/useProfile'
 import type { SkillCategory } from '~/constants/listing'
 import { PROFICIENCY_OPTIONS } from '~/constants/listing'
+import { formatLocation } from '~/utils/formatLocation'
 import { isHttpUrl } from '~/utils/isHttpUrl'
 import { locationInput } from '~/utils/locationInput'
 
@@ -11,6 +12,8 @@ export type CvHistory = (typeof CV_HISTORY)[number]
 export type CvAction = 'add' | 'update' | 'skip'
 // No country means no location, as in `ProfileLocationField`.
 export type CvLocation = { countryCode?: string; city?: string }
+export const formatCvLocation = ({ countryCode, city }: CvLocation) =>
+  countryCode ? formatLocation({ countryCode, city }) : null
 export type CvBulletDraft = { action: CvAction; id?: number; text: string }
 export type CvEntryDraft = {
   action: CvAction

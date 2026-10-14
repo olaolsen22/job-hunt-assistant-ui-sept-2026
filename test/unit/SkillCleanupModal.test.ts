@@ -110,7 +110,7 @@ afterEach(() => mounted.splice(0).forEach((w) => w.unmount()))
 describe('SkillCleanupModal', () => {
   it('labels a merge with the current names and applies the edited plan', async () => {
     const wrapper = await suggest()
-    expect(query('cleanup-from')!.textContent).toBe('JS, Javascript')
+    expect(query('compare-current')!.textContent!.trim()).toBe('JS, Javascript')
     expect(document.body.textContent).toContain('Merge')
 
     const input = query('cleanup-name') as HTMLInputElement
@@ -133,7 +133,9 @@ describe('SkillCleanupModal', () => {
       { skillName: 'Testing', language: 'NORWEGIAN', name: 'Testing' }
     ]
     await suggest()
-    expect(query('cleanup-translation')!.textContent).toContain('Code review → Norwegian:')
+    const translation = query('cleanup-translation')!.textContent
+    expect(translation).toContain('Code review')
+    expect(translation).toContain('Norwegian name')
 
     await click('cleanup-translation-remove')
     const input = query('cleanup-translation-name') as HTMLInputElement

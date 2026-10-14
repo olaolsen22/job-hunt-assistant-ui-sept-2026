@@ -103,7 +103,7 @@ afterEach(() => mounted.splice(0).forEach((w) => w.unmount()))
 describe('SkillWordingModal', () => {
   it('shows before and after, and applies only the ticked, edited changes', async () => {
     const wrapper = await suggest()
-    expect(queryAll('wording-before').map((p) => p.textContent?.trim())).toEqual([
+    expect(queryAll('compare-current').map((p) => p.textContent?.trim())).toEqual([
       'JS dev',
       'Built apps in JS',
       'Wrote tests'

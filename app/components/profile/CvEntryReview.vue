@@ -75,6 +75,13 @@ const subtitle = computed(() =>
       ? entry.value.issuer
       : ''
 )
+// The saved entry's values for the comparison when updating one.
+const currentText = (key: string) => {
+  const value = target.value?.[key as keyof NonNullable<typeof target.value>]
+  return typeof value === 'string' ? value : null
+}
+const currentBullet = (id: number | undefined) =>
+  target.value?.bullets.find((b) => b.id === id)?.text
 // CV import only runs on English-primary profiles, so its dates are English like the profile's.
 const CV_LOCALE = 'en-GB'
 
@@ -88,6 +95,23 @@ const dates = computed(() =>
         CV_LOCALE
       )
 )
+const currentLocation = computed(() =>
+  target.value && 'location' in target.value && target.value.location
+    ? formatLocation(target.value.location)
+    : null
+)
+const currentSkills = computed(() =>
+  target.value && 'skills' in target.value
+    ? target.value.skills.map((s) => s.name).join(', ')
+    : null
+)
+const currentDates = computed(() => {
+  const t = target.value
+  if (!t) return null
+  return 'startMonth' in t
+    ? formatMonthRange(t.startMonth, t.endMonth, undefined, CV_LOCALE)
+    : formatMonthRange(t.issuedMonth, t.expiresMonth, undefined, CV_LOCALE)
+})
 </script>
 
 <template>
@@ -139,82 +163,79 @@ const dates = computed(() =>
             @update:model-value="changeTarget"
           />
         </ProfileCvField>
-        <details v-if="target" class="text-sm text-muted">
-          <summary class="cursor-pointer">Current saved values</summary>
-          <dl class="mt-2 space-y-1">
-            <template v-for="field in fields" :key="field.key">
-              <dt class="font-medium">{{ field.label }}</dt>
-              <dd class="break-words">
-                {{ (field.key in target && target[field.key as keyof typeof target]) || '—' }}
-              </dd>
-            </template>
-            <dt class="font-medium">Dates</dt>
-            <dd>
-              {{
-                ('startMonth' in target
-                  ? formatMonthRange(target.startMonth, target.endMonth, undefined, CV_LOCALE)
-                  : formatMonthRange(
-                      target.issuedMonth,
-                      target.expiresMonth,
-                      undefined,
-                      CV_LOCALE
-                    )) || '—'
-              }}
-            </dd>
-            <template v-if="'location' in target"
-              ><dt class="font-medium">Location</dt>
-              <dd>{{ target.location ? formatLocation(target.location) : '—' }}</dd></template
-            >
-            <template v-if="'skills' in target"
-              ><dt class="font-medium">Skills</dt>
-              <dd>{{ target.skills.map((s) => s.name).join(', ') || '—' }}</dd></template
-            >
-          </dl>
-        </details>
-        <div class="grid gap-4 sm:grid-cols-2">
+        <!-- An update compares each field with the saved entry; a new entry has nothing to compare. -->
+        <div class="grid gap-4" :class="{ 'sm:grid-cols-2': !target }">
           <ProfileCvField
             v-for="field in fields"
             :key="field.key"
             :path="`${path}.${field.key}`"
             :label="field.label"
           >
-            <UInput
-              v-model="entry[field.key]"
-              class="w-full"
-              :data-testid="`${path}-${field.key}`"
-            />
+            <AppCompareBlock
+              :compare="!!target"
+              :current="currentText(field.key)"
+              suggested-label="From your CV"
+            >
+              <template #suggested>
+                <UInput
+                  v-model="entry[field.key]"
+                  class="w-full"
+                  :data-testid="`${path}-${field.key}`"
+                />
+              </template>
+            </AppCompareBlock>
           </ProfileCvField>
-          <template v-if="kind === 'certifications'">
-            <ProfileCvField :path="`${path}.issuedMonth`" label="Issued month"
-              ><AppMonthField v-model="entry.issuedMonth"
-            /></ProfileCvField>
-            <ProfileCvField :path="`${path}.expiresMonth`" label="Expiry month"
-              ><AppMonthField v-model="entry.expiresMonth"
-            /></ProfileCvField>
-          </template>
-          <template v-else>
-            <ProfileCvField :path="`${path}.startMonth`" label="Start month"
-              ><AppMonthField v-model="entry.startMonth"
-            /></ProfileCvField>
-            <div class="space-y-2">
-              <ProfileCvField :path="`${path}.endMonth`" label="End month"
-                ><AppMonthField v-model="entry.endMonth"
-              /></ProfileCvField>
-              <!-- Outside the field: a checkbox inside it would share the month input's id. -->
-              <UCheckbox
-                v-if="(kind === 'experiences' || kind === 'educations') && !entry.endMonth"
-                v-model="entry.confirmedOngoing"
-                label="Current"
-                :data-testid="`${path}-ongoing`"
-              />
+        </div>
+        <AppCompareBlock
+          :compare="!!target"
+          :current="currentDates"
+          current-label="Current dates"
+          suggested-label="From your CV"
+        >
+          <template #suggested>
+            <div class="grid gap-4" :class="{ 'sm:grid-cols-2': !target }">
+              <template v-if="kind === 'certifications'">
+                <ProfileCvField :path="`${path}.issuedMonth`" label="Issued month"
+                  ><AppMonthField v-model="entry.issuedMonth"
+                /></ProfileCvField>
+                <ProfileCvField :path="`${path}.expiresMonth`" label="Expiry month"
+                  ><AppMonthField v-model="entry.expiresMonth"
+                /></ProfileCvField>
+              </template>
+              <template v-else>
+                <ProfileCvField :path="`${path}.startMonth`" label="Start month"
+                  ><AppMonthField v-model="entry.startMonth"
+                /></ProfileCvField>
+                <div class="space-y-2">
+                  <ProfileCvField :path="`${path}.endMonth`" label="End month"
+                    ><AppMonthField v-model="entry.endMonth"
+                  /></ProfileCvField>
+                  <!-- Outside the field: a checkbox inside it would share the month input's id. -->
+                  <UCheckbox
+                    v-if="(kind === 'experiences' || kind === 'educations') && !entry.endMonth"
+                    v-model="entry.confirmedOngoing"
+                    label="Current"
+                    :data-testid="`${path}-ongoing`"
+                  />
+                </div>
+              </template>
             </div>
           </template>
-        </div>
+        </AppCompareBlock>
         <ProfileCvField v-if="kind !== 'certifications'" :path="`${path}.location`">
-          <ProfileLocationField
-            v-model:country-code="entry.location.countryCode"
-            v-model:city="entry.location.city"
-          />
+          <AppCompareBlock
+            :compare="!!target"
+            :current="currentLocation"
+            current-label="Current location"
+            suggested-label="From your CV"
+          >
+            <template #suggested>
+              <ProfileLocationField
+                v-model:country-code="entry.location.countryCode"
+                v-model:city="entry.location.city"
+              />
+            </template>
+          </AppCompareBlock>
         </ProfileCvField>
         <ProfileCvField
           v-if="kind === 'experiences' || kind === 'projects'"
@@ -222,7 +243,15 @@ const dates = computed(() =>
           label="Skill tags"
           help="Missing profile skills are added at level 1; existing levels stay unchanged."
         >
-          <ProfileNamesField v-model="entry.skillNames" lookup="skills" />
+          <AppCompareBlock
+            :compare="!!target"
+            :current="currentSkills"
+            suggested-label="From your CV"
+          >
+            <template #suggested>
+              <ProfileNamesField v-model="entry.skillNames" lookup="skills" />
+            </template>
+          </AppCompareBlock>
         </ProfileCvField>
         <div class="space-y-1">
           <p class="text-sm font-medium text-highlighted">Bullets</p>
@@ -232,18 +261,8 @@ const dates = computed(() =>
           <ProfileCvField :path="`${path}.bullets`" exact />
           <ul class="divide-y divide-default">
             <li v-for="(bullet, i) in entry.bullets" :key="i" class="space-y-2 py-2">
+              <!-- Choices first, so picking the saved bullet adds the comparison below, not above. -->
               <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
-                <ProfileCvField :path="`${path}.bullets[${i}].text`" class="min-w-0 flex-1">
-                  <UTextarea
-                    v-model="bullet.text"
-                    :rows="2"
-                    autoresize
-                    :disabled="bullet.action === 'skip'"
-                    :aria-label="`Bullet ${i + 1}`"
-                    class="w-full"
-                    :data-testid="`${path}-bullet-${i}-text`"
-                  />
-                </ProfileCvField>
                 <USelect
                   v-model="bullet.action"
                   :items="bulletActions"
@@ -251,9 +270,11 @@ const dates = computed(() =>
                   class="w-full sm:w-40"
                   :data-testid="`${path}-bullet-${i}-action`"
                 />
-              </div>
-              <template v-if="bullet.action === 'update'">
-                <ProfileCvField :path="`${path}.bullets[${i}].id`">
+                <ProfileCvField
+                  v-if="bullet.action === 'update'"
+                  :path="`${path}.bullets[${i}].id`"
+                  class="min-w-0 flex-1"
+                >
                   <USelect
                     v-model="bullet.id"
                     :items="bulletTargets"
@@ -263,10 +284,26 @@ const dates = computed(() =>
                     :data-testid="`${path}-bullet-${i}-target`"
                   />
                 </ProfileCvField>
-                <p v-if="bullet.id" class="break-words text-sm text-muted">
-                  Current: {{ target?.bullets.find((b) => b.id === bullet.id)?.text }}
-                </p>
-              </template>
+              </div>
+              <AppCompareBlock
+                :compare="bullet.action === 'update' && !!bullet.id"
+                :current="currentBullet(bullet.id)"
+                suggested-label="From your CV"
+              >
+                <template #suggested>
+                  <ProfileCvField :path="`${path}.bullets[${i}].text`">
+                    <UTextarea
+                      v-model="bullet.text"
+                      :rows="2"
+                      autoresize
+                      :disabled="bullet.action === 'skip'"
+                      :aria-label="`Bullet ${i + 1}`"
+                      class="w-full"
+                      :data-testid="`${path}-bullet-${i}-text`"
+                    />
+                  </ProfileCvField>
+                </template>
+              </AppCompareBlock>
               <ProfileCvField :path="`${path}.bullets[${i}]`" exact />
             </li>
           </ul>

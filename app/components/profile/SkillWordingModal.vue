@@ -5,7 +5,8 @@ import type { ProfileData } from '~/composables/useProfile'
 import type { SkillWording } from '~/composables/useSkillWording'
 
 // Rewrites skill names in bullets, headline and summary to match the cleaned-up skills. Each change
-// is shown before → after and can be unticked or edited. Translations of changed text go stale.
+// is shown current, then suggested, and can be unticked or edited. Translations of changed text
+// go stale.
 const { profile } = defineProps<{ profile: ProfileData }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
@@ -226,28 +227,20 @@ const modalOpen = computed({
                   "
                   data-testid="wording-include"
                 />
-                <div class="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-start">
-                  <p
-                    class="whitespace-pre-wrap break-words text-sm text-muted"
-                    data-testid="wording-before"
-                  >
-                    {{ row.before || '—' }}
-                  </p>
-                  <UIcon
-                    name="i-lucide-arrow-right"
-                    class="size-5 justify-self-center text-muted max-sm:rotate-90"
-                  />
-                  <UTextarea
-                    v-model="row.text"
-                    :disabled="!row.include"
-                    :rows="2"
-                    autoresize
-                    class="w-full"
-                    :aria-label="`New ${row.label.toLowerCase()} text`"
-                    :color="row.include && !row.text.trim() ? 'error' : undefined"
-                    data-testid="wording-text"
-                  />
-                </div>
+                <AppCompareBlock :current="row.before">
+                  <template #suggested>
+                    <UTextarea
+                      v-model="row.text"
+                      :disabled="!row.include"
+                      :rows="2"
+                      autoresize
+                      class="w-full"
+                      :aria-label="`New ${row.label.toLowerCase()} text`"
+                      :color="row.include && !row.text.trim() ? 'error' : undefined"
+                      data-testid="wording-text"
+                    />
+                  </template>
+                </AppCompareBlock>
               </li>
             </ul>
           </template>

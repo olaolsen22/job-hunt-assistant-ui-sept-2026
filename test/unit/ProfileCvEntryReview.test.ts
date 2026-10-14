@@ -38,7 +38,10 @@ describe('CV entry review controls', () => {
       location: { countryCode: 'NO', city: 'Oslo' },
       skillNames: ['Vue']
     })
-    expect(wrapper.text()).toContain('Current saved values')
+    // The saved entry shows beside the imported values.
+    expect(wrapper.find('[data-testid="compare-current"]').text()).toBe(
+      profile.experiences[0]!.employer
+    )
     select('experiences[0]-bullet-0-action').vm.$emit('update:modelValue', 'update')
     await flushPromises()
     const bullet = select('experiences[0]-bullet-0-target')

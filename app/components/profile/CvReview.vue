@@ -6,6 +6,7 @@ import {
   CV_ISSUES,
   cvPathWithin,
   cvSavedSkill,
+  formatCvLocation,
   type CvDraft,
   type CvIssue
 } from '~/utils/profileCvImport'
@@ -101,38 +102,53 @@ defineExpose({ focusIssue })
       <p class="text-sm text-muted">
         Included fields replace your saved values; an empty value clears one.
       </p>
+      <!-- Unticked fields stay as a read-only comparison, so the saved value is always in view. -->
       <div v-for="key in CV_BASIC_FIELDS" :key="key" class="space-y-2">
         <UCheckbox v-model="draft.basics[key].include" :label="labels[key]" />
-        <ProfileCvField v-if="draft.basics[key].include" :path="`basics.${key}`">
-          <UTextarea
-            v-if="key === 'summary'"
-            v-model="draft.basics[key].value"
-            :rows="4"
-            autoresize
-            :aria-label="labels[key]"
-            class="w-full"
-            :data-testid="`cv-${key}`"
-          />
-          <UInput
-            v-else
-            v-model="draft.basics[key].value"
-            :aria-label="labels[key]"
-            class="w-full"
-            :data-testid="`cv-${key}`"
-          />
-          <p class="mt-1 break-words text-sm text-muted">Current: {{ profile[key] || '—' }}</p>
-        </ProfileCvField>
+        <AppCompareBlock
+          :current="profile[key]"
+          :suggested="draft.basics[key].value"
+          suggested-label="From your CV"
+        >
+          <template v-if="draft.basics[key].include" #suggested>
+            <ProfileCvField :path="`basics.${key}`">
+              <UTextarea
+                v-if="key === 'summary'"
+                v-model="draft.basics[key].value"
+                :rows="4"
+                autoresize
+                :aria-label="labels[key]"
+                class="w-full"
+                :data-testid="`cv-${key}`"
+              />
+              <UInput
+                v-else
+                v-model="draft.basics[key].value"
+                :aria-label="labels[key]"
+                class="w-full"
+                :data-testid="`cv-${key}`"
+              />
+            </ProfileCvField>
+          </template>
+        </AppCompareBlock>
       </div>
-      <UCheckbox v-model="draft.location.include" label="Location" />
-      <ProfileCvField v-if="draft.location.include" path="basics.location">
-        <ProfileLocationField
-          v-model:country-code="draft.location.value.countryCode"
-          v-model:city="draft.location.value.city"
-        />
-        <p class="mt-1 text-sm text-muted">
-          Current: {{ profile.location ? formatLocation(profile.location) : '—' }}
-        </p>
-      </ProfileCvField>
+      <div class="space-y-2">
+        <UCheckbox v-model="draft.location.include" label="Location" />
+        <AppCompareBlock
+          :current="profile.location && formatLocation(profile.location)"
+          :suggested="formatCvLocation(draft.location.value)"
+          suggested-label="From your CV"
+        >
+          <template v-if="draft.location.include" #suggested>
+            <ProfileCvField path="basics.location">
+              <ProfileLocationField
+                v-model:country-code="draft.location.value.countryCode"
+                v-model:city="draft.location.value.city"
+              />
+            </ProfileCvField>
+          </template>
+        </AppCompareBlock>
+      </div>
     </ProfileCvSection>
 
     <ProfileCvSection title="Links" icon="i-lucide-link" path="links">

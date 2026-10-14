@@ -217,72 +217,71 @@ const modalOpen = computed({
                     @click="removeRow(row)"
                   />
                 </div>
-                <div class="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-start">
-                  <p class="break-words" data-testid="cleanup-from">{{ currentNames(row) }}</p>
-                  <UIcon
-                    name="i-lucide-arrow-right"
-                    class="size-5 justify-self-center text-muted max-sm:rotate-90"
-                  />
-                  <div v-if="!isInvalid(row)" class="space-y-2">
-                    <div v-for="(_, i) in row.names" :key="i" class="flex items-center gap-2">
-                      <UInput
-                        v-model="row.names[i]"
-                        class="min-w-0 flex-1"
-                        :aria-label="`New skill name ${i + 1}`"
-                        :color="row.names[i]?.trim() ? undefined : 'error'"
-                        data-testid="cleanup-name"
-                      />
+                <AppCompareBlock :current="currentNames(row)" :suggested="row.names.join(', ')">
+                  <template v-if="!isInvalid(row)" #suggested>
+                    <div class="space-y-2">
+                      <div v-for="(_, i) in row.names" :key="i" class="flex items-center gap-2">
+                        <UInput
+                          v-model="row.names[i]"
+                          class="min-w-0 flex-1"
+                          :aria-label="`New skill name ${i + 1}`"
+                          :color="row.names[i]?.trim() ? undefined : 'error'"
+                          data-testid="cleanup-name"
+                        />
+                        <UButton
+                          icon="i-lucide-x"
+                          color="neutral"
+                          variant="ghost"
+                          aria-label="Remove name"
+                          :disabled="row.names.length <= 1"
+                          @click="removeName(row, i)"
+                        />
+                      </div>
                       <UButton
-                        icon="i-lucide-x"
+                        icon="i-lucide-plus"
                         color="neutral"
-                        variant="ghost"
-                        aria-label="Remove name"
-                        :disabled="row.names.length <= 1"
-                        @click="removeName(row, i)"
-                      />
+                        variant="link"
+                        size="sm"
+                        :disabled="row.names.length >= MAX_NAMES"
+                        data-testid="cleanup-add-name"
+                        @click="addName(row)"
+                        >Add name</UButton
+                      >
                     </div>
-                    <UButton
-                      icon="i-lucide-plus"
-                      color="neutral"
-                      variant="link"
-                      size="sm"
-                      :disabled="row.names.length >= MAX_NAMES"
-                      data-testid="cleanup-add-name"
-                      @click="addName(row)"
-                      >Add name</UButton
-                    >
-                  </div>
-                </div>
+                  </template>
+                </AppCompareBlock>
               </li>
             </ul>
             <!-- Names refer to the skills after the operations above, so they can't be tied to a row. -->
             <section v-if="translationRows.length" class="space-y-2">
               <h3 class="text-sm font-medium">Translated names</h3>
-              <ul class="space-y-2">
-                <li
-                  v-for="t in translationRows"
-                  :key="t.key"
-                  class="flex flex-wrap items-center gap-2"
-                  data-testid="cleanup-translation"
-                >
-                  <span class="min-w-0 break-words text-sm"
-                    >{{ t.skillName }} → {{ languageLabel(t) }}:</span
+              <ul class="space-y-3">
+                <li v-for="t in translationRows" :key="t.key" data-testid="cleanup-translation">
+                  <AppCompareBlock
+                    :current="t.skillName"
+                    current-label="Skill"
+                    :suggested-label="`${languageLabel(t)} name`"
                   >
-                  <UInput
-                    v-model="t.name"
-                    class="min-w-40 flex-1"
-                    :aria-label="`${languageLabel(t)} name for ${t.skillName}`"
-                    :color="t.name.trim() ? undefined : 'error'"
-                    data-testid="cleanup-translation-name"
-                  />
-                  <UButton
-                    icon="i-lucide-trash-2"
-                    color="neutral"
-                    variant="ghost"
-                    :aria-label="`Remove translation for ${t.skillName}`"
-                    data-testid="cleanup-translation-remove"
-                    @click="removeTranslation(t)"
-                  />
+                    <template #suggested>
+                      <div class="flex items-center gap-2">
+                        <UInput
+                          v-model="t.name"
+                          class="min-w-0 flex-1"
+                          :aria-label="`${languageLabel(t)} name for ${t.skillName}`"
+                          :color="t.name.trim() ? undefined : 'error'"
+                          data-testid="cleanup-translation-name"
+                        />
+                        <UButton
+                          icon="i-lucide-trash-2"
+                          color="neutral"
+                          variant="ghost"
+                          :aria-label="`Remove translation for ${t.skillName}`"
+                          data-testid="cleanup-translation-remove"
+                          @click="removeTranslation(t)"
+                        />
+                      </div>
+                    </template>
+                  </AppCompareBlock>
                 </li>
               </ul>
             </section>

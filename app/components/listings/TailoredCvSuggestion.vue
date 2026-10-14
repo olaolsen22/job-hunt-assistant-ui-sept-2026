@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// One AI suggestion for a section: the current and suggested text side by side from lg, stacked
-// (suggestion first, as that's what's being decided) below it. Accept/Dismiss only touch the editor.
+// One AI suggestion for a section, compared with the current text. Accept/Dismiss only touch the
+// editor.
 defineProps<{ label?: string; current: string; suggested: string }>()
 const emit = defineEmits<{ accept: []; dismiss: [] }>()
 </script>
@@ -14,16 +14,7 @@ const emit = defineEmits<{ accept: []; dismiss: [] }>()
       <UBadge color="primary" variant="subtle" icon="i-lucide-sparkles">Suggested by AI</UBadge>
       <span v-if="label" class="text-sm font-medium text-highlighted">{{ label }}</span>
     </div>
-    <div class="grid gap-3 lg:grid-cols-2">
-      <div class="space-y-1 lg:order-2">
-        <p class="text-xs text-muted">Suggested</p>
-        <p class="whitespace-pre-line break-words text-sm">{{ suggested || 'Nothing' }}</p>
-      </div>
-      <div class="space-y-1 lg:order-1">
-        <p class="text-xs text-muted">Current</p>
-        <p class="whitespace-pre-line break-words text-sm text-muted">{{ current || 'Nothing' }}</p>
-      </div>
-    </div>
+    <AppCompareBlock :current="current" :suggested="suggested" />
     <div class="flex gap-2 sm:justify-end">
       <UButton
         color="neutral"
