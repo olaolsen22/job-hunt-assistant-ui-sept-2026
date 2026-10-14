@@ -8,6 +8,7 @@ import { llmModels } from '../fixtures/llmModels'
 let applyError = ''
 let skillsError = ''
 let suggested: { skillIds: number[]; names: string[] }[] = []
+let suggestedTranslations: { skillName: string; language: string; name: string }[] = []
 const requests: { query: string; variables?: Record<string, unknown> }[] = []
 registerEndpoint('/graphql', {
   method: 'POST',
@@ -35,7 +36,12 @@ registerEndpoint('/graphql', {
       return {
         data: {
           suggestSkillCleanup: {
-            result: { status: 'SUCCEEDED', error: null, operations: suggested },
+            result: {
+              status: 'SUCCEEDED',
+              error: null,
+              operations: suggested,
+              translations: suggestedTranslations
+            },
             errors: null
           }
         }
@@ -96,6 +102,7 @@ beforeEach(() => {
   applyError = ''
   skillsError = ''
   suggested = [{ skillIds: [1, 2], names: ['JavaScript'] }]
+  suggestedTranslations = []
   requests.length = 0
 })
 afterEach(() => mounted.splice(0).forEach((w) => w.unmount()))
@@ -113,9 +120,33 @@ describe('SkillCleanupModal', () => {
 
     await vi.waitFor(() => expect(wrapper.emitted('changed')).toHaveLength(1))
     expect(applyRequests()[0]!.variables).toEqual({
-      operations: [{ skillIds: [1, 2], names: ['JavaScript'] }]
+      operations: [{ skillIds: [1, 2], names: ['JavaScript'] }],
+      translations: []
     })
     expect(wrapper.emitted('update:open')?.at(-1)).toEqual([false])
+  })
+
+  it('applies an edited translation even when there are no operations', async () => {
+    suggested = []
+    suggestedTranslations = [
+      { skillName: 'Code review', language: 'NORWEGIAN', name: 'Kodegjennomgang' },
+      { skillName: 'Testing', language: 'NORWEGIAN', name: 'Testing' }
+    ]
+    await suggest()
+    expect(query('cleanup-translation')!.textContent).toContain('Code review → Norwegian:')
+
+    await click('cleanup-translation-remove')
+    const input = query('cleanup-translation-name') as HTMLInputElement
+    expect(input.value).toBe('Testing')
+    input.value = ' Testing og QA '
+    input.dispatchEvent(new Event('input'))
+    await click('cleanup-apply')
+
+    await vi.waitFor(() => expect(applyRequests()).toHaveLength(1))
+    expect(applyRequests()[0]!.variables).toEqual({
+      operations: [],
+      translations: [{ skillName: 'Testing', language: 'NORWEGIAN', name: 'Testing og QA' }]
+    })
   })
 
   it('shows an unknown id as invalid and blocks Apply until it is removed', async () => {

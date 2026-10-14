@@ -4,7 +4,7 @@ import type {
   TailoredCvContent,
   TailoredCvContentInput
 } from '~/composables/useTailoredCvDraft'
-import { LINK_KIND_OPTIONS, PROFICIENCY_OPTIONS } from '~/constants/listing'
+import { LINK_KIND_OPTIONS, PROFICIENCY_OPTIONS, type Language } from '~/constants/listing'
 
 // The editable candidate: the save input with every field present, so forms bind without null checks.
 // Blank strings go back to the API as null (see toTailoredCvInput).
@@ -95,7 +95,7 @@ export const tailoredCvFromProfile = (profile: ProfileData): TailoredCv => ({
     bullets: bulletsOf(p.bullets),
     sourceEntryId: p.id
   })),
-  skills: profile.skills.map(skillFromProfile),
+  skills: profile.skills.map((s) => skillFromProfile(s, profile.contentLanguage)),
   languages: profile.languages.map((l) => ({ name: l.name, spoken: l.spoken, written: l.written }))
 })
 
@@ -122,8 +122,9 @@ const experienceFromProfile = (e: ProfileData['experiences'][number]): TailoredC
   sourceEntryId: e.id
 })
 
-const skillFromProfile = (s: ProfileData['skills'][number]) => ({
-  name: s.skill.name,
+// The API's prefill already names skills in the draft language; AI-picked skills follow that.
+const skillFromProfile = (s: ProfileData['skills'][number], language?: Language) => ({
+  name: s.skill.translations.find((t) => t.language === language)?.name ?? s.skill.name,
   level: s.level,
   sourceSkillId: s.skill.id,
   category: s.skill.category ?? null
@@ -246,7 +247,7 @@ export const cvSectionFromAnalysis = (
     const value = (result.selectedSkillIds ?? [])
       .map((id) => profile.skills.find((s) => s.skill.id === id))
       .filter((s) => s != null)
-      .map(skillFromProfile)
+      .map((s) => skillFromProfile(s, cv.language))
     return { key: 'skills', value }
   }
   const selected = new Set(result.selectedBulletIds)

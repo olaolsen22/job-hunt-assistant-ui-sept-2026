@@ -1,3 +1,4 @@
+import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 import type { ResultOf } from 'gql.tada'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
@@ -32,6 +33,11 @@ const SUGGEST = graphql(`
           skillIds
           names
         }
+        translations {
+          skillName
+          language
+          name
+        }
       }
       errors {
         __typename
@@ -46,8 +52,11 @@ const SUGGEST = graphql(`
   }
 `)
 const APPLY = graphql(`
-  mutation CleanUpSkills($operations: [SkillCleanupOperationInput!]!) {
-    cleanUpSkills(input: { operations: $operations }) {
+  mutation CleanUpSkills(
+    $operations: [SkillCleanupOperationInput!]!
+    $translations: [SkillCleanupTranslationInput!]
+  ) {
+    cleanUpSkills(input: { operations: $operations, translations: $translations }) {
       skills {
         id
       }
@@ -69,6 +78,8 @@ const failure = (message: string, e: unknown) => {
 }
 
 export type CleanupOperation = { skillIds: number[]; names: string[] }
+export type CleanupTranslation = { skillName: string; language: Language; name: string }
+export type CleanupPlan = { operations: CleanupOperation[]; translations: CleanupTranslation[] }
 type Outcome<T> = { value: T; error?: never; code?: never } | { error: string; code?: string }
 
 const isOperation = (value: unknown): value is CleanupOperation => {
@@ -81,11 +92,33 @@ const isOperation = (value: unknown): value is CleanupOperation => {
   )
 }
 
+const isTranslation = (value: unknown): value is CleanupTranslation => {
+  const t = value as CleanupTranslation | null
+  return (
+    typeof t?.skillName === 'string' &&
+    typeof t.name === 'string' &&
+    LANGUAGE_OPTIONS.some((o) => o.value === t.language)
+  )
+}
+
 // Pasted replies are not pre-filtered: the server validates the plan when it is applied.
-export const parseCleanupReply = (reply: string): CleanupOperation[] | null => {
-  const operations = parseDraft(reply)?.operations
-  return Array.isArray(operations) && operations.every(isOperation)
-    ? operations.map(({ skillIds, names }) => ({ skillIds, names }))
+// Translations are optional in a reply.
+export const parseCleanupReply = (reply: string): CleanupPlan | null => {
+  const draft = parseDraft(reply)
+  const operations = draft?.operations
+  const translations = draft?.translations ?? []
+  return Array.isArray(operations) &&
+    operations.every(isOperation) &&
+    Array.isArray(translations) &&
+    translations.every(isTranslation)
+    ? {
+        operations: operations.map(({ skillIds, names }) => ({ skillIds, names })),
+        translations: translations.map(({ skillName, language, name }) => ({
+          skillName,
+          language,
+          name
+        }))
+      }
     : null
 }
 
@@ -136,7 +169,7 @@ export const useSkillCleanup = () => {
     }
   }
 
-  const suggest = async (): Promise<Outcome<CleanupOperation[]>> => {
+  const suggest = async (): Promise<Outcome<CleanupPlan>> => {
     busy.value = true
     try {
       const payload = await attempt(
@@ -149,10 +182,13 @@ export const useSkillCleanup = () => {
         return { error: payload.errors[0]!.message, code: aiSafetyCode(payload.errors) }
       if (payload.result?.status === 'SUCCEEDED')
         return {
-          value: (payload.result.operations ?? []).map(({ skillIds, names }) => ({
-            skillIds: [...skillIds],
-            names: [...names]
-          }))
+          value: {
+            operations: (payload.result.operations ?? []).map(({ skillIds, names }) => ({
+              skillIds: [...skillIds],
+              names: [...names]
+            })),
+            translations: (payload.result.translations ?? []).map((t) => ({ ...t }))
+          }
         }
       return { error: payload.result?.error ?? ERROR_MESSAGES.generic }
     } catch (e) {
@@ -163,10 +199,10 @@ export const useSkillCleanup = () => {
   }
 
   // All-or-nothing on the server: any error means nothing changed.
-  const apply = async (operations: CleanupOperation[]): Promise<{ error?: string }> => {
+  const apply = async ({ operations, translations }: CleanupPlan): Promise<{ error?: string }> => {
     busy.value = true
     try {
-      const { cleanUpSkills: payload } = await gql(APPLY, { operations })
+      const { cleanUpSkills: payload } = await gql(APPLY, { operations, translations })
       return payload.errors?.length ? { error: payload.errors[0]!.message } : {}
     } catch (e) {
       return { error: failure(ERROR_MESSAGES.generic, e) }

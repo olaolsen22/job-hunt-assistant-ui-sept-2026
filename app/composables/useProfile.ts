@@ -136,6 +136,10 @@ export const PROFILE_FIELDS = graphql(
           id
           name
           category
+          translations {
+            language
+            name
+          }
         }
       }
       languages {

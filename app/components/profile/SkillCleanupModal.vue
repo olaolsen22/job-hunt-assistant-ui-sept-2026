@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { PHONE_FULLSCREEN_MODAL } from '~/constants/ui'
 import { INVALID_DRAFT_JSON } from '~/utils/parseDraft'
-import type { CleanupOperation } from '~/composables/useSkillCleanup'
+import { LANGUAGE_OPTIONS } from '~/constants/listing'
+import type { CleanupPlan, CleanupTranslation } from '~/composables/useSkillCleanup'
 
 // Two ways to get a plan (built-in AI, or your own AI via copy/paste), then a review where each
 // operation can be edited or removed. Nothing changes until Apply, which is all-or-nothing.
@@ -16,6 +17,7 @@ const toast = useToast()
 
 const MAX_NAMES = 10
 type Row = { key: number; skillIds: number[]; names: string[] }
+type TranslationRow = CleanupTranslation & { key: number }
 
 const tab = ref('builtin')
 const reply = ref('')
@@ -24,6 +26,7 @@ const errorCode = ref<string>()
 const applyError = ref('')
 const skillNames = ref(new Map<number, string>())
 const rows = ref<Row[]>()
+const translationRows = ref<TranslationRow[]>([])
 let nextKey = 0
 
 const unknownIds = (row: Row) => row.skillIds.filter((id) => !skillNames.value.has(id))
@@ -35,10 +38,19 @@ const kind = (row: Row) =>
 const currentNames = (row: Row) =>
   row.skillIds.map((id) => skillNames.value.get(id) ?? `Unknown skill #${id}`).join(', ')
 
+const languageLabel = (t: CleanupTranslation) =>
+  LANGUAGE_OPTIONS.find((o) => o.value === t.language)!.label
+
 const problems = computed(
-  () => rows.value?.filter((r) => isInvalid(r) || hasBlank(r) || !namesOk(r)).length ?? 0
+  () =>
+    (rows.value?.filter((r) => isInvalid(r) || hasBlank(r) || !namesOk(r)).length ?? 0) +
+    translationRows.value.filter((t) => !t.name.trim()).length
 )
-const canApply = computed(() => !!rows.value?.length && !problems.value)
+// Zero outside the review, so translations left from a previous plan don't count.
+const changeCount = computed(() =>
+  rows.value ? rows.value.length + translationRows.value.length : 0
+)
+const canApply = computed(() => !!changeCount.value && !problems.value)
 
 watch(
   open,
@@ -56,7 +68,7 @@ watch(error, (value) => {
   if (!value) errorCode.value = undefined
 })
 
-const startReview = async (operations: CleanupOperation[]) => {
+const startReview = async ({ operations, translations }: CleanupPlan) => {
   // Names are only needed to label the plan, so a plan that can't be shown isn't opened.
   const names = await api.loadSkillNames()
   if (names.error !== undefined) {
@@ -65,6 +77,7 @@ const startReview = async (operations: CleanupOperation[]) => {
   }
   skillNames.value = names.value
   rows.value = operations.map((op) => ({ key: nextKey++, ...op }))
+  translationRows.value = translations.map((t) => ({ key: nextKey++, ...t }))
   applyError.value = ''
 }
 const suggest = async () => {
@@ -83,25 +96,35 @@ const retryConfirmed = () => {
   suggest()
 }
 const preview = async () => {
-  const operations = parseCleanupReply(reply.value)
+  const plan = parseCleanupReply(reply.value)
   // The paste stays in the box so it can be fixed.
-  if (!operations) {
+  if (!plan) {
     error.value = `${INVALID_DRAFT_JSON} Expect an "operations" list.`
     return
   }
-  await startReview(operations)
+  await startReview(plan)
 }
 
 const removeRow = (row: Row) => (rows.value = rows.value!.filter((r) => r !== row))
+const removeTranslation = (row: TranslationRow) =>
+  (translationRows.value = translationRows.value.filter((t) => t !== row))
 const addName = (row: Row) => row.names.push('')
 const removeName = (row: Row, i: number) => row.names.splice(i, 1)
 
 const apply = async () => {
   if (!canApply.value || busy.value) return
   applyError.value = ''
-  const result = await api.apply(
-    rows.value!.map((r) => ({ skillIds: r.skillIds, names: r.names.map((n) => n.trim()) }))
-  )
+  const result = await api.apply({
+    operations: rows.value!.map((r) => ({
+      skillIds: r.skillIds,
+      names: r.names.map((n) => n.trim())
+    })),
+    translations: translationRows.value.map(({ skillName, language, name }) => ({
+      skillName,
+      language,
+      name: name.trim()
+    }))
+  })
   if (result.error !== undefined) {
     applyError.value = result.error
     return
@@ -162,14 +185,14 @@ const modalOpen = computed({
         <fieldset :disabled="busy" class="min-w-0 space-y-4">
           <template v-if="rows">
             <div
-              v-if="!rows.length"
+              v-if="!changeCount"
               class="flex flex-col items-center gap-2 py-8 text-center text-muted"
               data-testid="cleanup-empty"
             >
               <UIcon name="i-lucide-sparkles" class="size-8" />
               <p>Nothing to clean up</p>
             </div>
-            <ul v-else class="space-y-3">
+            <ul v-if="rows.length" class="space-y-3">
               <li
                 v-for="row in rows"
                 :key="row.key"
@@ -232,6 +255,37 @@ const modalOpen = computed({
                 </div>
               </li>
             </ul>
+            <!-- Names refer to the skills after the operations above, so they can't be tied to a row. -->
+            <section v-if="translationRows.length" class="space-y-2">
+              <h3 class="text-sm font-medium">Translated names</h3>
+              <ul class="space-y-2">
+                <li
+                  v-for="t in translationRows"
+                  :key="t.key"
+                  class="flex flex-wrap items-center gap-2"
+                  data-testid="cleanup-translation"
+                >
+                  <span class="min-w-0 break-words text-sm"
+                    >{{ t.skillName }} → {{ languageLabel(t) }}:</span
+                  >
+                  <UInput
+                    v-model="t.name"
+                    class="min-w-40 flex-1"
+                    :aria-label="`${languageLabel(t)} name for ${t.skillName}`"
+                    :color="t.name.trim() ? undefined : 'error'"
+                    data-testid="cleanup-translation-name"
+                  />
+                  <UButton
+                    icon="i-lucide-trash-2"
+                    color="neutral"
+                    variant="ghost"
+                    :aria-label="`Remove translation for ${t.skillName}`"
+                    data-testid="cleanup-translation-remove"
+                    @click="removeTranslation(t)"
+                  />
+                </li>
+              </ul>
+            </section>
           </template>
 
           <template v-else>
@@ -305,11 +359,7 @@ const modalOpen = computed({
           class="max-h-40 overflow-y-auto"
           data-testid="cleanup-apply-error"
         />
-        <p
-          v-if="rows?.length && problems"
-          class="text-sm text-error"
-          data-testid="cleanup-problems"
-        >
+        <p v-if="changeCount && problems" class="text-sm text-error" data-testid="cleanup-problems">
           {{ problems }} {{ problems === 1 ? 'change needs' : 'changes need' }} fixing or removing
           before you can apply.
         </p>
@@ -325,12 +375,12 @@ const modalOpen = computed({
               >Back</UButton
             >
             <UButton
-              v-if="rows.length"
+              v-if="changeCount"
               :loading="busy"
               :disabled="!canApply"
               data-testid="cleanup-apply"
               @click="apply"
-              >{{ `Apply ${rows.length} ${rows.length === 1 ? 'change' : 'changes'}` }}</UButton
+              >{{ `Apply ${changeCount} ${changeCount === 1 ? 'change' : 'changes'}` }}</UButton
             >
           </template>
           <UButton

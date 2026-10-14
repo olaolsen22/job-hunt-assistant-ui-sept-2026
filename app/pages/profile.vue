@@ -336,6 +336,7 @@ const contact = computed(() => {
           <div class="space-y-4">
             <ProfileSkillList
               :skills="profile.skills"
+              :profile="profile"
               @changed="refresh"
               @clear="clearTarget = 'SKILLS'"
             />

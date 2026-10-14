@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
-import { SKILL_CATEGORY_OPTIONS, type SkillCategory } from '~/constants/listing'
+import { LANGUAGE_OPTIONS, SKILL_CATEGORY_OPTIONS, type SkillCategory } from '~/constants/listing'
 import type { ProfileSkill } from '~/composables/useProfile'
 
 // Every skill's level and category in one form, plus marking skills for removal. The API takes one skill per
@@ -38,6 +38,32 @@ const SET_CATEGORY = graphql(`
   }
 `)
 
+const SET_TRANSLATION = graphql(`
+  mutation SetSkillTranslation($input: SetSkillTranslationInput!) {
+    setSkillTranslation(input: $input) {
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
+const DELETE_TRANSLATION = graphql(`
+  mutation DeleteSkillTranslation($input: DeleteSkillTranslationInput!) {
+    deleteSkillTranslation(input: $input) {
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
 const REMOVE_SKILL = graphql(`
   mutation RemoveProfileSkill($input: RemoveProfileSkillInput!) {
     removeProfileSkill(input: $input) {
@@ -57,6 +83,10 @@ const NO_CATEGORY = 'NONE'
 const CATEGORY_ITEMS = [{ label: 'Uncategorized', value: NO_CATEGORY }, ...SKILL_CATEGORY_OPTIONS]
 type RowCategory = SkillCategory | typeof NO_CATEGORY
 
+// The page's translation language: the one that isn't the profile's content language.
+const { target } = useProfileTranslation()
+const targetLabel = computed(() => LANGUAGE_OPTIONS.find((o) => o.value === target.value)!.label)
+
 const LEVELS = [1, 2, 3, 4, 5].map((n) => ({ label: String(n), value: n }))
 
 type Row = {
@@ -67,10 +97,16 @@ type Row = {
   level: number
   savedCategory: RowCategory
   category: RowCategory
+  savedTranslation: string
+  translation: string
   remove: boolean
   error?: string
 }
 const rows = ref<Row[]>([])
+
+const translationOf = (s: ProfileSkill) =>
+  s.skill.translations.find((t) => t.language === target.value)?.name ?? ''
+const translationChanged = (r: Row) => r.translation.trim() !== r.savedTranslation
 
 watch(open, (isOpen) => {
   if (!isOpen) return
@@ -82,15 +118,22 @@ watch(open, (isOpen) => {
     level: s.level,
     savedCategory: s.skill.category ?? NO_CATEGORY,
     category: s.skill.category ?? NO_CATEGORY,
+    savedTranslation: translationOf(s),
+    translation: translationOf(s),
     remove: false
   }))
 })
 
 const changed = computed(() =>
-  rows.value.filter((r) => r.remove || r.level !== r.saved || r.category !== r.savedCategory)
+  rows.value.filter(
+    (r) =>
+      r.remove || r.level !== r.saved || r.category !== r.savedCategory || translationChanged(r)
+  )
 )
 // Only pending changes count for the discard guard, so saved rows drop out of it.
-const state = computed(() => changed.value.map((r) => [r.id, r.level, r.category, r.remove]))
+const state = computed(() =>
+  changed.value.map((r) => [r.id, r.level, r.category, r.translation, r.remove])
+)
 const removals = computed(() => changed.value.filter((r) => r.remove))
 const failed = computed(() => rows.value.filter((r) => r.error).length)
 
@@ -122,6 +165,13 @@ const saveRow = async (row: Row) => {
             }
           })
         ).setSkillCategory.errors
+      if (!errors?.length && translationChanged(row)) {
+        const name = row.translation.trim()
+        const input = { skillId: row.id, language: target.value }
+        errors = name
+          ? (await gql(SET_TRANSLATION, { input: { ...input, name } })).setSkillTranslation.errors
+          : (await gql(DELETE_TRANSLATION, { input })).deleteSkillTranslation.errors
+      }
     }
     row.error = errors?.[0]?.message
   } catch {
@@ -132,6 +182,7 @@ const saveRow = async (row: Row) => {
   else {
     row.saved = row.level
     row.savedCategory = row.category
+    row.translation = row.savedTranslation = row.translation.trim()
   }
   return true
 }
@@ -150,7 +201,7 @@ const save = async () => {
   <AppFormModal
     v-model:open="open"
     title="Edit skills"
-    description="Tap a level and pick a category per skill. Each skill saves separately."
+    :description="`Tap a level and pick a category per skill. Add a ${targetLabel} name only for word skills (Code review → Kodegjennomgang), not products. Each skill saves separately.`"
     :state="state"
     :loading="loading"
     :save-label="changed.length ? `Save ${changed.length}` : 'Save'"
@@ -175,6 +226,14 @@ const save = async () => {
           r.name
         }}</span>
         <span v-if="r.years" class="text-sm text-muted">{{ r.years }}</span>
+        <UInput
+          v-model="r.translation"
+          :disabled="r.remove"
+          :placeholder="`${targetLabel} name`"
+          :aria-label="`${r.name} ${targetLabel} name`"
+          class="w-full sm:w-44"
+          data-testid="skills-translation"
+        />
         <div class="flex w-full items-center gap-2 sm:w-auto">
           <ListingsToggleGroup
             v-model="r.level"

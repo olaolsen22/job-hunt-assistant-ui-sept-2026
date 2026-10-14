@@ -141,7 +141,7 @@ const filledProfile = {
       bullets: []
     }
   ],
-  skills: [{ level: 4, experienceMonths: 30, skill: { id: 1, name: 'Vue' } }],
+  skills: [{ level: 4, experienceMonths: 30, skill: { id: 1, name: 'Vue', translations: [] } }],
   languages: [{ id: 1, name: 'English', spoken: 'NATIVE', written: 'GOOD' }]
 }
 
@@ -838,7 +838,7 @@ describe('ProfilePage skills and languages', () => {
       ...filledProfile,
       skills: [
         ...filledProfile.skills,
-        { level: 1, experienceMonths: 0, skill: { id: 2, name: 'Go' } }
+        { level: 1, experienceMonths: 0, skill: { id: 2, name: 'Go', translations: [] } }
       ]
     }
     const { wrapper, requests } = await mountPage(profile, (body) => {

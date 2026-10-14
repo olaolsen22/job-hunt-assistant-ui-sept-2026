@@ -1,14 +1,20 @@
 <script setup lang="ts">
 import { SKILL_CATEGORY_OPTIONS } from '~/constants/listing'
-import type { ProfileSkill } from '~/composables/useProfile'
+import type { ProfileData, ProfileSkill } from '~/composables/useProfile'
 
 // Read-only list; Add opens the single-skill form (it has the name search), Edit the bulk one.
-defineProps<{ skills: readonly ProfileSkill[] }>()
+// `profile` lets the wording review show each bullet's current text.
+defineProps<{ skills: readonly ProfileSkill[]; profile: ProfileData }>()
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const addOpen = ref(false)
 const editOpen = ref(false)
 const cleanupOpen = ref(false)
+const wordingOpen = ref(false)
+
+const { target } = useProfileTranslation()
+const translated = (s: ProfileSkill) =>
+  s.skill.translations.find((t) => t.language === target.value)?.name
 </script>
 
 <template>
@@ -24,7 +30,7 @@ const cleanupOpen = ref(false)
     @add="addOpen = true"
   >
     <template v-if="skills.length" #actions>
-      <div class="flex gap-2">
+      <div class="flex flex-wrap justify-end gap-2">
         <UButton
           icon="i-lucide-sparkles"
           color="neutral"
@@ -34,6 +40,16 @@ const cleanupOpen = ref(false)
           data-testid="profile-skills-cleanup"
           @click="cleanupOpen = true"
           >Clean up</UButton
+        >
+        <UButton
+          icon="i-lucide-spell-check"
+          color="neutral"
+          variant="subtle"
+          size="sm"
+          aria-label="Fix skill wording"
+          data-testid="profile-skills-wording"
+          @click="wordingOpen = true"
+          >Fix wording</UButton
         >
         <UButton
           icon="i-lucide-pencil"
@@ -64,7 +80,16 @@ const cleanupOpen = ref(false)
         class="flex items-center gap-2"
         data-testid="profile-skill"
       >
-        <span class="min-w-0 flex-1 truncate">{{ s.skill.name }}</span>
+        <span class="min-w-0 flex-1 truncate"
+          >{{ s.skill.name
+          }}<span
+            v-if="translated(s)"
+            class="text-sm text-muted"
+            data-testid="profile-skill-translation"
+          >
+            · {{ translated(s) }}</span
+          ></span
+        >
         <UBadge v-if="s.skill.category" color="neutral" variant="outline" size="sm">{{
           SKILL_CATEGORY_OPTIONS.find((o) => o.value === s.skill.category)?.label
         }}</UBadge>
@@ -83,5 +108,10 @@ const cleanupOpen = ref(false)
   <!-- Outside the section: its body isn't rendered while the section is empty. -->
   <ProfileSkillModal v-model:open="addOpen" :skill="null" @changed="emit('changed')" />
   <LazyProfileSkillCleanupModal v-model:open="cleanupOpen" @changed="emit('changed')" />
+  <LazyProfileSkillWordingModal
+    v-model:open="wordingOpen"
+    :profile="profile"
+    @changed="emit('changed')"
+  />
   <ProfileSkillsModal v-model:open="editOpen" :skills="skills" @changed="emit('changed')" />
 </template>

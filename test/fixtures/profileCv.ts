@@ -66,7 +66,7 @@ export const cvProfile = (): ProfileData => ({
       bullets: [{ id: 200, text: 'Project bullet', position: 0, translations: [] }]
     }
   ],
-  skills: [{ level: 4, experienceMonths: 24, skill: { id: 1, name: 'Vue' } }],
+  skills: [{ level: 4, experienceMonths: 24, skill: { id: 1, name: 'Vue', translations: [] } }],
   languages: [{ id: 1, name: 'Norwegian', spoken: 'NATIVE', written: 'VERY_GOOD' }]
 })
 

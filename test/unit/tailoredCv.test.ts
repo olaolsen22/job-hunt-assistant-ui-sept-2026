@@ -29,9 +29,17 @@ const profile = (): ProfileData => {
       }
     ],
     skills: [
-      { level: 4, experienceMonths: 24, skill: { id: 1, name: 'Vue' } },
-      { level: 3, experienceMonths: 12, skill: { id: 2, name: 'Go' } },
-      { level: 5, experienceMonths: 60, skill: { id: 3, name: 'TypeScript' } }
+      { level: 4, experienceMonths: 24, skill: { id: 1, name: 'Vue', translations: [] } },
+      { level: 3, experienceMonths: 12, skill: { id: 2, name: 'Go', translations: [] } },
+      {
+        level: 5,
+        experienceMonths: 60,
+        skill: {
+          id: 3,
+          name: 'Code review',
+          translations: [{ language: 'NORWEGIAN', name: 'Kodegjennomgang' }]
+        }
+      }
     ]
   }
 }
@@ -98,7 +106,17 @@ describe('tailored CV candidate', () => {
       result({ section: 'SKILLS', sourceEntryId: null, selectedSkillIds: [3, 1] })
     )
     // The AI's order (most relevant first) wins over the profile's order.
-    expect((skills?.value as { name: string }[]).map((s) => s.name)).toEqual(['TypeScript', 'Vue'])
+    expect((skills?.value as { name: string }[]).map((s) => s.name)).toEqual(['Code review', 'Vue'])
+    // A Norwegian draft names an added skill by its Norwegian translation when there is one.
+    const norwegian = cvSectionFromAnalysis(
+      { ...cv, language: 'NORWEGIAN' },
+      profile(),
+      result({ section: 'SKILLS', sourceEntryId: null, selectedSkillIds: [3, 1] })
+    )
+    expect((norwegian?.value as { name: string }[]).map((s) => s.name)).toEqual([
+      'Kodegjennomgang',
+      'Vue'
+    ])
     const summary = cvSectionFromAnalysis(
       cv,
       profile(),
