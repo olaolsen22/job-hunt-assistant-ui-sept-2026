@@ -205,6 +205,7 @@ describe('useTailoredCvDraft', () => {
       [
         'address',
         'certifications',
+        'contentStyle',
         'dateOfBirth',
         'educations',
         'email',

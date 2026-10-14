@@ -55,12 +55,12 @@ describe('tailored CV candidate', () => {
     expect(cv.address).toBe('Oslo, Norway')
     expect(cv.links).toEqual([{ label: 'GitHub', url: 'https://github.com/owner' }])
     expect(cv.experiences[0]).toMatchObject({ sourceEntryId: 10, employer: 'Acme' })
-    expect(cv.experiences[0]!.contentStyle).toBe('BULLETS')
+    expect(cv.contentStyle).toBe('BULLETS')
     expect(cv.experiences[0]!.bullets.map((b) => b.sourceBulletId)).toEqual([100, 101, 102])
     expect(cv.skills.map((s) => s.sourceSkillId)).toEqual([1, 2, 3])
   })
 
-  it('carries the analysis paragraph and sends it only in paragraph mode', () => {
+  it('carries the analysis paragraph and sends the CV-wide style', () => {
     const cv = tailoredCvFromProfile(profile())
     const section = cvSectionFromAnalysis(
       cv,
@@ -69,16 +69,16 @@ describe('tailored CV candidate', () => {
     )
     const experience = section!.value as (typeof cv.experiences)[number]
     expect(experience.paragraph).toBe('Built checkout flows.')
-    expect(toTailoredCvInput(cv).experiences?.[0]?.paragraph).toBeNull()
-    cv.experiences[0] = { ...experience, contentStyle: 'PARAGRAPH' }
-    expect(toTailoredCvInput(cv).experiences?.[0]?.paragraph).toBe('Built checkout flows.')
+    cv.experiences[0] = experience
+    cv.contentStyle = 'PARAGRAPH'
+    const input = toTailoredCvInput(cv)
+    expect(input.contentStyle).toBe('PARAGRAPH')
+    expect(input.experiences?.[0]?.paragraph).toBe('Built checkout flows.')
   })
 
   it('keeps only the selected bullets, in profile order, and the edited title', () => {
     const cv = tailoredCvFromProfile(profile())
     cv.experiences[0]!.title = 'Senior developer'
-    cv.experiences[0]!.contentStyle = 'PARAGRAPH'
-    expect(toTailoredCvInput(cv).experiences?.[0]?.contentStyle).toBe('PARAGRAPH')
     const section = cvSectionFromAnalysis(cv, profile(), result({ selectedBulletIds: [102, 100] }))
     expect(section?.key).toBe('experience:10')
     expect(section?.value).toMatchObject({

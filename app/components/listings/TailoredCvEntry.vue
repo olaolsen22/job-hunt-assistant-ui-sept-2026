@@ -6,6 +6,7 @@ import type { TailoredCvBullet } from '~/utils/tailoredCv'
 // Edits go straight into the candidate, so a collapsed entry keeps them for Save draft.
 // `analyzable` adds a per-entry AI button; its error and suggestion go in the default slot.
 defineProps<{
+  contentStyle: 'BULLETS' | 'PARAGRAPH'
   title: string
   subtitle?: string | null
   dates?: string
@@ -15,23 +16,9 @@ defineProps<{
   disabled?: boolean
 }>()
 const bullets = defineModel<TailoredCvBullet[]>('bullets', { required: true })
-const contentStyle = defineModel<'BULLETS' | 'PARAGRAPH' | null>('contentStyle')
 const paragraph = defineModel<string | null>('paragraph')
 const emit = defineEmits<{ remove: []; analyze: [] }>()
 const editing = ref(false)
-
-const CONTENT_STYLE_OPTIONS = [
-  { label: 'Bullets', value: 'BULLETS' },
-  { label: 'Paragraph', value: 'PARAGRAPH' }
-]
-
-// Switching to paragraph starts from the bullets joined, so there is something to edit.
-const setContentStyle = (value: string) => {
-  contentStyle.value = value as 'BULLETS' | 'PARAGRAPH'
-  if (value === 'PARAGRAPH' && !paragraph.value?.trim()) {
-    paragraph.value = bullets.value.map((b) => b.text).join(' ')
-  }
-}
 </script>
 
 <template>
@@ -84,18 +71,6 @@ const setContentStyle = (value: string) => {
       <div class="grid gap-3 sm:grid-cols-2">
         <slot name="fields" />
       </div>
-      <!-- UTabs without content is a two-option segmented control: one tap, both options visible. -->
-      <UTabs
-        :model-value="contentStyle ?? 'BULLETS'"
-        :items="CONTENT_STYLE_OPTIONS"
-        :content="false"
-        variant="pill"
-        color="neutral"
-        class="w-full sm:w-auto"
-        aria-label="Content format"
-        data-testid="tailored-cv-entry-content-style"
-        @update:model-value="setContentStyle($event as string)"
-      />
       <UFormField v-if="contentStyle === 'PARAGRAPH'" label="Paragraph">
         <UTextarea
           :model-value="paragraph ?? ''"

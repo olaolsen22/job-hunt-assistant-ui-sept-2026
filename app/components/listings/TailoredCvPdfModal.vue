@@ -123,9 +123,11 @@ const promoteOpen = computed(() => (slow.value || gaveUp.value) && !applicable)
         </p>
         <span v-else />
         <div class="flex flex-wrap gap-2">
+          <!-- external: a plain <a>, since NuxtLink would route to /api/... instead of downloading. -->
           <UButton
             :to="url"
-            download
+            external
+            :download="fileName"
             icon="i-lucide-download"
             color="neutral"
             variant="outline"

@@ -10,6 +10,8 @@ import { cvProfile } from '../fixtures/profileCv'
 let savedDraft: unknown
 let appliedInput: Record<string, unknown> | undefined
 let deleteInput: Record<string, unknown> | undefined
+let draftBroken = false
+let savedInput: Record<string, unknown> | undefined
 registerEndpoint('/graphql', {
   method: 'POST',
   handler: async (event) => {
@@ -18,6 +20,24 @@ registerEndpoint('/graphql', {
       deleteInput = body.variables.input
       return { data: { deleteDocument: { id: deleteInput.id, errors: null } } }
     }
+    if (body.query.includes('query TailoredCvDraftFromProfile'))
+      return {
+        data: {
+          tailoredCvDraftFromProfile: toTailoredCvInput(tailoredCvFromProfile(cvProfile()))
+        }
+      }
+    if (body.query.includes('mutation SaveTailoredCvDraft')) {
+      savedInput = body.variables.input
+      draftBroken = false
+      savedDraft = {
+        id: 1,
+        updatedAt: '2026-10-14T10:00:00Z',
+        content: savedInput?.content
+      }
+      return { data: { saveTailoredCvDraft: { tailoredCvDraft: savedDraft, errors: null } } }
+    }
+    if (body.query.includes('query TailoredCvDraft(') && draftBroken)
+      return { errors: [{ message: 'Cannot read draft' }], data: null }
     if (!body.query.includes('mutation ApplyToListing'))
       return { data: { tailoredCvDraft: savedDraft } }
     appliedInput = body.variables.input
@@ -54,6 +74,8 @@ beforeEach(() => {
   savedDraft = null
   appliedInput = undefined
   deleteInput = undefined
+  draftBroken = false
+  savedInput = undefined
 })
 
 describe('Tailored CV card', () => {
@@ -87,6 +109,26 @@ describe('Tailored CV card', () => {
     expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/^Existing owner\nEngineer/))
     expect(wrapper.find('[data-testid="tailored-cv-card-pdf"]').exists()).toBe(false)
     vi.unstubAllGlobals()
+    wrapper.unmount()
+  })
+
+  it('lets the owner replace a draft that will not load with a fresh profile CV', async () => {
+    withDraft()
+    draftBroken = true
+    const wrapper = await mountCard()
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="tailored-cv-card-reset"]').exists()).toBe(true)
+    )
+    await wrapper.get('[data-testid="tailored-cv-card-reset"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[data-testid="confirm-modal-confirm"]')).not.toBeNull()
+    )
+    ;(document.body.querySelector('[data-testid="confirm-modal-confirm"]') as HTMLElement).click()
+
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="tailored-cv-saved"]').exists()).toBe(true)
+    )
+    expect(savedInput).toMatchObject({ listingId: 5 })
     wrapper.unmount()
   })
 

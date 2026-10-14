@@ -16,6 +16,7 @@ const CONTENT_FIELDS = graphql(`
     dateOfBirth
     referencesOnRequest
     sectionOrder
+    contentStyle
     links {
       label
       url
@@ -28,7 +29,6 @@ const CONTENT_FIELDS = graphql(`
       startMonth
       endMonth
       sourceEntryId
-      contentStyle
       paragraph
       bullets {
         text
@@ -43,7 +43,6 @@ const CONTENT_FIELDS = graphql(`
       startMonth
       endMonth
       sourceEntryId
-      contentStyle
       paragraph
       bullets {
         text
@@ -57,7 +56,6 @@ const CONTENT_FIELDS = graphql(`
       expiresMonth
       url
       sourceEntryId
-      contentStyle
       paragraph
       bullets {
         text
@@ -71,7 +69,6 @@ const CONTENT_FIELDS = graphql(`
       startMonth
       endMonth
       sourceEntryId
-      contentStyle
       paragraph
       bullets {
         text
@@ -100,6 +97,17 @@ const DRAFT = graphql(
         content {
           ...TailoredCvContentFields
         }
+      }
+    }
+  `,
+  [CONTENT_FIELDS]
+)
+
+const FROM_PROFILE = graphql(
+  `
+    query TailoredCvDraftFromProfile($listingId: Int!) {
+      tailoredCvDraftFromProfile(listingId: $listingId) {
+        ...TailoredCvContentFields
       }
     }
   `,
@@ -220,6 +228,51 @@ export const useTailoredCvDraftQuery = (listingId: number) =>
     { server: false }
   )
 
+// Fallback for a saved draft that won't load: the API has no delete, so the draft is overwritten
+// with a fresh one built from the profile. The old content is lost, hence callers confirm first.
+export const useResetTailoredCvDraft = (listingId: number) => {
+  const query = useTailoredCvDraftQuery(listingId)
+  const toast = useToast()
+  const resetting = ref(false)
+  // Shown in the error card next to the Reset button, where the owner is looking.
+  const error = ref('')
+  const reset = async () => {
+    resetting.value = true
+    error.value = ''
+    let step = 'building the CV from your profile'
+    try {
+      const { tailoredCvDraftFromProfile } = await gql(FROM_PROFILE, { listingId })
+      if (!tailoredCvDraftFromProfile) {
+        error.value = 'This listing no longer exists.'
+        return false
+      }
+      step = 'saving it'
+      const content = toTailoredCvInput(tailoredCvFromContent(tailoredCvDraftFromProfile))
+      const { saveTailoredCvDraft } = await gql(SAVE, { input: { listingId, content } })
+      const apiError = saveTailoredCvDraft.errors?.[0]
+      if (apiError) {
+        error.value = apiError.message
+        return false
+      }
+      // refresh() doesn't throw; a draft that was saved but still can't be read stays in query.error.
+      await query.refresh()
+      if (query.error.value) {
+        error.value = `Saved, but reloading the draft failed (${errorDetail(query.error.value)})`
+        return false
+      }
+      toast.add({ title: 'CV reset to your profile', icon: 'i-lucide-rotate-ccw' })
+      return true
+    } catch (e) {
+      // This is the last-resort path, so the technical detail is shown to make the failure diagnosable.
+      error.value = `${ERROR_MESSAGES.generic} while ${step} (${errorDetail(e)})`
+      return false
+    } finally {
+      resetting.value = false
+    }
+  }
+  return { reset, resetting, error }
+}
+
 export const useCopyTailoredCv = () => {
   const toast = useToast()
   return async (cv: TailoredCv) => {
@@ -301,15 +354,34 @@ export const useTailoredCvDraft = (
     return !draft.value
   }
 
-  // Starts over from the profile. Nothing is saved: the old draft stays until the owner saves, so
-  // leaving or reloading brings it back.
-  const reset = () => {
-    if (!profile.value) return
-    cv.value = fromProfile(profile.value)
-    seed.value = snapshot(cv.value)
-    suggestions.value = []
-    sectionErrors.value = {}
-    sectionDetails.value = {}
+  // Starts over from the profile, built by the API (translations, language, standard layout). Nothing
+  // is saved: the old draft stays until the owner saves, so leaving or reloading brings it back.
+  // Returns an error message, or null once the editor holds the new candidate.
+  const resetting = ref(false)
+  const reset = async (): Promise<string | null> => {
+    resetting.value = true
+    try {
+      const { tailoredCvDraftFromProfile } = await gql(FROM_PROFILE, { listingId })
+      if (!tailoredCvDraftFromProfile) return 'This listing no longer exists.'
+      // The API returns defaults for the three toggles, so the owner's choices stay.
+      const { contentStyle, sectionOrder, referencesOnRequest } = cv.value ?? {}
+      const fresh = tailoredCvFromContent(tailoredCvDraftFromProfile)
+      cv.value = {
+        ...fresh,
+        contentStyle: contentStyle ?? fresh.contentStyle,
+        sectionOrder: sectionOrder ?? fresh.sectionOrder,
+        referencesOnRequest: referencesOnRequest ?? fresh.referencesOnRequest
+      }
+      seed.value = snapshot(cv.value)
+      suggestions.value = []
+      sectionErrors.value = {}
+      sectionDetails.value = {}
+      return null
+    } catch (e) {
+      return `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
+    } finally {
+      resetting.value = false
+    }
   }
 
   const offer = (key: TailoredCvSectionKey, value: unknown, direct: boolean) => {
@@ -568,6 +640,7 @@ export const useTailoredCvDraft = (
     matchesProfile,
     init,
     reset,
+    resetting,
     suggestions,
     sectionErrors,
     sectionDetails,

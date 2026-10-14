@@ -29,6 +29,12 @@ const SECTION_ORDER_HINTS = {
     'Links under the contact lines; skills and projects moved up. Only changes the generated PDF, not the text you edit.'
 } as const
 
+const CONTENT_STYLE_OPTIONS = [
+  { label: 'Bullets', value: 'BULLETS' },
+  { label: 'Paragraphs', value: 'PARAGRAPH' }
+]
+type ContentStyle = 'BULLETS' | 'PARAGRAPH'
+
 const route = useRoute()
 const id = Number(route.params.id)
 
@@ -147,10 +153,20 @@ const saveStatus = computed(() => {
 })
 
 const resetOpen = ref(false)
-const resetToProfile = () => {
-  state.reset()
+const {
+  reset: replaceDraft,
+  resetting: replacing,
+  error: replaceError
+} = useResetTailoredCvDraft(id)
+const resetToProfile = async () => {
+  const error = await state.reset()
   resetOpen.value = false
-  toast.add({ title: 'CV reset to your profile. Save to keep it.', icon: 'i-lucide-rotate-ccw' })
+  if (error) toast.add({ title: error, color: 'error' })
+  else
+    toast.add({
+      title: 'CV reset to your profile. Remove what you don’t need, then save.',
+      icon: 'i-lucide-rotate-ccw'
+    })
 }
 // Nothing to lose on an untouched first draft, so it resets without asking.
 const requestReset = () => {
@@ -215,12 +231,32 @@ const suggestionsFor = (match: (key: TailoredCvSectionKey) => boolean) =>
     .filter((s) => match(s.key))
     .map((s) => ({
       ...s,
-      current: cvSectionText(s.key, cv.value && getCvSection(cv.value, s.key)),
-      suggested: cvSectionText(s.key, s.value)
+      current: cvSectionText(
+        s.key,
+        cv.value && getCvSection(cv.value, s.key),
+        cv.value?.contentStyle
+      ),
+      suggested: cvSectionText(s.key, s.value, cv.value?.contentStyle)
     }))
 
 const dates = (start?: string | null, end?: string | null, open?: string) =>
   formatMonthRange(start, end, open, 'en-GB')
+
+// One format for the whole CV. Entries with no paragraph yet start from their bullets joined;
+// bullets stay in the draft either way, since they carry the source ids.
+const setContentStyle = (style: ContentStyle) => {
+  const draft = cv.value!
+  draft.contentStyle = style
+  if (style !== 'PARAGRAPH') return
+  for (const e of [
+    ...draft.experiences,
+    ...draft.educations,
+    ...draft.certifications,
+    ...draft.projects
+  ]) {
+    if (!e.paragraph?.trim()) e.paragraph = e.bullets.map((b) => b.text).join(' ')
+  }
+}
 
 const addLanguage = () => cv.value!.languages.push({ name: '', spoken: null, written: null })
 
@@ -277,7 +313,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
               icon="i-lucide-rotate-ccw"
               color="neutral"
               variant="ghost"
-              :disabled="busy || analyzing || state.matchesProfile.value"
+              :disabled="busy || analyzing || state.resetting.value || state.matchesProfile.value"
+              :loading="state.resetting.value"
               :title="state.matchesProfile.value ? 'Already matches your profile' : undefined"
               data-testid="tailored-cv-reset"
               @click="requestReset"
@@ -302,7 +339,19 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             <span
               class="mt-1 block text-xs break-words"
               data-testid="tailored-cv-load-error-detail"
-              >{{ errorDetail(loadError) }}</span
+              >{{ replaceError || errorDetail(loadError) }}</span
+            >
+          </template>
+          <template v-if="state.query.error.value" #actions>
+            <!-- The saved draft itself won't load, so the only way out is replacing it. -->
+            <UButton
+              icon="i-lucide-rotate-ccw"
+              color="neutral"
+              variant="outline"
+              :loading="replacing"
+              data-testid="tailored-cv-load-error-reset"
+              @click="replaceDraft"
+              >Replace with profile CV</UButton
             >
           </template>
         </UAlert>
@@ -341,6 +390,20 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 :disabled="analyzing"
                 class="w-full sm:w-56"
                 data-testid="tailored-cv-section-order"
+              />
+            </UFormField>
+            <UFormField
+              label="Entry format"
+              description="Experience, education, certifications and projects are all written as bullets or as paragraphs."
+              class="mt-3"
+            >
+              <USelect
+                :model-value="cv.contentStyle"
+                :items="CONTENT_STYLE_OPTIONS"
+                :disabled="analyzing"
+                class="w-full sm:w-56"
+                data-testid="tailored-cv-content-style"
+                @update:model-value="setContentStyle($event as ContentStyle)"
               />
             </UFormField>
             <AppAiRetryConfirm
@@ -562,8 +625,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   v-for="(e, i) in cv.experiences"
                   :key="e.sourceEntryId ?? `new-${i}`"
                   v-model:bullets="e.bullets"
-                  v-model:content-style="e.contentStyle"
                   v-model:paragraph="e.paragraph"
+                  :content-style="cv.contentStyle"
                   :title="e.title"
                   :subtitle="e.employer"
                   :dates="dates(e.startMonth, e.endMonth, 'Present')"
@@ -680,8 +743,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   v-for="(e, i) in cv.educations"
                   :key="e.sourceEntryId ?? `new-${i}`"
                   v-model:bullets="e.bullets"
-                  v-model:content-style="e.contentStyle"
                   v-model:paragraph="e.paragraph"
+                  :content-style="cv.contentStyle"
                   :title="e.school"
                   :subtitle="[e.degree, e.field].filter(Boolean).join(', ')"
                   :dates="dates(e.startMonth, e.endMonth)"
@@ -761,8 +824,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   v-for="(c, i) in cv.certifications"
                   :key="c.sourceEntryId ?? `new-${i}`"
                   v-model:bullets="c.bullets"
-                  v-model:content-style="c.contentStyle"
                   v-model:paragraph="c.paragraph"
+                  :content-style="cv.contentStyle"
                   :title="c.name"
                   :subtitle="c.issuer"
                   :dates="dates(c.issuedMonth, c.expiresMonth)"
@@ -814,8 +877,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   v-for="(p, i) in cv.projects"
                   :key="p.sourceEntryId ?? `new-${i}`"
                   v-model:bullets="p.bullets"
-                  v-model:content-style="p.contentStyle"
                   v-model:paragraph="p.paragraph"
+                  :content-style="cv.contentStyle"
                   :title="p.name"
                   :subtitle="p.url"
                   :dates="dates(p.startMonth, p.endMonth)"

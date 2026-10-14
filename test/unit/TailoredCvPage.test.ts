@@ -16,6 +16,7 @@ let savedDraft: unknown
 let calls: Body[]
 let releaseAnalysis: () => void
 let analysisGate: Promise<void>
+let fromProfileReply: unknown = undefined
 let previewReply: unknown
 let generateReply: () => unknown
 let listing: Record<string, unknown> & { documents: Record<string, unknown>[] }
@@ -34,7 +35,7 @@ registerEndpoint('/graphql', {
     if (query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
     if (query.includes('query ListingById')) return { data: { listingById: listing } }
     if (query.includes('query Profile')) return { data: { profile: cvProfile() } }
-    if (query.includes('query TailoredCvDraft')) return { data: { tailoredCvDraft: savedDraft } }
+    if (query.includes('query TailoredCvDraft(')) return { data: { tailoredCvDraft: savedDraft } }
     if (query.includes('mutation AnalyzeTailoredCvSection')) {
       await analysisGate
       const override = analysisOverride(input)
@@ -58,6 +59,15 @@ registerEndpoint('/graphql', {
     }
     if (query.includes('mutation PreviewTailoredCvDraft'))
       return { data: { previewTailoredCvDraft: previewReply } }
+    if (query.includes('query TailoredCvDraftFromProfile'))
+      return {
+        data: {
+          tailoredCvDraftFromProfile:
+            fromProfileReply === undefined
+              ? toTailoredCvInput(tailoredCvFromProfile(cvProfile()))
+              : fromProfileReply
+        }
+      }
     if (query.includes('mutation SaveTailoredCvDraft'))
       return {
         data: {
@@ -128,6 +138,7 @@ beforeEach(() => {
   calls = []
   savedDraft = null
   previewReply = null
+  fromProfileReply = undefined
   appliedInput = undefined
   analysisOverride = () => undefined
   listing = {
@@ -455,6 +466,9 @@ describe('Tailored CV page', () => {
 
   it('resets a saved draft to the profile after confirming, without saving', async () => {
     savedDraft = savedSummary()
+    savedDraft.content.contentStyle = 'PARAGRAPH'
+    savedDraft.content.sectionOrder = 'DEVELOPER'
+    savedDraft.content.referencesOnRequest = true
     await mountPage()
     await vi.waitFor(() => expect(summaryValue()).toBe('Mine'))
     expect((el('tailored-cv-reset') as HTMLButtonElement).disabled).toBe(false)
@@ -466,12 +480,37 @@ describe('Tailored CV page', () => {
       (b) => b.textContent?.trim() === 'Reset'
     )!
     confirm.click()
-    await flushPromises()
+    await vi.waitFor(() => expect(summaryValue()).not.toBe('Mine'))
 
-    expect(summaryValue()).not.toBe('Mine')
     expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
     expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
-    expect((el('tailored-cv-reset') as HTMLButtonElement).disabled).toBe(true)
+    expect(calls.some((c) => c.query.includes('query TailoredCvDraftFromProfile'))).toBe(true)
+
+    // The owner's toggles survive the reset and go out unchanged on Save.
+    await click('tailored-cv-save')
+    await vi.waitFor(() => expect(ops('SaveTailoredCvDraft')).toHaveLength(1))
+    expect(ops('SaveTailoredCvDraft')[0]!.variables.input.content).toMatchObject({
+      contentStyle: 'PARAGRAPH',
+      sectionOrder: 'DEVELOPER',
+      referencesOnRequest: true
+    })
+  })
+
+  it('keeps the edits when the API has no profile CV for the listing', async () => {
+    savedDraft = savedSummary()
+    fromProfileReply = null
+    await mountPage()
+    await vi.waitFor(() => expect(summaryValue()).toBe('Mine'))
+
+    await click('tailored-cv-reset')
+    ;[...document.body.querySelectorAll('button')]
+      .find((b) => b.textContent?.trim() === 'Reset')!
+      .click()
+    await vi.waitFor(() =>
+      expect(document.body.textContent).not.toContain('Reset to your profile?')
+    )
+    expect(summaryValue()).toBe('Mine')
+    expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved')
   })
 
   describe('Generate PDF', () => {

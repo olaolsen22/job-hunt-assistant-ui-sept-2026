@@ -23,6 +23,8 @@ const DELETE_DOCUMENT = graphql(`
 
 const { data: draft, status, error } = useTailoredCvDraftQuery(listing.id)
 const copy = useCopyTailoredCv()
+const { reset, resetting, error: resetError } = useResetTailoredCvDraft(listing.id)
+const resetOpen = ref(false)
 const editorPath = computed(() => `/listings/${listing.id}/cv`)
 const deletedPdfIds = ref<number[]>([])
 const pdf = computed(() =>
@@ -71,7 +73,30 @@ const deletePdf = async () => {
       >
     </template>
 
-    <UAlert v-if="error" color="error" variant="subtle" :description="ERROR_MESSAGES.generic" />
+    <UAlert
+      v-if="error"
+      color="error"
+      variant="subtle"
+      :description="`${ERROR_MESSAGES.generic} If it keeps failing, replace the saved draft with a fresh copy of your profile.`"
+    >
+      <template v-if="resetError" #description>
+        {{ ERROR_MESSAGES.generic }}
+        <span class="mt-1 block break-words text-xs" data-testid="tailored-cv-card-reset-error">{{
+          resetError
+        }}</span>
+      </template>
+      <template #actions>
+        <UButton
+          icon="i-lucide-rotate-ccw"
+          color="neutral"
+          variant="outline"
+          :loading="resetting"
+          data-testid="tailored-cv-card-reset"
+          @click="resetOpen = true"
+          >Reset CV</UButton
+        >
+      </template>
+    </UAlert>
     <USkeleton v-else-if="status === 'idle' || status === 'pending'" class="h-16 w-full" />
     <!-- Split at xl: the dashboard sidebar leaves too little card width at tablet sizes. -->
     <div v-else-if="draft" class="grid gap-6" :class="{ 'xl:grid-cols-2': pdf }">
@@ -174,6 +199,14 @@ const deletePdf = async () => {
       :listing="listing"
       :cv-document-id="pdf.id"
       @changed="emit('changed')"
+    />
+    <AppConfirmModal
+      v-model:open="resetOpen"
+      title="Reset this CV?"
+      description="The saved draft for this listing is replaced with a fresh copy of your profile. Generated PDFs are kept."
+      confirm-label="Reset CV"
+      :loading="resetting"
+      @confirm="reset().then(() => (resetOpen = false))"
     />
     <AppConfirmModal
       v-model:open="deleteOpen"
