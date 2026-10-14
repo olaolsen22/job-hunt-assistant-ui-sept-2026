@@ -2,7 +2,7 @@
 import type { ProfileExperience } from '~/composables/useProfile'
 
 const props = defineProps<{ experiences: readonly ProfileExperience[] }>()
-const emit = defineEmits<{ changed: [] }>()
+const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const { locale } = useProfileTranslation()
 
@@ -52,12 +52,14 @@ const remove = async () => {
 
 <template>
   <ProfileSection
+    clearable
     title="Experience"
     icon="i-lucide-briefcase"
     testid="profile-experience"
     :empty="!experiences.length"
     empty-message="No experience yet."
     add-label="Add experience"
+    @clear="emit('clear')"
     @add="openForm(null)"
   >
     <ul class="divide-y divide-default">

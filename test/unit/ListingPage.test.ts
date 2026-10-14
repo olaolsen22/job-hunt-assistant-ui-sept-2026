@@ -64,6 +64,18 @@ describe('Listing page', () => {
     wrapper.unmount()
   })
 
+  it('opens the record-application form from the header', async () => {
+    const wrapper = await mountPage()
+    await wrapper.get('[data-testid="listing-record-application"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('Apply through the original ad')
+    )
+    expect(
+      document.body.querySelector('[data-testid="confirm-modal-confirm"]')?.textContent
+    ).toContain('Record application')
+    wrapper.unmount()
+  })
+
   it('badges a listing whose company is avoided', async () => {
     const wrapper = await mountPage({
       company: { ...listing.company, avoidedAt: '2026-10-07T10:00:00Z' }
@@ -89,12 +101,15 @@ describe('Listing page', () => {
     const wrapper = await mountPage({
       status: 'APPLIED',
       documents: [
-        { id: 1, kind: 'CV', fileName: 'cv.pdf', sentAt: null }
+        { id: 1, kind: 'CV', fileName: 'cv.pdf', createdAt: '2026-10-13T10:00:00Z', sentAt: null }
       ] as unknown as typeof listing.documents
     })
 
     expect(wrapper.get('[data-testid="listing-documents"]').text()).toContain('cv.pdf')
     expect(wrapper.get('[data-testid="listing-documents"]').text()).not.toContain('Sent')
+    expect(wrapper.get('[data-testid="listing-documents"] time').attributes('datetime')).toBe(
+      '2026-10-13T10:00:00Z'
+    )
     wrapper.unmount()
   })
 

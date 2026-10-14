@@ -3,7 +3,7 @@ import type { ProfileSkill } from '~/composables/useProfile'
 
 // Read-only list; Add opens the single-skill form (it has the name search), Edit the bulk one.
 defineProps<{ skills: readonly ProfileSkill[] }>()
-const emit = defineEmits<{ changed: [] }>()
+const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const addOpen = ref(false)
 const editOpen = ref(false)
@@ -11,12 +11,14 @@ const editOpen = ref(false)
 
 <template>
   <ProfileSection
+    clearable
     title="Skills"
     icon="i-lucide-wrench"
     testid="profile-skills"
     :empty="!skills.length"
     empty-message="No skills yet."
     add-label="Add skill"
+    @clear="emit('clear')"
     @add="addOpen = true"
   >
     <template v-if="skills.length" #actions>

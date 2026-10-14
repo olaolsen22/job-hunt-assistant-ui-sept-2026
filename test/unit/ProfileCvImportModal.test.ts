@@ -358,15 +358,15 @@ describe('CV import modal', () => {
   })
 
   it('focuses missing language proficiency and clears inline feedback after a choice', async () => {
-    candidate = cvCandidate({ languages: [{ language: 'ENGLISH', level: null }] })
+    candidate = cvCandidate({ languages: [{ name: 'English', spoken: 'GOOD', written: null }] })
     const { wrapper } = await openReview()
     await click('cv-save')
-    const field = document.body.querySelector('[data-cv-field="languages[0].level"]')!
-    expect(field.textContent).toContain('Choose your language proficiency')
+    const field = document.body.querySelector('[data-cv-field="languages[0].written"]')!
+    expect(field.textContent).toContain('Choose your written proficiency')
     expect(field.contains(document.activeElement)).toBe(true)
-    wrapper.getComponent(CvReview).props('modelValue').languages[0]!.level = 'B2'
+    wrapper.getComponent(CvReview).props('modelValue').languages[0]!.written = 'GOOD'
     await flushPromises()
-    expect(field.textContent).not.toContain('Choose your language proficiency')
+    expect(field.textContent).not.toContain('Choose your written proficiency')
     wrapper.unmount()
   })
 

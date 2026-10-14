@@ -142,7 +142,7 @@ const filledProfile = {
     }
   ],
   skills: [{ level: 4, experienceMonths: 30, skill: { id: 1, name: 'Vue' } }],
-  languages: [{ language: 'ENGLISH', level: 'C1' }]
+  languages: [{ id: 1, name: 'English', spoken: 'NATIVE', written: 'GOOD' }]
 }
 
 // `input` is whatever the mutation under test sends; each test reads the fields it cares about.
@@ -188,14 +188,20 @@ const setInput = (testid: string, value: string) => {
   input.dispatchEvent(new Event('input'))
 }
 
+// The test id sits on either the field or its wrapper, depending on the Nuxt UI component.
+const fieldIn = (wrapper: { get: (s: string) => { element: Element } }, selector: string) => {
+  const el = wrapper.get(selector).element
+  return (el.matches('input, textarea') ? el : el.querySelector('input, textarea')!) as
+    HTMLInputElement | HTMLTextAreaElement
+}
+
 // For inputs inside the mounted page (not in a modal).
 const setInputIn = (
   wrapper: { get: (s: string) => { element: Element } },
   selector: string,
   value: string
 ) => {
-  const el = wrapper.get(selector).element
-  const input = el instanceof HTMLInputElement ? el : el.querySelector('input')!
+  const input = fieldIn(wrapper, selector)
   input.value = value
   input.dispatchEvent(new Event('input'))
 }
@@ -215,7 +221,7 @@ const clickConfirm = () =>
 const chooseAction = async (
   wrapper: { get: (s: string) => { trigger: (e: string, o?: object) => Promise<void> } },
   trigger: string,
-  label: 'Edit' | 'Delete' | 'Remove'
+  label: string
 ) => {
   await wrapper.get(trigger).trigger('keydown', { key: 'Enter' })
   await flushPromises()
@@ -872,14 +878,20 @@ describe('ProfilePage skills and languages', () => {
     wrapper.unmount()
   })
 
-  it('adds Norwegian in the language form and then offers no more languages', async () => {
+  it('adds a language by name in the language form', async () => {
     const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
       if (!body.query.includes('setProfileLanguage(')) return undefined
-      profile.languages.push(body.variables.input)
-      return { setProfileLanguage: { profileLanguage: body.variables.input } }
+      profile.languages.push({ id: 2, ...body.variables.input })
+      return { setProfileLanguage: { profileLanguage: body.variables.input, errors: null } }
     })
 
     await wrapper.get('[data-testid="profile-languages-add"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLInputElement>('[data-testid="language-name"]')!.value =
+      'Norwegian'
+    document.body
+      .querySelector('[data-testid="language-name"]')!
+      .dispatchEvent(new Event('input', { bubbles: true }))
     await flushPromises()
     clickSave()
 
@@ -887,35 +899,36 @@ describe('ProfilePage skills and languages', () => {
       expect(wrapper.findAll('[data-testid="profile-language"]')).toHaveLength(2)
     )
     expect(requests.find((r) => r.query.includes('setProfileLanguage('))!.variables.input).toEqual({
-      language: 'NORWEGIAN',
-      level: 'B2'
+      name: 'Norwegian',
+      spoken: 'GOOD',
+      written: 'GOOD'
     })
-    expect(wrapper.find('[data-testid="profile-languages-add"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="profile-languages"]').text()).toContain('Norwegian')
     wrapper.unmount()
   })
 
-  it('changes a language level', async () => {
+  it('changes a language written level', async () => {
     const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
       if (!body.query.includes('setProfileLanguage(')) return undefined
-      profile.languages[0]!.level = body.variables.input.level
-      return { setProfileLanguage: { profileLanguage: body.variables.input } }
+      profile.languages[0]!.written = body.variables.input.written
+      return { setProfileLanguage: { profileLanguage: body.variables.input, errors: null } }
     })
 
     await chooseAction(wrapper, '[data-testid="profile-language-actions"]', 'Edit')
     wrapper
       .getComponent(ProfileLanguageModal)
-      .getComponent(USelect)
-      .vm.$emit('update:modelValue', 'C2')
+      .findAllComponents(USelect)[1]!
+      .vm.$emit('update:modelValue', 'NATIVE')
     await flushPromises()
     clickSave()
 
     await vi.waitFor(() =>
-      expect(wrapper.get('[data-testid="profile-language"]').text()).toContain('C2')
+      expect(wrapper.get('[data-testid="profile-language"]').text()).toContain('Written: Native')
     )
     expect(requests.find((r) => r.query.includes('setProfileLanguage('))!.variables.input).toEqual({
-      language: 'ENGLISH',
-      level: 'C2'
+      name: 'English',
+      spoken: 'NATIVE',
+      written: 'NATIVE'
     })
     wrapper.unmount()
   })
@@ -923,7 +936,7 @@ describe('ProfilePage skills and languages', () => {
   it('removes a language only after confirming', async () => {
     const { wrapper, requests } = await mountPage(filledProfile, (body) =>
       body.query.includes('removeProfileLanguage(')
-        ? { removeProfileLanguage: { language: 'ENGLISH', errors: null } }
+        ? { removeProfileLanguage: { name: 'English', errors: null } }
         : undefined
     )
     const removes = () => requests.filter((r) => r.query.includes('removeProfileLanguage('))
@@ -934,7 +947,7 @@ describe('ProfilePage skills and languages', () => {
     clickConfirm()
 
     await vi.waitFor(() => expect(removes()).toHaveLength(1))
-    expect(removes()[0]!.variables.input).toEqual({ language: 'ENGLISH' })
+    expect(removes()[0]!.variables.input).toEqual({ name: 'English' })
     wrapper.unmount()
   })
 })
@@ -1120,15 +1133,12 @@ describe('ProfilePage translations', () => {
     await wrapper.get(`${bulletTr} form`).trigger('submit')
     await flushPromises()
 
-    expect(
-      (wrapper.get('[data-testid="profile-bullet-translation-input"]').element as HTMLInputElement)
-        .value
-    ).toBe('Led')
+    expect(fieldIn(wrapper, '[data-testid="profile-bullet-translation-input"]').value).toBe('Led')
     expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(1)
     wrapper.unmount()
   })
 
-  it('refetches when a translation no longer exists', async () => {
+  it('asks before deleting a translation, then refetches when it no longer exists', async () => {
     const { wrapper, requests } = await mountPage(withTranslation(tr()), (body) =>
       body.query.includes('deleteProfileBulletTranslation(')
         ? {
@@ -1140,7 +1150,10 @@ describe('ProfilePage translations', () => {
         : undefined
     )
     await startTranslating(wrapper)
-    await wrapper.get('[data-testid="profile-bullet-translation-delete"]').trigger('click')
+    await chooseAction(wrapper, '[data-testid="profile-bullet-translation-actions"]', 'Delete')
+    expect(requests.some((r) => r.query.includes('deleteProfileBulletTranslation('))).toBe(false)
+    expect(document.body.textContent).toContain('Delete this translation?')
+    clickConfirm()
 
     await vi.waitFor(() =>
       expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(2)
@@ -1148,6 +1161,20 @@ describe('ProfilePage translations', () => {
     expect(
       requests.find((r) => r.query.includes('deleteProfileBulletTranslation('))!.variables.input
     ).toEqual({ id: 900 })
+    wrapper.unmount()
+  })
+
+  it('shows translation progress in a bar that ends translating', async () => {
+    const { wrapper } = await mountPage(withTranslation(tr()))
+    await startTranslating(wrapper)
+    expect(wrapper.get('[data-testid="profile-translating-progress"]').text()).toContain(
+      '1 of 1 bullets'
+    )
+    expect(wrapper.find('[data-testid="profile-translate-toggle"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="profile-translate-done"]').trigger('click')
+    expect(wrapper.find('[data-testid="profile-translating-bar"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="profile-bullet-translation"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -1221,6 +1248,87 @@ describe('ProfilePage translations', () => {
         isMachine: false
       })
     )
+    wrapper.unmount()
+  })
+})
+
+describe('ProfilePage clearing sections', () => {
+  const cleared = (profile: typeof filledProfile, over: Record<string, unknown>) => ({
+    clearProfileSections: { profile: { ...profile, ...over }, errors: null }
+  })
+  const clearRequest = (requests: Request[]) =>
+    requests.find((r) => r.query.includes('clearProfileSections('))
+
+  it('clears one section after naming what goes, using the returned profile', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body, profile) =>
+      body.query.includes('clearProfileSections(')
+        ? cleared(profile, { experiences: [] })
+        : undefined
+    )
+    await chooseAction(wrapper, '[data-testid="profile-experience-menu"]', 'Clear section')
+    expect(document.body.textContent).toContain(
+      'This permanently deletes 1 experience, with their bullets and translations.'
+    )
+    expect(clearRequest(requests)).toBeUndefined()
+
+    clickConfirm()
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="profile-experience-empty"]').exists()).toBe(true)
+    )
+    expect(clearRequest(requests)!.variables.input).toEqual({ sections: ['EXPERIENCES'] })
+    expect(wrapper.find('[data-testid="profile-experience-menu"]').exists()).toBe(false)
+    expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('clears all CV content from the header menu', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body, profile) =>
+      body.query.includes('clearProfileSections(')
+        ? cleared(profile, {
+            headline: null,
+            summary: null,
+            hobbies: [],
+            experiences: [],
+            educations: [],
+            certifications: [],
+            projects: [],
+            skills: [],
+            languages: [],
+            references: []
+          })
+        : undefined
+    )
+    await chooseAction(wrapper, '[data-testid="profile-menu"]', 'Clear CV content…')
+    const details = document.body.querySelector('[data-testid="profile-clear-all-details"]')!
+    expect(details.textContent).toContain('2 references')
+    expect(details.textContent).toContain('Kept: your name')
+
+    clickConfirm()
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="profile-menu"]').exists()).toBe(false)
+    )
+    expect(clearRequest(requests)!.variables.input.sections).toHaveLength(9)
+    expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('Ada Lovelace')
+    wrapper.unmount()
+  })
+
+  it('keeps the profile and the confirmation when the API rejects the clear', async () => {
+    const { wrapper } = await mountPage(filledProfile, (body) =>
+      body.query.includes('clearProfileSections(')
+        ? {
+            clearProfileSections: {
+              profile: null,
+              errors: [{ __typename: 'InvalidProfileError', message: 'Nothing to clear' }]
+            }
+          }
+        : undefined
+    )
+    await chooseAction(wrapper, '[data-testid="profile-skills-menu"]', 'Clear section')
+    clickConfirm()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Clear Skills?')
+    expect(wrapper.find('[data-testid="profile-skills-empty"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

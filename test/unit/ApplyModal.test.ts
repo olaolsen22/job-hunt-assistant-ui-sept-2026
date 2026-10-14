@@ -1,16 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import { readBody } from 'h3'
+import { createError, readBody } from 'h3'
 import ApplyModal from '~/components/listings/ApplyModal.vue'
+import DocumentPicker from '~/components/listings/DocumentPicker.vue'
 import type { ListingDetail } from '~/composables/useListing'
 
 let sentInput: Record<string, unknown> | undefined
 let tailoredCvDraft: unknown = null
+let uploadKinds: string[] = []
+let failCoverUpload = false
 registerEndpoint('/graphql', {
   method: 'POST',
   handler: async (event) => {
     const body = await readBody(event)
+    // Nuxt's in-process fetch passes multipart bodies as opaque strings.
+    if (typeof body === 'string') {
+      const kind = uploadKinds.length === 0 ? 'CV' : 'COVER_LETTER'
+      uploadKinds.push(kind)
+      if (kind === 'COVER_LETTER' && failCoverUpload) {
+        failCoverUpload = false
+        throw createError({ statusCode: 400, message: 'Upload failed' })
+      }
+      return {
+        data: { uploadDocument: { document: { id: kind === 'CV' ? 80 : 81 }, errors: null } }
+      }
+    }
     if (body.query.includes('query TailoredCvDraft')) return { data: { tailoredCvDraft } }
     sentInput = body.variables.input
     return { data: { applyToListing: { listing: { id: 5 }, errors: null } } }
@@ -52,6 +67,63 @@ describe('ApplyModal', () => {
       coverLetterDocumentId: null
     })
     wrapper.unmount()
+  })
+  it('keeps the date and note after cancellation and resets after success', async () => {
+    const wrapper = await mountOpen()
+    const date = document.body.querySelector<HTMLInputElement>('input[type="datetime-local"]')!
+    date.value = '2026-10-01T10:00'
+    date.dispatchEvent(new Event('input', { bubbles: true }))
+    const note = document.body.querySelector<HTMLTextAreaElement>('textarea')!
+    note.value = 'Applied through the company portal'
+    note.dispatchEvent(new Event('input', { bubbles: true }))
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    expect(
+      document.body.querySelector<HTMLInputElement>('input[type="datetime-local"]')!.value
+    ).toBe('2026-10-01T10:00')
+    expect(document.body.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe(
+      'Applied through the company portal'
+    )
+    document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
+    await vi.waitFor(() => expect(wrapper.emitted('changed')).toBeTruthy())
+    expect(sentInput?.note).toBe('Applied through the company portal')
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    expect(document.body.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('')
+    wrapper.unmount()
+  })
+
+  it('keeps a successful upload when the other request fails and retries only the failed file', async () => {
+    const wrapper = await mountOpen()
+    uploadKinds = []
+    failCoverUpload = true
+    const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:upload')
+    const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    try {
+      const pickers = wrapper.findAllComponents(DocumentPicker)
+      pickers[0]!.vm.$emit('update:file', new File(['cv'], 'cv.pdf'))
+      pickers[1]!.vm.$emit('update:file', new File(['cover'], 'cover.pdf'))
+      await flushPromises()
+      document.body
+        .querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!
+        .click()
+      await vi.waitFor(() => expect(uploadKinds).toEqual(['CV', 'COVER_LETTER']))
+      await flushPromises()
+      expect(wrapper.emitted('changed')).toBeFalsy()
+      expect(pickers[0]!.props('documentId')).toBe(80)
+      document.body
+        .querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!
+        .click()
+      await vi.waitFor(() => expect(wrapper.emitted('changed')).toBeTruthy())
+      expect(uploadKinds).toEqual(['CV', 'COVER_LETTER', 'COVER_LETTER'])
+      expect(sentInput).toMatchObject({ cvDocumentId: 80, coverLetterDocumentId: 81 })
+    } finally {
+      wrapper.unmount()
+      createUrl.mockRestore()
+      revokeUrl.mockRestore()
+    }
   })
   it('links to tailoring a CV only while the listing has no draft', async () => {
     tailoredCvDraft = null

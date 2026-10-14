@@ -37,6 +37,8 @@ const DELETE_TRANSLATION = graphql(`
 
 const { target } = useProfileTranslation()
 const targetLabel = computed(() => LANGUAGE_OPTIONS.find((o) => o.value === target.value)!.label)
+// A visible tag tells the translation from its original without relying on an icon.
+const targetCode = computed(() => (target.value === 'ENGLISH' ? 'EN' : 'NO'))
 const translation = computed(() =>
   props.bullet.translations.find((t) => t.language === target.value)
 )
@@ -44,6 +46,7 @@ const translation = computed(() =>
 const editing = ref(false)
 const text = ref('')
 const showChanges = ref(false)
+const deleteOpen = ref(false)
 
 const { run, loading } = useMutation(() => emit('changed'))
 
@@ -77,33 +80,42 @@ const remove = async () => {
     })
     return deleteProfileBulletTranslation.errors
   })
+  deleteOpen.value = false
   if (ok) emit('changed')
 }
 </script>
 
 <template>
-  <div class="ml-7 mt-1 flex items-start gap-2" data-testid="profile-bullet-translation">
-    <UIcon name="i-lucide-languages" class="mt-1 size-4 shrink-0 text-muted" />
+  <!-- Indented under the original from sm up; phones need the width for the text. -->
+  <div class="mt-1 flex items-start gap-2 sm:ml-7" data-testid="profile-bullet-translation">
+    <UBadge color="neutral" variant="outline" size="sm" class="mt-0.5 shrink-0">{{
+      targetCode
+    }}</UBadge>
 
-    <form v-if="editing" class="min-w-0 flex-1 space-y-1" @submit.prevent="save">
-      <UInput
+    <form v-if="editing" class="min-w-0 flex-1 space-y-2" @submit.prevent="save">
+      <!-- Multi-line so a long bullet can be read while editing; Enter still saves, as bullets
+           are a single line. -->
+      <UTextarea
         v-model="text"
-        size="sm"
+        autoresize
+        :rows="2"
         :maxlength="500"
         :aria-label="`${targetLabel} translation of ${bullet.text}`"
         class="w-full"
         data-testid="profile-bullet-translation-input"
+        @keydown.enter.exact.prevent="save"
+        @keydown.esc.stop.prevent="editing = false"
       />
-      <div class="flex items-center gap-1">
+      <div class="flex items-center gap-2">
         <UButton
           type="submit"
-          size="xs"
+          size="sm"
           :loading="loading"
           :disabled="!text.trim()"
           data-testid="profile-bullet-translation-save"
           >Save</UButton
         >
-        <UButton size="xs" color="neutral" variant="ghost" @click="editing = false">Cancel</UButton>
+        <UButton size="sm" color="neutral" variant="ghost" @click="editing = false">Cancel</UButton>
         <span class="ml-auto text-xs text-muted">{{ text.length }}/500</span>
       </div>
     </form>
@@ -111,24 +123,11 @@ const remove = async () => {
     <div v-else-if="translation" class="min-w-0 flex-1">
       <div class="flex items-start gap-1">
         <span class="min-w-0 flex-1 break-words py-0.5 text-sm">{{ translation.text }}</span>
-        <UButton
-          icon="i-lucide-pencil"
-          color="neutral"
-          variant="ghost"
-          size="xs"
-          :aria-label="`Edit ${targetLabel} translation of ${bullet.text}`"
-          data-testid="profile-bullet-translation-edit"
-          @click="startEdit"
-        />
-        <UButton
-          icon="i-lucide-trash-2"
-          color="neutral"
-          variant="ghost"
-          size="xs"
-          :aria-label="`Delete ${targetLabel} translation of ${bullet.text}`"
-          :disabled="loading"
-          data-testid="profile-bullet-translation-delete"
-          @click="remove"
+        <ProfileRowActions
+          :name="`${targetLabel} translation of ${bullet.text}`"
+          testid="profile-bullet-translation-actions"
+          @edit="startEdit"
+          @remove="deleteOpen = true"
         />
       </div>
       <div v-if="translation.isStale || translation.isMachine" class="flex flex-wrap gap-1">
@@ -170,18 +169,27 @@ const remove = async () => {
         </p>
         <p><span class="block text-xs text-muted">Current original</span>{{ bullet.text }}</p>
       </div>
+      <AppConfirmModal
+        v-model:open="deleteOpen"
+        title="Delete this translation?"
+        :description="translation.text"
+        confirm-label="Delete"
+        :loading="loading"
+        @confirm="remove"
+      />
     </div>
 
+    <!-- A link, not a button: an untranslated profile shows one per bullet. -->
     <UButton
       v-else
-      size="xs"
+      size="sm"
       color="neutral"
-      variant="ghost"
+      variant="link"
       icon="i-lucide-plus"
       :aria-label="`Add ${targetLabel} translation of ${bullet.text}`"
       data-testid="profile-bullet-translation-add"
       @click="startEdit"
-      >Add {{ targetLabel }} translation</UButton
+      >Add translation</UButton
     >
   </div>
 </template>

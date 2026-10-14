@@ -2,7 +2,9 @@
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LINK_KIND_OPTIONS } from '~/constants/listing'
 import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
+import type { DropdownMenuItem } from '@nuxt/ui'
 import { PROFILE, type ProfileData } from '~/composables/useProfile'
+import type { ProfileSectionName } from '~/components/profile/ClearSectionsModal.vue'
 
 definePageMeta({ title: 'Profile' })
 
@@ -12,6 +14,7 @@ const basicsOpen = ref(false)
 const summaryOpen = ref(false)
 const hobbiesOpen = ref(false)
 const cvImportOpen = ref(false)
+const clearTarget = ref<ProfileSectionName | 'ALL' | null>(null)
 
 // Keep the mounted review and its edits if fetching fresh update targets fails.
 const refreshCvProfile = async () => {
@@ -56,6 +59,12 @@ const hasTranslations = computed(
     (profile.value.translations.length > 0 ||
       bulletsOf(profile.value).some((b) => b.translations.length > 0))
 )
+// Progress for the translating bar: how many bullets have a translation in the target language.
+const bulletProgress = computed(() => {
+  const bullets = profile.value ? bulletsOf(profile.value) : []
+  const done = bullets.filter((b) => b.translations.some((t) => t.language === target.value))
+  return { done: done.length, total: bullets.length }
+})
 const staleCount = computed(() => {
   const p = profile.value
   if (!p) return 0
@@ -74,6 +83,32 @@ const changeContentLanguage = async (language: Language) => {
   // Text may now be read in the other language, so refetch rather than patch.
   if (ok) await refresh()
 }
+
+// The API rejects clearing nothing, so the menu only offers it when a CV section has content.
+const hasCvContent = computed(() => {
+  const p = profile.value
+  if (!p) return false
+  return (
+    !!(p.headline || p.summary || p.translations.length || p.hobbies.length) ||
+    [
+      p.experiences,
+      p.educations,
+      p.certifications,
+      p.projects,
+      p.skills,
+      p.languages,
+      p.references
+    ].some((list) => list.length > 0)
+  )
+})
+const profileMenu = computed<DropdownMenuItem[]>(() => [
+  {
+    label: 'Clear CV content…',
+    icon: 'i-lucide-eraser',
+    color: 'error',
+    onSelect: () => (clearTarget.value = 'ALL')
+  }
+])
 
 const importAvailable = computed(() => profile.value?.contentLanguage === 'ENGLISH')
 
@@ -164,6 +199,15 @@ const contact = computed(() => {
                   >
                 </span>
               </UTooltip>
+              <UDropdownMenu v-if="hasCvContent" :items="profileMenu" :content="{ align: 'end' }">
+                <UButton
+                  icon="i-lucide-ellipsis-vertical"
+                  color="neutral"
+                  variant="ghost"
+                  aria-label="More profile actions"
+                  data-testid="profile-menu"
+                />
+              </UDropdownMenu>
             </div>
           </div>
 
@@ -211,15 +255,16 @@ const contact = computed(() => {
             data-testid="profile-content-language"
             @update:model-value="changeContentLanguage"
           />
-          <UChip :show="!translating && staleCount > 0" color="warning" inset>
+          <!-- While translating, the sticky bar at the bottom holds Done instead. -->
+          <UChip v-if="!translating" :show="staleCount > 0" color="warning" inset>
             <UButton
               icon="i-lucide-languages"
               color="neutral"
-              :variant="translating ? 'solid' : 'ghost'"
+              variant="ghost"
               size="sm"
               data-testid="profile-translate-toggle"
-              @click="translating = !translating"
-              >{{ translating ? 'Done translating' : `Translate to ${targetLabel}` }}</UButton
+              @click="translating = true"
+              >Translate to {{ targetLabel }}</UButton
             >
           </UChip>
           <span
@@ -236,10 +281,12 @@ const contact = computed(() => {
               title="Summary"
               icon="i-lucide-notebook-pen"
               testid="profile-summary"
+              clearable
               :empty="!profile.summary"
               empty-message="No summary yet."
               add-label="Add summary"
               @add="summaryOpen = true"
+              @clear="clearTarget = 'SUMMARY'"
             >
               <template v-if="profile.summary" #actions>
                 <UButton
@@ -261,28 +308,54 @@ const contact = computed(() => {
               />
             </ProfileSection>
 
-            <ProfileExperienceList :experiences="profile.experiences" @changed="refresh" />
+            <ProfileExperienceList
+              :experiences="profile.experiences"
+              @changed="refresh"
+              @clear="clearTarget = 'EXPERIENCES'"
+            />
 
-            <ProfileProjectList :projects="profile.projects" @changed="refresh" />
+            <ProfileProjectList
+              :projects="profile.projects"
+              @changed="refresh"
+              @clear="clearTarget = 'PROJECTS'"
+            />
 
-            <ProfileEducationList :educations="profile.educations" @changed="refresh" />
+            <ProfileEducationList
+              :educations="profile.educations"
+              @changed="refresh"
+              @clear="clearTarget = 'EDUCATIONS'"
+            />
 
-            <ProfileReferenceList :references="profile.references" @changed="refresh" />
+            <ProfileReferenceList
+              :references="profile.references"
+              @changed="refresh"
+              @clear="clearTarget = 'REFERENCES'"
+            />
           </div>
 
           <div class="space-y-4">
-            <ProfileSkillList :skills="profile.skills" @changed="refresh" />
+            <ProfileSkillList
+              :skills="profile.skills"
+              @changed="refresh"
+              @clear="clearTarget = 'SKILLS'"
+            />
 
-            <ProfileLanguageList :languages="profile.languages" @changed="refresh" />
+            <ProfileLanguageList
+              :languages="profile.languages"
+              @changed="refresh"
+              @clear="clearTarget = 'LANGUAGES'"
+            />
 
             <ProfileSection
               title="Hobbies"
               icon="i-lucide-palette"
               testid="profile-hobbies"
+              clearable
               :empty="!profile.hobbies.length"
               empty-message="No hobbies yet."
               add-label="Add hobbies"
               @add="hobbiesOpen = true"
+              @clear="clearTarget = 'HOBBIES'"
             >
               <template v-if="profile.hobbies.length" #actions>
                 <UButton
@@ -302,12 +375,49 @@ const contact = computed(() => {
               </div>
             </ProfileSection>
 
-            <ProfileCertificationList :certifications="profile.certifications" @changed="refresh" />
+            <ProfileCertificationList
+              :certifications="profile.certifications"
+              @changed="refresh"
+              @clear="clearTarget = 'CERTIFICATIONS'"
+            />
 
             <ProfilePreferencesCard :profile="profile" @saved="onSaved" @changed="refresh" />
           </div>
         </div>
 
+        <!-- Sticky so Done stays in reach on a long profile; same bar style as the tailored CV editor. -->
+        <div
+          v-if="translating"
+          class="sticky bottom-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-default bg-default/90 p-3 backdrop-blur"
+          data-testid="profile-translating-bar"
+        >
+          <UIcon name="i-lucide-languages" class="size-5 shrink-0 text-primary" />
+          <div class="min-w-0 flex-1 text-sm">
+            <p class="font-medium text-highlighted">
+              Translating to {{ targetLabel }}
+              <span class="font-normal text-muted" data-testid="profile-translating-progress"
+                >· {{ bulletProgress.done }} of {{ bulletProgress.total }} bullets</span
+              >
+            </p>
+            <p class="text-muted">
+              Summary and bullets only. Titles, dates and other sections are used as written.
+            </p>
+          </div>
+          <UButton
+            icon="i-lucide-check"
+            data-testid="profile-translate-done"
+            class="w-full justify-center sm:w-auto"
+            @click="translating = false"
+            >Done translating</UButton
+          >
+        </div>
+
+        <ProfileClearSectionsModal
+          v-model:target="clearTarget"
+          :profile="profile"
+          @saved="onSaved"
+          @changed="refresh"
+        />
         <LazyProfileCvImportModal
           v-if="cvImportOpen"
           v-model:open="cvImportOpen"

@@ -9,10 +9,15 @@ import { cvProfile } from '../fixtures/profileCv'
 
 let savedDraft: unknown
 let appliedInput: Record<string, unknown> | undefined
+let deleteInput: Record<string, unknown> | undefined
 registerEndpoint('/graphql', {
   method: 'POST',
   handler: async (event) => {
     const body = await readBody(event)
+    if (body.query.includes('mutation DeleteDocument')) {
+      deleteInput = body.variables.input
+      return { data: { deleteDocument: { id: deleteInput.id, errors: null } } }
+    }
     if (!body.query.includes('mutation ApplyToListing'))
       return { data: { tailoredCvDraft: savedDraft } }
     appliedInput = body.variables.input
@@ -20,7 +25,13 @@ registerEndpoint('/graphql', {
   }
 })
 
-const pdf = { id: 60, kind: 'CV', fileName: 'tailored.pdf', createdAt: '2026-10-12T11:00:00Z' }
+const pdf = {
+  id: 60,
+  kind: 'CV',
+  fileName: 'tailored.pdf',
+  createdAt: '2026-10-12T11:00:00Z',
+  sentAt: null
+}
 
 const mountCard = async (documents: unknown[] = [], status = 'SAVED') => {
   const wrapper = await mountSuspended(TailoredCvCard, {
@@ -41,6 +52,8 @@ const withDraft = () => {
 beforeEach(() => {
   clearNuxtData()
   savedDraft = null
+  appliedInput = undefined
+  deleteInput = undefined
 })
 
 describe('Tailored CV card', () => {
@@ -92,6 +105,35 @@ describe('Tailored CV card', () => {
     document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
     await vi.waitFor(() => expect(wrapper.emitted('changed')).toBeTruthy())
     expect(appliedInput).toMatchObject({ cvDocumentId: 60 })
+    wrapper.unmount()
+  })
+
+  it('deletes the unsent PDF from the card after confirmation', async () => {
+    withDraft()
+    const wrapper = await mountCard([pdf])
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="tailored-cv-card-delete-pdf"]').exists()).toBe(true)
+    )
+
+    await wrapper.get('[data-testid="tailored-cv-card-delete-pdf"]').trigger('click')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Delete this PDF?'))
+    document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
+    await flushPromises()
+
+    await vi.waitFor(() => {
+      expect(deleteInput).toEqual({ id: 60 })
+      expect(wrapper.emitted('changed')).toBeTruthy()
+      expect(wrapper.find('[data-testid="tailored-cv-card-pdf"]').exists()).toBe(false)
+    })
+    wrapper.unmount()
+  })
+
+  it('does not offer deletion for a sent PDF', async () => {
+    withDraft()
+    const wrapper = await mountCard([{ ...pdf, sentAt: '2026-10-12T12:00:00Z' }])
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="tailored-cv-card-delete-pdf"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

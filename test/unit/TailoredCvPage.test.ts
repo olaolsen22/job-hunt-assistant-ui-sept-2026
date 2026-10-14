@@ -72,6 +72,11 @@ registerEndpoint('/graphql', {
       if (reply.document) listing.documents.push({ ...reply.document, kind: 'CV', sentAt: null })
       return { data: { generateCvDocument: reply } }
     }
+    if (query.includes('mutation DeleteDocument')) {
+      const documentId = input.id
+      listing.documents = listing.documents.filter((doc) => doc.id !== documentId)
+      return { data: { deleteDocument: { id: documentId, errors: null } } }
+    }
     if (query.includes('mutation ApplyToListing')) {
       appliedInput = input
       return { data: { applyToListing: { listing: { id: 5 }, errors: null } } }
@@ -484,6 +489,39 @@ describe('Tailored CV page', () => {
       expect(el('tailored-cv-apply')).toBeNull()
       expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(false)
       expect(el('tailored-cv-latest-pdf')!.textContent).toContain('older than the draft')
+    })
+
+    it('deletes an unsent PDF after confirmation and refreshes the listing', async () => {
+      currentPdf()
+      await mountPage()
+      await vi.waitFor(() => expect(el('tailored-cv-delete-pdf')).not.toBeNull())
+
+      await click('tailored-cv-delete-pdf')
+      await vi.waitFor(() =>
+        expect(el('confirm-modal-confirm')?.textContent).toContain('Delete PDF')
+      )
+      await click('confirm-modal-confirm')
+      await vi.waitFor(() => expect(el('tailored-cv-latest-pdf')).toBeNull())
+
+      expect(ops('DeleteDocument')).toHaveLength(1)
+      expect(ops('DeleteDocument')[0]!.variables.input).toEqual({ id: 60 })
+    })
+
+    it('does not show the delete action for a sent PDF', async () => {
+      savedDraft = savedSummary()
+      listing.documents = [
+        {
+          id: 60,
+          kind: 'CV',
+          fileName: 'sent.pdf',
+          createdAt: '2026-10-12T11:00:00Z',
+          sentAt: '2026-10-12T12:00:00Z'
+        }
+      ]
+      await mountPage()
+      await flushPromises()
+
+      expect(el('tailored-cv-delete-pdf')).toBeNull()
     })
 
     it('applies with the PDF selected, from the bar or the preview', async () => {

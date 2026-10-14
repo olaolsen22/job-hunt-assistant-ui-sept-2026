@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { LANGUAGE_OPTIONS } from '~/constants/listing'
+import { PROFICIENCY_OPTIONS } from '~/constants/listing'
 import type { ProfileLanguage } from '~/composables/useProfile'
 
-const { languages } = defineProps<{ languages: readonly ProfileLanguage[] }>()
-const emit = defineEmits<{ changed: [] }>()
+defineProps<{ languages: readonly ProfileLanguage[] }>()
+const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const REMOVE_LANGUAGE = graphql(`
   mutation RemoveProfileLanguage($input: RemoveProfileLanguageInput!) {
     removeProfileLanguage(input: $input) {
-      language
+      name
       errors {
         __typename
         ... on Error {
@@ -19,12 +19,8 @@ const REMOVE_LANGUAGE = graphql(`
   }
 `)
 
-const labelOf = (language: string) =>
-  LANGUAGE_OPTIONS.find((o) => o.value === language)?.label ?? language
-
-const unused = computed(() =>
-  LANGUAGE_OPTIONS.filter((o) => !languages.some((l) => l.language === o.value))
-)
+const proficiencyLabel = (value: string) =>
+  PROFICIENCY_OPTIONS.find((o) => o.value === value)?.label ?? value
 
 const formOpen = ref(false)
 const editing = ref<ProfileLanguage | null>(null)
@@ -44,9 +40,9 @@ const openForm = (language: ProfileLanguage | null) => {
 const { run, loading } = useMutation(() => emit('changed'))
 
 const remove = async () => {
-  const language = removing.value!.language
+  const name = removing.value!.name
   const ok = await run(async () => {
-    const { removeProfileLanguage } = await gql(REMOVE_LANGUAGE, { input: { language } })
+    const { removeProfileLanguage } = await gql(REMOVE_LANGUAGE, { input: { name } })
     return removeProfileLanguage.errors
   })
   removing.value = null
@@ -56,26 +52,32 @@ const remove = async () => {
 
 <template>
   <ProfileSection
+    clearable
     title="Languages"
     icon="i-lucide-languages"
     testid="profile-languages"
     :empty="!languages.length"
     empty-message="No languages yet."
     add-label="Add language"
-    :full="!unused.length"
+    @clear="emit('clear')"
     @add="openForm(null)"
   >
     <ul class="space-y-2">
       <li
         v-for="l in languages"
-        :key="l.language"
+        :key="l.id"
         class="flex items-center gap-2"
         data-testid="profile-language"
       >
-        <span class="min-w-0 flex-1 truncate">{{ labelOf(l.language) }}</span>
-        <UBadge color="neutral" variant="subtle" size="sm">{{ l.level }}</UBadge>
+        <span class="min-w-0 flex-1 truncate">{{ l.name }}</span>
+        <UBadge color="neutral" variant="subtle" size="sm"
+          >Spoken: {{ proficiencyLabel(l.spoken) }}</UBadge
+        >
+        <UBadge color="neutral" variant="subtle" size="sm"
+          >Written: {{ proficiencyLabel(l.written) }}</UBadge
+        >
         <ProfileRowActions
-          :name="labelOf(l.language)"
+          :name="l.name"
           remove-label="Remove"
           testid="profile-language-actions"
           @edit="openForm(l)"
@@ -86,16 +88,11 @@ const remove = async () => {
   </ProfileSection>
 
   <!-- Outside the section: its body isn't rendered while the section is empty. -->
-  <ProfileLanguageModal
-    v-model:open="formOpen"
-    :language="editing"
-    :available="unused"
-    @changed="emit('changed')"
-  />
+  <ProfileLanguageModal v-model:open="formOpen" :language="editing" @changed="emit('changed')" />
   <AppConfirmModal
     v-model:open="removeOpen"
     title="Remove this language?"
-    :description="removing ? labelOf(removing.language) : undefined"
+    :description="removing?.name"
     confirm-label="Remove"
     :loading="loading"
     @confirm="remove"

@@ -89,7 +89,7 @@ const undo = async () => {
     <template #description="{ item }">
       <div class="space-y-1">
         <LazyAppMarkdownContent v-if="item.entry.note" :source="item.entry.note" />
-        <div class="flex gap-1">
+        <div class="flex flex-wrap gap-1">
           <UButton
             size="xs"
             variant="link"

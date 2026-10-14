@@ -18,38 +18,46 @@ const appliedAt = computed(
   () => listing.statusHistory.find((e) => e.status === 'APPLIED')?.occurredAt
 )
 
-const applyOpen = ref(false)
+const showSummary = computed(
+  () =>
+    listing.status === 'SAVED' || listing.company.applicationCount > 0 || outcomes.value.length > 0
+)
+
+const applyOpen = defineModel<boolean>('applyOpen', { default: false })
 const outcomeOpen = ref(false)
 </script>
 
 <template>
   <AppCard title="Application">
     <div class="space-y-6">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <div class="flex flex-wrap items-center gap-2">
+      <div v-if="showSummary" class="flex flex-col items-start gap-3">
+        <div
+          v-if="listing.status === 'SAVED' || listing.company.applicationCount"
+          class="min-w-0 space-y-1"
+        >
           <!-- The status badge is in the page header, so only what it doesn't say is here. -->
           <span
             v-if="listing.status === 'SAVED'"
-            class="text-sm text-muted"
+            class="block break-words text-sm text-muted"
             data-testid="listing-not-applied"
             >Not applied yet</span
           >
           <span
             v-if="listing.company.applicationCount"
-            class="text-sm text-muted"
+            class="block break-words text-sm text-muted"
             data-testid="listing-application-count"
             >Applications to {{ listing.company.name }}:
             {{ listing.company.applicationCount }}</span
           >
         </div>
 
-        <div class="flex flex-wrap gap-2">
+        <div v-if="listing.status === 'SAVED' || outcomes.length" class="flex flex-wrap gap-2">
           <UButton
             v-if="listing.status === 'SAVED'"
-            icon="i-lucide-send"
+            icon="i-lucide-check"
             data-testid="listing-apply"
             @click="applyOpen = true"
-            >Apply</UButton
+            >Record application</UButton
           >
           <UButton
             v-if="outcomes.length"
@@ -65,36 +73,44 @@ const outcomeOpen = ref(false)
 
       <div
         v-if="listing.status !== 'SAVED' || listing.interviews.length"
-        class="grid gap-6 border-t border-muted pt-6 lg:grid-cols-2"
+        class="grid gap-6 xl:grid-cols-2"
+        :class="{ 'border-t border-muted pt-6': showSummary }"
       >
         <div class="space-y-3">
           <h3 class="font-medium text-highlighted">Timeline</h3>
           <ListingsStatusTimeline :listing="listing" @changed="emit('changed')" />
         </div>
-        <!-- Stacked below lg, side by side from lg, so the divider flips from top to left.
+        <!-- Stacked below xl, side by side from xl, so the divider flips from top to left.
              Wrapped: Interviews has multiple roots (its modals), so a class on it is dropped. -->
-        <div class="border-t border-muted pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
+        <div class="border-t border-muted pt-6 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-6">
           <ListingsInterviews :listing="listing" @changed="emit('changed')" />
         </div>
       </div>
 
       <div v-if="listing.documents.length" class="space-y-3 border-t border-muted pt-6">
         <h3 class="font-medium text-highlighted">Documents</h3>
-        <ul class="space-y-1" data-testid="listing-documents">
-          <li v-for="doc in listing.documents" :key="doc.id" class="flex items-center gap-2">
-            <!-- `external` because /api/** is a proxied backend route, not a Nuxt page. -->
-            <UButton
-              :to="`/api/documents/${doc.id}`"
-              external
-              target="_blank"
-              variant="link"
-              size="sm"
-              icon="i-lucide-file-text"
-              class="min-w-0 p-0"
-            >
-              <span class="truncate">{{ doc.fileName }}</span>
-            </UButton>
-            <UBadge v-if="doc.sentAt" color="neutral" variant="subtle" size="sm">Sent</UBadge>
+        <ul class="space-y-3" data-testid="listing-documents">
+          <li v-for="doc in listing.documents" :key="doc.id" class="space-y-1">
+            <div class="flex items-start gap-2">
+              <!-- `external` because /api/** is a proxied backend route, not a Nuxt page. -->
+              <UButton
+                :to="`/api/documents/${doc.id}`"
+                external
+                target="_blank"
+                variant="link"
+                size="sm"
+                icon="i-lucide-file-text"
+                class="min-w-0 items-start p-0"
+              >
+                <span class="whitespace-normal break-words text-left">{{ doc.fileName }}</span>
+              </UButton>
+              <UBadge v-if="doc.sentAt" color="neutral" variant="subtle" size="sm" class="shrink-0"
+                >Sent</UBadge
+              >
+            </div>
+            <p class="text-xs text-muted">
+              Created <time :datetime="doc.createdAt">{{ formatDateTime(doc.createdAt) }}</time>
+            </p>
           </li>
         </ul>
       </div>

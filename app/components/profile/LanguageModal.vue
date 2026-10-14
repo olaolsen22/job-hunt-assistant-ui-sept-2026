@@ -1,45 +1,51 @@
 <script setup lang="ts">
-import { CEFR_LEVELS, LANGUAGE_OPTIONS } from '~/constants/listing'
-import type { CefrLevel, Language } from '~/constants/listing'
+import { PROFICIENCY_OPTIONS } from '~/constants/listing'
+import type { Proficiency } from '~/constants/listing'
 import type { ProfileLanguage } from '~/composables/useProfile'
 
-// Without `language` it adds one of `available`; with it, it changes that language's level.
-const { language, available } = defineProps<{
-  language: ProfileLanguage | null
-  available: readonly { label: string; value: Language }[]
-}>()
+// Without `language` it adds a new one by name; with it, it changes that language's levels.
+const { language } = defineProps<{ language: ProfileLanguage | null }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
 
-// No `errors` on this payload, so a failure only reaches useMutation's catch.
 const SET_LANGUAGE = graphql(`
   mutation SetProfileLanguage($input: SetProfileLanguageInput!) {
     setProfileLanguage(input: $input) {
       profileLanguage {
-        language
-        level
+        id
+        name
+        spoken
+        written
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
       }
     }
   }
 `)
 
-const chosen = ref<Language>()
-const level = ref<CefrLevel>('B2')
+const name = ref('')
+const spoken = ref<Proficiency>('GOOD')
+const written = ref<Proficiency>('GOOD')
 
 watch(open, (isOpen) => {
   if (!isOpen) return
-  chosen.value = language?.language ?? available[0]?.value
-  level.value = language?.level ?? 'B2'
+  name.value = language?.name ?? ''
+  spoken.value = language?.spoken ?? 'GOOD'
+  written.value = language?.written ?? 'GOOD'
 })
-
-const labelOf = (value?: string) => LANGUAGE_OPTIONS.find((o) => o.value === value)?.label
 
 const { run, loading } = useMutation(() => emit('changed'))
 
 const submit = async () => {
   const ok = await run(async () => {
-    await gql(SET_LANGUAGE, { input: { language: chosen.value!, level: level.value } })
-    return null
+    const { setProfileLanguage } = await gql(SET_LANGUAGE, {
+      input: { name: name.value.trim(), spoken: spoken.value, written: written.value }
+    })
+    return setProfileLanguage.errors
   })
   if (!ok) return
   open.value = false
@@ -50,28 +56,35 @@ const submit = async () => {
 <template>
   <AppFormModal
     v-model:open="open"
-    :title="language ? `Edit ${labelOf(language.language)}` : 'Add language'"
-    :state="{ chosen, level }"
+    :title="language ? `Edit ${language.name}` : 'Add language'"
+    :state="{ name, spoken, written }"
     :loading="loading"
     @submit="submit"
   >
-    <div class="grid gap-4 sm:grid-cols-2">
-      <UFormField label="Language">
-        <UInput v-if="language" :model-value="labelOf(chosen)" disabled class="w-full" />
-        <USelect
-          v-else
-          v-model="chosen"
-          :items="[...available]"
+    <div class="grid gap-4 sm:grid-cols-3">
+      <UFormField label="Language" required>
+        <UInput
+          v-model="name"
+          :disabled="!!language"
+          required
           class="w-full"
-          data-testid="language-choice"
+          data-testid="language-name"
         />
       </UFormField>
-      <UFormField label="Level">
+      <UFormField label="Spoken">
         <USelect
-          v-model="level"
-          :items="[...CEFR_LEVELS]"
+          v-model="spoken"
+          :items="[...PROFICIENCY_OPTIONS]"
           class="w-full"
-          data-testid="language-level"
+          data-testid="language-spoken"
+        />
+      </UFormField>
+      <UFormField label="Written">
+        <USelect
+          v-model="written"
+          :items="[...PROFICIENCY_OPTIONS]"
+          class="w-full"
+          data-testid="language-written"
         />
       </UFormField>
     </div>

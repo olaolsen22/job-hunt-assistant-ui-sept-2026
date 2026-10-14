@@ -88,7 +88,7 @@ const remove = async () => {
             class="flex items-start justify-between gap-2 py-2"
           >
             <div class="min-w-0 space-y-1">
-              <p class="font-medium">
+              <p class="break-words font-medium">
                 Round {{ round
                 }}<template v-if="interview.title"> · {{ interview.title }}</template>
               </p>
@@ -97,7 +97,7 @@ const remove = async () => {
             </div>
             <div class="flex shrink-0 gap-1">
               <UButton
-                size="xs"
+                size="lg"
                 variant="ghost"
                 color="neutral"
                 icon="i-lucide-pencil"
@@ -105,7 +105,7 @@ const remove = async () => {
                 @click="openForm(interview)"
               />
               <UButton
-                size="xs"
+                size="lg"
                 variant="ghost"
                 color="error"
                 icon="i-lucide-trash-2"

@@ -138,8 +138,10 @@ export const PROFILE_FIELDS = graphql(
         }
       }
       languages {
-        language
-        level
+        id
+        name
+        spoken
+        written
       }
       references {
         id

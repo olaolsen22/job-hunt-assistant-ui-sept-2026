@@ -2,7 +2,7 @@
 import type { ProfileCertification } from '~/composables/useProfile'
 
 const props = defineProps<{ certifications: readonly ProfileCertification[] }>()
-const emit = defineEmits<{ changed: [] }>()
+const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const { locale } = useProfileTranslation()
 
@@ -52,12 +52,14 @@ const remove = async () => {
 
 <template>
   <ProfileSection
+    clearable
     title="Certifications"
     icon="i-lucide-award"
     testid="profile-certifications"
     :empty="!certifications.length"
     empty-message="No certifications yet."
     add-label="Add certification"
+    @clear="emit('clear')"
     @add="openForm(null)"
   >
     <ul class="divide-y divide-default">

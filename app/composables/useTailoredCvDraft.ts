@@ -2,6 +2,7 @@ import type { Ref } from 'vue'
 import type { ResultOf, VariablesOf } from 'gql.tada'
 import type { ProfileData } from '~/composables/useProfile'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import type { Language } from '~/constants/listing'
 import type { TailoredCv, TailoredCvSectionKey } from '~/utils/tailoredCv'
 
 const CONTENT_FIELDS = graphql(`
@@ -10,7 +11,10 @@ const CONTENT_FIELDS = graphql(`
     headline
     email
     phone
-    location
+    address
+    language
+    dateOfBirth
+    referencesOnRequest
     links {
       label
       url
@@ -22,6 +26,8 @@ const CONTENT_FIELDS = graphql(`
       startMonth
       endMonth
       sourceEntryId
+      contentStyle
+      paragraph
       bullets {
         text
         sourceBulletId
@@ -34,6 +40,8 @@ const CONTENT_FIELDS = graphql(`
       startMonth
       endMonth
       sourceEntryId
+      contentStyle
+      paragraph
       bullets {
         text
         sourceBulletId
@@ -46,6 +54,8 @@ const CONTENT_FIELDS = graphql(`
       expiresMonth
       url
       sourceEntryId
+      contentStyle
+      paragraph
       bullets {
         text
         sourceBulletId
@@ -57,6 +67,8 @@ const CONTENT_FIELDS = graphql(`
       startMonth
       endMonth
       sourceEntryId
+      contentStyle
+      paragraph
       bullets {
         text
         sourceBulletId
@@ -68,8 +80,9 @@ const CONTENT_FIELDS = graphql(`
       sourceSkillId
     }
     languages {
-      language
-      level
+      name
+      spoken
+      written
     }
   }
 `)
@@ -107,6 +120,7 @@ const ANALYZE = graphql(`
         selectedBulletIds
         selectedSkillIds
         summary
+        paragraph
         error
         errorCode
       }
@@ -174,6 +188,7 @@ const GENERATE = graphql(`
         id
         fileName
         createdAt
+        sentAt
       }
       errors {
         __typename
@@ -231,7 +246,8 @@ const snapshot = (cv: TailoredCv) => JSON.stringify(cv)
 // errors, analysis progress and save. Nothing reaches the API's draft until save().
 export const useTailoredCvDraft = (
   listingId: number,
-  profile: Ref<ProfileData | null | undefined>
+  profile: Ref<ProfileData | null | undefined>,
+  postingLanguage: Ref<Language | null | undefined> = ref(undefined)
 ) => {
   const query = useTailoredCvDraftQuery(listingId)
   const llm = useLlmModels()
@@ -244,6 +260,8 @@ export const useTailoredCvDraft = (
   const seed = ref('')
   const suggestions = ref<TailoredCvSuggestion[]>([])
   const sectionErrors = ref<Partial<Record<TailoredCvSectionKey, string>>>({})
+  // Technical detail for an unexpected failure, shown small under the generic message.
+  const sectionDetails = ref<Partial<Record<TailoredCvSectionKey, string>>>({})
   const analyzing = ref(false)
   const analyzingKey = ref<TailoredCvSectionKey>()
   const progress = ref<{ label: string; step: number; total: number }>()
@@ -256,11 +274,12 @@ export const useTailoredCvDraft = (
   // Builds the candidate once both the draft and the profile are in. Returns true for a new candidate.
   const init = () => {
     if (!profile.value || query.status.value !== 'success') return false
-    cv.value = draft.value
-      ? tailoredCvFromContent(draft.value.content)
-      : tailoredCvFromProfile(profile.value)
+    const savedCv = draft.value ? tailoredCvFromContent(draft.value.content) : undefined
+    const savedSnapshot = savedCv ? snapshot(savedCv) : null
+    cv.value = savedCv ?? tailoredCvFromProfile(profile.value)
+    if (postingLanguage.value) cv.value.language = postingLanguage.value
     seed.value = snapshot(cv.value)
-    saved.value = draft.value ? seed.value : null
+    saved.value = savedSnapshot
     return !draft.value
   }
 
@@ -310,6 +329,7 @@ export const useTailoredCvDraft = (
   // saved model is gone (the list is already refetched) or the API's AI safeguards refused.
   const runStep = async (step: AnalysisStep, direct: boolean) => {
     sectionErrors.value = { ...sectionErrors.value, [step.key]: undefined }
+    sectionDetails.value = { ...sectionDetails.value, [step.key]: undefined }
     try {
       const input = { listingId, section: step.section, sourceEntryId: step.sourceEntryId }
       const { result, errors } = await attempt(
@@ -338,8 +358,9 @@ export const useTailoredCvDraft = (
         return
       }
       offer(value.key, value.value, direct)
-    } catch {
+    } catch (e) {
       sectionErrors.value[step.key] = ERROR_MESSAGES.generic
+      sectionDetails.value[step.key] = errorDetail(e)
     }
   }
 
@@ -413,6 +434,7 @@ export const useTailoredCvDraft = (
       const { candidate, errors } = previewTailoredCvDraft
       if (!candidate) return errors?.[0]?.message ?? ERROR_MESSAGES.generic
       const next = mergeExternalCandidate(cv.value, tailoredCvFromContent(candidate.content))
+      next.language = postingLanguage.value ?? cv.value.language
       if (scope) {
         const value = getCvSection(next, scope)
         if (value === undefined) return 'The reply has nothing for this section.'
@@ -424,8 +446,8 @@ export const useTailoredCvDraft = (
         for (const { key, value } of changedCvSections(cv.value, next)) offer(key, value, false)
       }
       return null
-    } catch {
-      return ERROR_MESSAGES.generic
+    } catch (e) {
+      return `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
     } finally {
       previewing.value = false
     }
@@ -457,8 +479,17 @@ export const useTailoredCvDraft = (
   // the explicit handling.
   const generatePhase = ref<'saving' | 'generating'>()
   const generating = computed(() => !!generatePhase.value)
-  const generated = ref<{ id: number; fileName: string; createdAt: string }>()
-  const generateError = ref<{ kind: 'draft' | 'listing' | 'other'; message: string }>()
+  const generated = ref<{
+    id: number
+    fileName: string
+    createdAt: string
+    sentAt: string | null
+  }>()
+  const generateError = ref<{
+    kind: 'draft' | 'listing' | 'other'
+    message: string
+    detail?: string
+  }>()
   const generate = async () => {
     if (generatePhase.value || !cv.value) return false
     generated.value = generateError.value = undefined
@@ -487,8 +518,12 @@ export const useTailoredCvDraft = (
       }
       generated.value = generateCvDocument.document ?? undefined
       return !!generated.value
-    } catch {
-      generateError.value = { kind: 'other', message: ERROR_MESSAGES.generic }
+    } catch (e) {
+      generateError.value = {
+        kind: 'other',
+        message: ERROR_MESSAGES.generic,
+        detail: errorDetail(e)
+      }
       return false
     } finally {
       generatePhase.value = undefined
@@ -503,6 +538,7 @@ export const useTailoredCvDraft = (
     init,
     suggestions,
     sectionErrors,
+    sectionDetails,
     accept,
     dismiss,
     analyzing,

@@ -5,6 +5,7 @@ defineProps<{
   title: string
   testid: string
   error?: string
+  errorDetail?: string
   analyzable?: boolean
   analyzing?: boolean
   disabled?: boolean
@@ -37,6 +38,8 @@ const emit = defineEmits<{ analyze: [] }>()
         variant="subtle"
         icon="i-lucide-circle-alert"
         :title="error"
+        :description="errorDetail"
+        :ui="{ description: 'text-xs break-words' }"
         :actions="
           analyzable
             ? [

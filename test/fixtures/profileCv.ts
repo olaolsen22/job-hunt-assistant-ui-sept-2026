@@ -67,7 +67,7 @@ export const cvProfile = (): ProfileData => ({
     }
   ],
   skills: [{ level: 4, experienceMonths: 24, skill: { id: 1, name: 'Vue' } }],
-  languages: [{ language: 'NORWEGIAN', level: 'C1' }]
+  languages: [{ id: 1, name: 'Norwegian', spoken: 'NATIVE', written: 'VERY_GOOD' }]
 })
 
 export const cvCandidate = (overrides: Partial<CvCandidate> = {}): CvCandidate => ({

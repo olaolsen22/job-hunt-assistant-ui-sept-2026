@@ -52,6 +52,7 @@ const SET_ARCHIVED = graphql(`
 const toast = useToast()
 const { state, toInput, fill } = useListingForm()
 const markOpen = ref(false)
+const applyOpen = ref(false)
 const marking = ref(false)
 
 // The API has no mutation for just this flag and updateListing replaces the whole listing,
@@ -133,35 +134,41 @@ const skillsByRequirement = computed(() => {
 <template>
   <div class="flex justify-center">
     <div class="w-full max-w-3xl space-y-4 sm:space-y-6 lg:max-w-6xl">
-      <!-- Stacked below sm so Back never shares a line with the actions on a phone. -->
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <UButton
-          :to="listingsView"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          color="neutral"
-          class="self-start"
-        >
-          Back
-        </UButton>
+      <div class="space-y-2">
+        <nav aria-label="Listing navigation">
+          <ULink
+            :to="listingsView"
+            class="inline-flex items-center gap-1.5 py-2 text-sm text-muted"
+          >
+            <UIcon name="i-lucide-arrow-left" class="size-4 shrink-0" />
+            Back to listings
+          </ULink>
+        </nav>
 
-        <div v-if="listing" class="flex items-center gap-2">
+        <div v-if="listing" class="flex w-full items-center gap-2 sm:justify-end">
           <UButton
             :to="`/listings/${listing.id}/edit?analyze`"
             icon="i-lucide-sparkles"
             color="neutral"
             variant="subtle"
+            class="min-w-0 flex-1 justify-center sm:flex-none sm:w-auto"
             data-testid="listing-analyze"
-            >{{ listing.analyzedAt ? 'Re-analyze ad' : 'Analyze ad' }}</UButton
+            >{{ listing.analyzedAt ? 'Re-analyze' : 'Analyze ad' }}</UButton
           >
-          <UButton :to="`/listings/${listing.id}/edit`" icon="i-lucide-pencil">Edit</UButton>
-          <UDropdownMenu :items="moreItems" :content="{ align: 'end' }">
+          <UButton
+            :to="`/listings/${listing.id}/edit`"
+            icon="i-lucide-pencil"
+            class="min-w-0 flex-1 justify-center sm:flex-none sm:w-auto"
+            >Edit</UButton
+          >
+          <UDropdownMenu class="shrink-0" :items="moreItems" :content="{ align: 'end' }">
             <UButton
               icon="i-lucide-ellipsis-vertical"
               color="neutral"
               variant="subtle"
               aria-label="More actions"
               :loading="archiving"
+              class="shrink-0 justify-center"
               data-testid="listing-more"
             />
           </UDropdownMenu>
@@ -261,20 +268,53 @@ const skillsByRequirement = computed(() => {
             </div>
           </div>
 
-          <UButton
-            :to="listing.url"
-            target="_blank"
-            rel="noopener"
-            variant="soft"
-            color="neutral"
-            icon="i-lucide-external-link"
-            label="View ad"
-            data-testid="listing-view-ad"
-          />
+          <dl class="flex flex-wrap gap-x-6 gap-y-2" data-testid="listing-key-facts">
+            <div
+              v-for="fact in [
+                { label: 'Work mode', value: labelOf(WORK_MODE_OPTIONS, listing.workMode) },
+                {
+                  label: 'Employment type',
+                  value: labelOf(EMPLOYMENT_TYPE_OPTIONS, listing.employmentType)
+                },
+                { label: 'Seniority', value: labelOf(SENIORITY_OPTIONS, listing.seniority) }
+              ]"
+              :key="fact.label"
+            >
+              <dt class="text-xs text-muted">{{ fact.label }}</dt>
+              <dd class="text-sm">{{ fact.value }}</dd>
+            </div>
+          </dl>
+          <div class="flex flex-wrap gap-2">
+            <UButton
+              :to="listing.url"
+              target="_blank"
+              rel="noopener"
+              variant="soft"
+              color="neutral"
+              icon="i-lucide-external-link"
+              label="View ad"
+              data-testid="listing-view-ad"
+              class="w-full justify-center sm:w-auto"
+            />
+            <UButton
+              v-if="listing.status === 'SAVED'"
+              icon="i-lucide-check"
+              class="w-full justify-center sm:w-auto"
+              data-testid="listing-record-application"
+              @click="applyOpen = true"
+              >Record application</UButton
+            >
+          </div>
         </header>
 
-        <ListingsApplication :listing="listing" @changed="refresh" />
-        <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
+        <template v-if="listing.status !== 'SAVED'">
+          <ListingsApplication
+            v-model:apply-open="applyOpen"
+            :listing="listing"
+            @changed="refresh"
+          />
+          <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
+        </template>
 
         <div
           class="space-y-4 sm:space-y-6 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0"
@@ -283,27 +323,9 @@ const skillsByRequirement = computed(() => {
             <AppCard title="Details">
               <dl class="grid gap-x-4 gap-y-3 sm:grid-cols-2">
                 <div>
-                  <dt class="text-xs text-muted">Work mode</dt>
-                  <dd class="text-sm" :class="{ 'text-muted': !listing.workMode }">
-                    {{ labelOf(WORK_MODE_OPTIONS, listing.workMode) }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs text-muted">Employment type</dt>
-                  <dd class="text-sm" :class="{ 'text-muted': !listing.employmentType }">
-                    {{ labelOf(EMPLOYMENT_TYPE_OPTIONS, listing.employmentType) }}
-                  </dd>
-                </div>
-                <div>
                   <dt class="text-xs text-muted">Schedule</dt>
                   <dd class="text-sm" :class="{ 'text-muted': !listing.schedule }">
                     {{ labelOf(SCHEDULE_OPTIONS, listing.schedule) }}
-                  </dd>
-                </div>
-                <div>
-                  <dt class="text-xs text-muted">Seniority</dt>
-                  <dd class="text-sm" :class="{ 'text-muted': !listing.seniority }">
-                    {{ labelOf(SENIORITY_OPTIONS, listing.seniority) }}
                   </dd>
                 </div>
 
@@ -331,16 +353,9 @@ const skillsByRequirement = computed(() => {
                 </div>
               </dl>
             </AppCard>
-
-            <AppCard title="Summary">
-              <p v-if="listing.description" class="whitespace-pre-line text-sm">
-                {{ listing.description }}
-              </p>
-              <p v-else class="text-sm text-muted">No summary</p>
-            </AppCard>
           </div>
 
-          <div class="space-y-4 sm:space-y-6">
+          <div class="space-y-4 sm:space-y-6 lg:col-start-3 lg:row-span-2">
             <AppCard title="Skills">
               <p v-if="!listing.skills.length" class="text-sm text-muted">No skills listed</p>
               <div v-else class="space-y-4">
@@ -350,9 +365,9 @@ const skillsByRequirement = computed(() => {
                     <div
                       v-for="(skill, i) in group.skills"
                       :key="i"
-                      class="flex items-center justify-between gap-2 py-2"
+                      class="flex flex-col gap-1 py-2"
                     >
-                      <span class="min-w-0 truncate font-medium">{{ skill.skill.name }}</span>
+                      <span class="min-w-0 break-words font-medium">{{ skill.skill.name }}</span>
                       <span class="shrink-0 text-sm text-muted">
                         Level {{ skill.level }}/5<template v-if="skill.minYears">
                           · {{ skill.minYears }}+ yrs</template
@@ -378,7 +393,24 @@ const skillsByRequirement = computed(() => {
               <CompaniesContactList :contacts="listing.contacts.map(({ contact }) => contact)" />
             </AppCard>
           </div>
+          <div class="lg:col-span-2 lg:col-start-1 lg:row-start-2">
+            <AppCard title="Summary">
+              <p v-if="listing.description" class="whitespace-pre-line text-sm">
+                {{ listing.description }}
+              </p>
+              <p v-else class="text-sm text-muted">No summary</p>
+            </AppCard>
+          </div>
         </div>
+
+        <template v-if="listing.status === 'SAVED'">
+          <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
+          <ListingsApplication
+            v-model:apply-open="applyOpen"
+            :listing="listing"
+            @changed="refresh"
+          />
+        </template>
 
         <AppConfirmModal
           v-model:open="markOpen"

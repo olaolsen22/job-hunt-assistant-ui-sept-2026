@@ -14,8 +14,23 @@ defineProps<{
   disabled?: boolean
 }>()
 const bullets = defineModel<TailoredCvBullet[]>('bullets', { required: true })
+const contentStyle = defineModel<'BULLETS' | 'PARAGRAPH' | null>('contentStyle')
+const paragraph = defineModel<string | null>('paragraph')
 const emit = defineEmits<{ remove: []; analyze: [] }>()
 const editing = ref(false)
+
+const CONTENT_STYLE_OPTIONS = [
+  { label: 'Bullets', value: 'BULLETS' },
+  { label: 'Paragraph', value: 'PARAGRAPH' }
+]
+
+// Switching to paragraph starts from the bullets joined, so there is something to edit.
+const setContentStyle = (value: string) => {
+  contentStyle.value = value as 'BULLETS' | 'PARAGRAPH'
+  if (value === 'PARAGRAPH' && !paragraph.value?.trim()) {
+    paragraph.value = bullets.value.map((b) => b.text).join(' ')
+  }
+}
 </script>
 
 <template>
@@ -66,7 +81,30 @@ const editing = ref(false)
       <div class="grid gap-3 sm:grid-cols-2">
         <slot name="fields" />
       </div>
-      <fieldset class="space-y-2">
+      <!-- UTabs without content is a two-option segmented control: one tap, both options visible. -->
+      <UTabs
+        :model-value="contentStyle ?? 'BULLETS'"
+        :items="CONTENT_STYLE_OPTIONS"
+        :content="false"
+        variant="pill"
+        color="neutral"
+        class="w-full sm:w-auto"
+        aria-label="Content format"
+        data-testid="tailored-cv-entry-content-style"
+        @update:model-value="setContentStyle($event as string)"
+      />
+      <UFormField v-if="contentStyle === 'PARAGRAPH'" label="Paragraph">
+        <UTextarea
+          :model-value="paragraph ?? ''"
+          :rows="4"
+          autoresize
+          class="w-full"
+          placeholder="Summarize the relevant experience, or optimize with AI."
+          data-testid="tailored-cv-entry-paragraph-input"
+          @update:model-value="paragraph = $event"
+        />
+      </UFormField>
+      <fieldset v-else class="space-y-2">
         <legend class="mb-2 text-sm font-medium">Bullets</legend>
         <div v-for="(bullet, i) in bullets" :key="i" class="flex items-start gap-2">
           <UTextarea
@@ -94,6 +132,16 @@ const editing = ref(false)
         >
       </fieldset>
     </div>
+    <template v-if="contentStyle === 'PARAGRAPH'">
+      <p
+        v-if="paragraph?.trim()"
+        class="mt-2 whitespace-pre-wrap break-words text-sm"
+        data-testid="tailored-cv-entry-paragraph"
+      >
+        {{ paragraph }}
+      </p>
+      <p v-else class="mt-2 text-sm text-muted">No paragraph yet.</p>
+    </template>
     <ul v-else-if="bullets.length" class="mt-2 list-disc space-y-1 pl-5 text-sm">
       <li v-for="(bullet, i) in bullets" :key="i" class="break-words">{{ bullet.text }}</li>
     </ul>

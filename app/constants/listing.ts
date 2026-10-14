@@ -40,6 +40,13 @@ export const LANGUAGE_OPTIONS = [
 
 export const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const
 
+export const PROFICIENCY_OPTIONS = [
+  { label: 'Beginner', value: 'BEGINNER' },
+  { label: 'Good', value: 'GOOD' },
+  { label: 'Very good', value: 'VERY_GOOD' },
+  { label: 'Native', value: 'NATIVE' }
+] as const
+
 // Labelled, so the closed select reads on its own; the API doesn't define what each level means.
 export const SKILL_LEVELS = [1, 2, 3, 4, 5].map((n) => ({ label: `Level ${n}`, value: n }))
 
@@ -57,6 +64,7 @@ export type WorkMode = (typeof WORK_MODE_OPTIONS)[number]['value']
 export type DeadlineType = (typeof DEADLINE_TYPE_OPTIONS)[number]['value']
 export type Language = (typeof LANGUAGE_OPTIONS)[number]['value']
 export type CefrLevel = (typeof CEFR_LEVELS)[number]
+export type Proficiency = (typeof PROFICIENCY_OPTIONS)[number]['value']
 
 export const APPLICATION_STATUS_OPTIONS = [
   { label: 'Saved', value: 'SAVED', color: 'neutral' },

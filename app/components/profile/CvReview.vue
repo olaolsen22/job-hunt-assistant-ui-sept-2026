@@ -9,7 +9,7 @@ import {
   type CvDraft,
   type CvIssue
 } from '~/utils/profileCvImport'
-import { CEFR_LEVELS, LANGUAGE_OPTIONS, SKILL_LEVELS, LINK_KIND_OPTIONS } from '~/constants/listing'
+import { PROFICIENCY_OPTIONS, SKILL_LEVELS, LINK_KIND_OPTIONS } from '~/constants/listing'
 
 const props = defineProps<{ profile: ProfileData; issues: CvIssue[]; notes: CvIssue[] }>()
 const draft = defineModel<CvDraft>({ required: true })
@@ -34,16 +34,14 @@ const sections = {
 const importedLinks = computed(() => draft.value.links.slice(props.profile.links.length))
 const importedHobbies = computed(() => draft.value.hobbies.slice(props.profile.hobbies.length))
 const linkKind = (kind: string) => LINK_KIND_OPTIONS.find((option) => option.value === kind)!
-const languageLabel = (language: string) =>
-  LANGUAGE_OPTIONS.find((option) => option.value === language)!.label
 const savedSkillLevel = (name: string) => {
   const level = cvSavedSkill(props.profile, name)?.level
   return level ? `Saved ${level}/5` : 'New'
 }
-const savedLanguageLevel = (language: string) => {
-  const level = props.profile.languages.find((saved) => saved.language === language)?.level
-  return level ? `Saved ${level}` : 'New'
-}
+const savedLanguage = (name: string) =>
+  props.profile.languages.some((saved) => saved.name.toLowerCase() === name.trim().toLowerCase())
+    ? 'Saved'
+    : 'New'
 const includeAllSkills = (include: boolean) =>
   draft.value.skills.forEach((skill) => (skill.include = include))
 const needsAttention = (path: string) =>
@@ -336,31 +334,41 @@ defineExpose({ focusIssue })
           <div class="flex flex-wrap items-start gap-2">
             <UCheckbox
               v-model="language.include"
-              :aria-label="`Include ${languageLabel(language.language)}`"
+              :aria-label="`Include ${language.name || 'language'}`"
               class="py-1.5"
             />
-            <ProfileCvField :path="`languages[${i}].language`" class="min-w-40 flex-1">
-              <USelect
-                v-model="language.language"
-                :items="[...LANGUAGE_OPTIONS]"
+            <ProfileCvField :path="`languages[${i}].name`" class="min-w-40 flex-1">
+              <UInput
+                v-model="language.name"
                 :disabled="!language.include"
                 aria-label="Language"
                 class="w-full"
               />
             </ProfileCvField>
-            <ProfileCvField :path="`languages[${i}].level`" class="w-32">
+            <ProfileCvField :path="`languages[${i}].spoken`" class="w-36">
               <USelect
-                :model-value="language.level ?? undefined"
-                :items="[...CEFR_LEVELS]"
+                :model-value="language.spoken ?? undefined"
+                :items="[...PROFICIENCY_OPTIONS]"
                 :disabled="!language.include"
-                placeholder="Level"
-                aria-label="Proficiency"
+                placeholder="Spoken"
+                aria-label="Spoken proficiency"
                 class="w-full"
-                @update:model-value="language.level = $event ?? null"
+                @update:model-value="language.spoken = $event ?? null"
+              />
+            </ProfileCvField>
+            <ProfileCvField :path="`languages[${i}].written`" class="w-36">
+              <USelect
+                :model-value="language.written ?? undefined"
+                :items="[...PROFICIENCY_OPTIONS]"
+                :disabled="!language.include"
+                placeholder="Written"
+                aria-label="Written proficiency"
+                class="w-full"
+                @update:model-value="language.written = $event ?? null"
               />
             </ProfileCvField>
             <UBadge color="neutral" variant="subtle" size="sm" class="mt-1.5">{{
-              savedLanguageLevel(language.language)
+              savedLanguage(language.name)
             }}</UBadge>
           </div>
           <ProfileCvField :path="`languages[${i}]`" exact />

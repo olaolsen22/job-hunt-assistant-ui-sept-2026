@@ -12,8 +12,8 @@ remove it when you delete one.
 - `<AppAiCostNotice :usage?>` — says who pays for built-in AI: the app's AI key (warning), or the owner's own provider key when the default model's `keySource` is `USER` (info, with what is left of that provider's daily limit via `useLlmCallLimits`, fetched only then). Shows today's `LlmUsage` (for the default model, named by label) when given, names the default model (via `useLlmModels`) and links to `/settings` to change it. Used by `ListingsParseModal`, `ProfileCvImportModal` and `ListingsTailoredCvAiModal`.
 - `<AppAiRetryConfirm :message loading? @retry>` — warning shown instead of the usual error after an AI call returned `operation-interrupted` or `result-unavailable`; its "Try again (may be charged)" button is the only way to send another attempt (`useAiRequest().needsConfirm`).
 - `<AppAiLimitLink>` — "Daily limits in Settings" button for a `daily-limit-reached` AI error, placed in the error alert's `actions` slot.
-- `<AppConfirmModal v-model:open title description? confirm-label? loading? disabled? @confirm>` — confirm
-  dialog with Cancel / confirm buttons; not dismissible while `loading`. The default slot is the
+- `<AppConfirmModal v-model:open title description? confirm-label? loading? disabled? color? @confirm>` — confirm
+  dialog with Cancel / confirm buttons; not dismissible while `loading`; `color="error"` for bulk, undo-less deletes. The default slot is the
   body, so form modals (`<ListingsApplyModal>` etc.) wrap it too.
 - `<AppFormModal v-model:open title description? save-label? loading? :state validate? @submit>` — form
   modal on `UForm`: Enter or Save submits, `validate` errors show inline and focus the first one, closing
@@ -77,8 +77,8 @@ remove it when you delete one.
   and the listing detail page.
 - `<ListingsStatusBadge status>` — application status badge (colors in `APPLICATION_STATUS_OPTIONS`).
   Used by `<ListingsCard>` and `<ListingsApplication>`.
-- `<ListingsApplication listing @changed>` — the detail page's Application card: status/archived
-  badges, company application count, Apply / Record outcome buttons per status, and
+- `<ListingsApplication listing v-model:apply-open @changed>` — the detail page's Application card: status/archived
+  badges, company application count, Record application / Record outcome buttons per status, and
   `<ListingsStatusTimeline>` + `<ListingsInterviews>`. `@changed` = refetch the listing.
 - `<ListingsStatusTimeline listing @changed>` — `UTimeline` of `statusHistory` with Edit
   (`<ListingsStatusChangeModal>`) per entry and Undo (confirmed) on the newest.
@@ -91,15 +91,18 @@ remove it when you delete one.
   document or a new PDF (uploaded by the caller on submit); used twice by `<ListingsApplyModal>`.
 - `/profile` (`pages/profile.vue`, data from `useProfile()`) is built from `<Profile…>` components, which own their
   mutations and emit `changed` (page refetches) or `saved` (Basics/Preferences return the whole profile):
-  `<ProfileSection title icon testid empty empty-message add-label @add>` (card with a centered empty state; header
-  Add when filled, `actions` slot to override), `<ProfileEntry kind entry-id title subtitle? dates? bullets>` (an
+  `<ProfileSection title icon testid empty empty-message add-label full? clearable? @add @clear>` (card with a centered empty state; header
+  Add when filled, `actions` slot to override; `clearable` adds a ⋮ "Clear section" when filled, and the lists re-emit `clear`),
+  `<ProfileClearSectionsModal v-model:target :profile @saved>` (confirms and runs `clearProfileSections` for one
+  `ProfileSectionName` or `'ALL'`, naming what is deleted and kept), `<ProfileEntry kind entry-id title subtitle? dates? bullets>` (an
   entry row with edit/delete + `<ProfileBullets kind entry-id bullets>`: add/edit/delete/drag-reorder, max 20),
   `<ProfileNamesField v-model lookup?>` (name chips; combobox with `lookup`, free text without, used for hobbies; exposes `commit()` to add typed text before saving), `<ProfileLocationField v-model:country-code v-model:city>` (country + city, city reset on country change), `<ProfileReferenceList>`/`<ProfileReferenceModal>` (drag-reorder via `moveProfileReference`), the four `…List` + `…Modal` pairs (Experience,
   Education, Certification, Project), `<ProfileSkillList>`/`<ProfileSkillModal>`, `<ProfileLanguageList>` (inline
   levels), `<ProfilePreferencesCard>` (+ target locations via `saveLocation`) and `<ProfileBasicsModal>`.
   Translations mode: the page provides `{ translating, target }` (`provideProfileTranslation`); `<ProfileBullets>` then
   renders `<ProfileBulletTranslation :bullet>` per bullet and the Summary card shows `<ProfileTranslationBlock :profile>`
-  (headline + summary in the language that isn't `contentLanguage`; stale/machine badges).
+  (headline + summary in the language that isn't `contentLanguage`; stale/machine badges). While translating, a sticky
+  bottom bar shows bullet progress and Done; translation rows use `<ProfileRowActions>` with a confirmed delete.
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
 - `<ListingsDates listing>` — posted and deadline lines with icons (card and detail header), posted colored by days ago, deadline
   colored by days left to the server's `dueOn` (ASAP/Not stated show `due ~date`, or "likely filled" once past).

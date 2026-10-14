@@ -146,10 +146,10 @@ const promoteOpen = computed(() => (slow.value || gaveUp.value) && !applicable)
           <UButton color="neutral" variant="ghost" @click="open = false">Close</UButton>
           <UButton
             v-if="applicable"
-            icon="i-lucide-send"
+            icon="i-lucide-check"
             data-testid="cv-pdf-apply"
             @click="emit('apply')"
-            >Apply with this CV</UButton
+            >Record with this CV</UButton
           >
         </div>
       </div>

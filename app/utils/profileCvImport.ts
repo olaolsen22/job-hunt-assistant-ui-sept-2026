@@ -1,7 +1,7 @@
 import type { InjectionKey, Ref } from 'vue'
 import type { CvCandidate, CvSelection } from '~/composables/useProfileCvImport'
 import type { ProfileData } from '~/composables/useProfile'
-import { CEFR_LEVELS } from '~/constants/listing'
+import { PROFICIENCY_OPTIONS } from '~/constants/listing'
 import { isHttpUrl } from '~/utils/isHttpUrl'
 import { locationInput } from '~/utils/locationInput'
 
@@ -62,7 +62,7 @@ export const cvPathRenderable = (path: string) => {
       (!rest || field === 'location' || field === 'skillNames')
     )
   }
-  return /^(?:basics\.(?:fullName|headline|summary|email|phone)|basics\.location(?:\.\w+)?|links(?:\[\d+\](?:\.(?:kind|label|url))?)?|hobbies(?:\[\d+\])?|skills(?:\[\d+\](?:\.(?:name|level))?)?|languages(?:\[\d+\](?:\.(?:language|level))?)?)$/.test(
+  return /^(?:basics\.(?:fullName|headline|summary|email|phone)|basics\.location(?:\.\w+)?|links(?:\[\d+\](?:\.(?:kind|label|url))?)?|hobbies(?:\[\d+\])?|skills(?:\[\d+\](?:\.(?:name|level))?)?|languages(?:\[\d+\](?:\.(?:name|spoken|written))?)?)$/.test(
     path
   )
 }
@@ -208,8 +208,9 @@ export type CvDraft = {
   skills: { include: boolean; name: string; level: number | null; defaultNote?: string }[]
   languages: {
     include: boolean
-    language: CvCandidate['languages'][number]['language']
-    level: CvCandidate['languages'][number]['level']
+    name: string
+    spoken: CvCandidate['languages'][number]['spoken']
+    written: CvCandidate['languages'][number]['written']
   }[]
   warnings: CvCandidate['warnings']
   sourceValues: Record<string, string>
@@ -279,7 +280,12 @@ export const createCvDraft = (candidate: CvCandidate, profile: ProfileData): CvD
           : {})
       }
     }),
-    languages: candidate.languages.map((language) => ({ include: true, ...language })),
+    languages: candidate.languages.map((language) => ({
+      include: true,
+      name: language.name ?? '',
+      spoken: language.spoken,
+      written: language.written
+    })),
     warnings: candidate.warnings.map((warning) => ({
       ...warning,
       path: normalizeCvPath(warning.path).replace(
@@ -531,16 +537,24 @@ export const reviewCvSelection = (
   }
   const languages = draft.languages.filter((lang) => lang.include)
   if (languages.length) {
-    selection.languages = languages.map(({ language, level }) => ({ language, level }))
+    selection.languages = languages.map(({ name, spoken, written }) => ({
+      name: name.trim(),
+      spoken,
+      written
+    }))
     count += languages.length
     const seen = new Set<string>()
     languages.forEach((lang) => {
       const path = `languages[${draft.languages.indexOf(lang)}]`
-      if (!lang.level || !CEFR_LEVELS.includes(lang.level))
-        error(`${path}.level`, 'Choose your language proficiency or skip this language.')
-      if (seen.has(lang.language))
-        error(`${path}.language`, 'This language is already included. Skip one copy.')
-      seen.add(lang.language)
+      const name = lang.name.trim().toLowerCase()
+      if (!name) error(`${path}.name`, 'Enter the language name or skip this language.')
+      else if (seen.has(name))
+        error(`${path}.name`, 'This language is already included. Skip one copy.')
+      seen.add(name)
+      for (const kind of ['spoken', 'written'] as const) {
+        if (!PROFICIENCY_OPTIONS.some((o) => o.value === lang[kind]))
+          error(`${path}.${kind}`, `Choose your ${kind} proficiency or skip this language.`)
+      }
     })
   }
   return { selection, errors, count }

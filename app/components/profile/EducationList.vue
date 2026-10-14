@@ -2,7 +2,7 @@
 import type { ProfileEducation } from '~/composables/useProfile'
 
 const props = defineProps<{ educations: readonly ProfileEducation[] }>()
-const emit = defineEmits<{ changed: [] }>()
+const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const { locale } = useProfileTranslation()
 
@@ -52,12 +52,14 @@ const remove = async () => {
 
 <template>
   <ProfileSection
+    clearable
     title="Education"
     icon="i-lucide-graduation-cap"
     testid="profile-education"
     :empty="!educations.length"
     empty-message="No education yet."
     add-label="Add education"
+    @clear="emit('clear')"
     @add="openForm(null)"
   >
     <ul class="divide-y divide-default">

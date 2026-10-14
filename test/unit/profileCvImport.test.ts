@@ -113,7 +113,7 @@ describe('reviewed CV selections', () => {
       'links[2]',
       'hobbies[0]',
       'skills[0]',
-      'languages[1].level',
+      'languages[1].spoken',
       'experiences[0].bullets[2]',
       'experiences[0].bullets[2].text',
       'projects[1].location.countryCode',
@@ -214,7 +214,7 @@ describe('reviewed CV selections', () => {
       cvCandidate({
         experiences: [cvExperience({ startMonth: '2020', endMonth: null })],
         skills: [{ name: 'Vue', level: null }],
-        languages: [{ language: 'ENGLISH', level: null }],
+        languages: [{ name: 'English', spoken: 'GOOD', written: null }],
         warnings: [{ path: 'experiences[0].startMonth', message: 'Missing month' }]
       }),
       profile
@@ -223,12 +223,12 @@ describe('reviewed CV selections', () => {
     draft.entries.experiences[0]!.startMonth = '2020-05-01'
     draft.entries.experiences[0]!.confirmedOngoing = true
     draft.skills[0]!.level = 3
-    draft.languages[0]!.level = 'C1'
+    draft.languages[0]!.written = 'VERY_GOOD'
     expect(reviewCvSelection(draft, profile)).toMatchObject({
       errors: [],
       selection: {
         skills: [{ name: 'Vue', level: 3 }],
-        languages: [{ language: 'ENGLISH', level: 'C1' }]
+        languages: [{ name: 'English', spoken: 'GOOD', written: 'VERY_GOOD' }]
       }
     })
     expect(draft.warnings).toHaveLength(1)

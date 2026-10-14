@@ -2,7 +2,7 @@
 import type { ProfileProject } from '~/composables/useProfile'
 
 const props = defineProps<{ projects: readonly ProfileProject[] }>()
-const emit = defineEmits<{ changed: [] }>()
+const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const { locale } = useProfileTranslation()
 
@@ -52,12 +52,14 @@ const remove = async () => {
 
 <template>
   <ProfileSection
+    clearable
     title="Projects"
     icon="i-lucide-folder-git-2"
     testid="profile-projects"
     :empty="!projects.length"
     empty-message="No projects yet."
     add-label="Add project"
+    @clear="emit('clear')"
     @add="openForm(null)"
   >
     <ul class="divide-y divide-default">

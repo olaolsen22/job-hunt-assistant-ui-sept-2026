@@ -5,6 +5,8 @@ defineProps<{
   confirmLabel?: string
   loading?: boolean
   disabled?: boolean
+  // `error` for actions that delete more than one row and can't be undone.
+  color?: 'primary' | 'error'
 }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ confirm: [] }>()
@@ -23,6 +25,7 @@ const emit = defineEmits<{ confirm: [] }>()
           >Cancel</UButton
         >
         <UButton
+          :color="color"
           :loading="loading"
           :disabled="disabled"
           data-testid="confirm-modal-confirm"

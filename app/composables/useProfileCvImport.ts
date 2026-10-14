@@ -72,8 +72,9 @@ export const CV_CANDIDATE = graphql(`
       level
     }
     languages {
-      language
-      level
+      name
+      spoken
+      written
     }
     warnings {
       path

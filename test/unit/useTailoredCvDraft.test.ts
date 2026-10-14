@@ -73,12 +73,12 @@ registerEndpoint('/graphql', {
   }
 })
 
-const setup = async (profile = cvProfile()) => {
+const setup = async (profile = cvProfile(), postingLanguage?: 'ENGLISH' | 'NORWEGIAN') => {
   let state!: ReturnType<typeof useTailoredCvDraft>
   await mountSuspended(
     defineComponent({
       setup() {
-        state = useTailoredCvDraft(5, ref(profile))
+        state = useTailoredCvDraft(5, ref(profile), ref(postingLanguage))
         return () => h('div')
       }
     })
@@ -199,17 +199,20 @@ describe('useTailoredCvDraft', () => {
     expect(content).toMatchObject({ fullName: 'Existing owner', phone: '+47 400 00 000' })
     expect(Object.keys(content).sort()).toEqual(
       [
+        'address',
         'certifications',
+        'dateOfBirth',
         'educations',
         'email',
         'experiences',
         'fullName',
         'headline',
+        'language',
         'languages',
         'links',
-        'location',
         'phone',
         'projects',
+        'referencesOnRequest',
         'skills',
         'summary'
       ].sort()
@@ -217,6 +220,36 @@ describe('useTailoredCvDraft', () => {
     expect(state.dirty.value).toBe(false)
     expect(state.draft.value).not.toBeNull()
   })
+
+  it('saves the listing language with the draft before generating its CV', async () => {
+    const state = await setup(cvProfile(), 'NORWEGIAN')
+    state.init()
+    expect(state.cv.value!.language).toBe('NORWEGIAN')
+
+    expect(await state.generate()).toBe(true)
+
+    const save = calls.find((c) => c.query.includes('mutation SaveTailoredCvDraft'))!
+    expect(save.variables.input!.content).toMatchObject({ language: 'NORWEGIAN' })
+    expect(calls.some((c) => c.query.includes('mutation GenerateCvDocument'))).toBe(true)
+  })
+
+  it('resaves an existing draft in the listing language before generating its CV', async () => {
+    savedDraft = {
+      id: 1,
+      updatedAt: '2026-10-12T10:00:00Z',
+      content: toTailoredCvInput(tailoredCvFromProfile(cvProfile()))
+    }
+    const state = await setup(cvProfile(), 'NORWEGIAN')
+    state.init()
+    expect(state.dirty.value).toBe(true)
+
+    expect(await state.generate()).toBe(true)
+
+    const save = calls.find((c) => c.query.includes('mutation SaveTailoredCvDraft'))!
+    expect(save.variables.input!.content).toMatchObject({ language: 'NORWEGIAN' })
+    expect(calls.some((c) => c.query.includes('mutation GenerateCvDocument'))).toBe(true)
+  })
+
   it('takes only the asked section from an external reply', async () => {
     savedDraft = {
       id: 1,

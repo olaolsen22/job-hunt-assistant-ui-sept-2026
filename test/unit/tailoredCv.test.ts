@@ -52,16 +52,33 @@ describe('tailored CV candidate', () => {
     const cv = tailoredCvFromProfile(profile())
     expect(cv.fullName).toBe('Existing owner')
     expect(cv.email).toBe('owner@example.com')
-    expect(cv.location).toBe('Oslo, Norway')
+    expect(cv.address).toBe('Oslo, Norway')
     expect(cv.links).toEqual([{ label: 'GitHub', url: 'https://github.com/owner' }])
     expect(cv.experiences[0]).toMatchObject({ sourceEntryId: 10, employer: 'Acme' })
+    expect(cv.experiences[0]!.contentStyle).toBe('BULLETS')
     expect(cv.experiences[0]!.bullets.map((b) => b.sourceBulletId)).toEqual([100, 101, 102])
     expect(cv.skills.map((s) => s.sourceSkillId)).toEqual([1, 2, 3])
+  })
+
+  it('carries the analysis paragraph and sends it only in paragraph mode', () => {
+    const cv = tailoredCvFromProfile(profile())
+    const section = cvSectionFromAnalysis(
+      cv,
+      profile(),
+      result({ selectedBulletIds: [100], paragraph: 'Built checkout flows.' })
+    )
+    const experience = section!.value as (typeof cv.experiences)[number]
+    expect(experience.paragraph).toBe('Built checkout flows.')
+    expect(toTailoredCvInput(cv).experiences?.[0]?.paragraph).toBeNull()
+    cv.experiences[0] = { ...experience, contentStyle: 'PARAGRAPH' }
+    expect(toTailoredCvInput(cv).experiences?.[0]?.paragraph).toBe('Built checkout flows.')
   })
 
   it('keeps only the selected bullets, in profile order, and the edited title', () => {
     const cv = tailoredCvFromProfile(profile())
     cv.experiences[0]!.title = 'Senior developer'
+    cv.experiences[0]!.contentStyle = 'PARAGRAPH'
+    expect(toTailoredCvInput(cv).experiences?.[0]?.contentStyle).toBe('PARAGRAPH')
     const section = cvSectionFromAnalysis(cv, profile(), result({ selectedBulletIds: [102, 100] }))
     expect(section?.key).toBe('experience:10')
     expect(section?.value).toMatchObject({
@@ -154,7 +171,7 @@ describe('tailored CV candidate', () => {
     expect(input.experiences).toHaveLength(1)
     expect(input.experiences![0]!.bullets).toHaveLength(3)
     expect(input.projects).toHaveLength(1)
-    expect(input.languages).toEqual([{ language: 'NORWEGIAN', level: 'C1' }])
+    expect(input.languages).toEqual([{ name: 'Norwegian', spoken: 'NATIVE', written: 'VERY_GOOD' }])
   })
 
   it('renders plain text with contact details first and sections in order', () => {
@@ -168,7 +185,7 @@ describe('tailored CV candidate', () => {
     )
     expect(order.every((i) => i > 0)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
-    expect(text).toContain('Norwegian (C1)')
+    expect(text).toContain('Norwegian (spoken: Native, written: Very good)')
   })
 })
 

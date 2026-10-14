@@ -59,14 +59,27 @@ const appliedAt = ref('')
 const now = ref('')
 const note = ref('')
 
-watch(open, (isOpen) => {
-  if (!isOpen) return
+const initialized = ref(false)
+const resetForm = () => {
   cvId.value = cvDocumentId
   coverId.value = undefined
   cvFile.value = coverFile.value = null
-  appliedAt.value = now.value = toDateTimeLocal()
+  appliedAt.value = toDateTimeLocal()
   note.value = ''
-})
+}
+
+// Preserve cancelled input while this page stays mounted; reset only after success.
+watch(
+  open,
+  (isOpen) => {
+    if (!isOpen) return
+    now.value = toDateTimeLocal()
+    if (initialized.value) return
+    resetForm()
+    initialized.value = true
+  },
+  { immediate: true }
+)
 
 // Uploads are GraphQL multipart requests, which the JSON-only `gql` helper doesn't send.
 // The API requires the preflight header on them as CSRF protection.
@@ -94,14 +107,27 @@ const { run, loading } = useMutation(() => emit('changed'))
 
 const submit = async () => {
   const ok = await run(async () => {
-    const [cv, cover] = await Promise.all([
+    const results = await Promise.allSettled([
       cvFile.value ? upload('CV', cvFile.value) : null,
       coverFile.value ? upload('COVER_LETTER', coverFile.value) : null
     ])
-    // Keep what did upload, so a retry after the other one failed doesn't upload it twice.
-    if (cv?.document) [cvId.value, cvFile.value] = [cv.document.id, null]
-    if (cover?.document) [coverId.value, coverFile.value] = [cover.document.id, null]
-    const uploadErrors = [...(cv?.errors ?? []), ...(cover?.errors ?? [])]
+    const uploadErrors: { __typename: string; message: string }[] = []
+    results.forEach((result, index) => {
+      const label = index === 0 ? 'CV' : 'Cover letter'
+      if (result.status === 'rejected') {
+        uploadErrors.push({
+          __typename: 'UploadError',
+          message: `${label} upload failed. Try again; successful uploads are kept.`
+        })
+        return
+      }
+      const payload = result.value
+      if (payload?.document) {
+        if (index === 0) [cvId.value, cvFile.value] = [payload.document.id, null]
+        else [coverId.value, coverFile.value] = [payload.document.id, null]
+      }
+      uploadErrors.push(...(payload?.errors ?? []))
+    })
     if (uploadErrors.length) return uploadErrors
 
     const { applyToListing } = await gql(APPLY, {
@@ -116,6 +142,8 @@ const submit = async () => {
     return applyToListing.errors
   })
   if (!ok) return
+  resetForm()
+  initialized.value = false
   open.value = false
   emit('changed')
 }
@@ -124,9 +152,10 @@ const submit = async () => {
 <template>
   <AppConfirmModal
     v-model:open="open"
-    title="Apply"
-    confirm-label="Apply"
+    title="Record application"
+    confirm-label="Record application"
     :loading="loading"
+    description="Apply through the original ad, then record the date and documents here."
     :disabled="!appliedAt"
     @confirm="submit"
   >
