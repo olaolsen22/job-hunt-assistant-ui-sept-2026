@@ -9,6 +9,7 @@ defineProps<{
   title: string
   subtitle?: string | null
   dates?: string
+  location?: string | null
   analyzable?: boolean
   analyzing?: boolean
   disabled?: boolean
@@ -39,7 +40,9 @@ const setContentStyle = (value: string) => {
       <div class="min-w-0 flex-1">
         <p class="break-words font-medium text-highlighted">{{ title }}</p>
         <p v-if="subtitle" class="break-words text-sm">{{ subtitle }}</p>
-        <p v-if="dates" class="text-sm text-muted">{{ dates }}</p>
+        <p v-if="dates || location" class="break-words text-sm text-muted">
+          {{ [dates, location].filter(Boolean).join(' · ') }}
+        </p>
       </div>
       <UButton
         v-if="analyzable"

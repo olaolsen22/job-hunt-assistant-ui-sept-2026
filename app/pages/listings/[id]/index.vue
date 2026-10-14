@@ -319,9 +319,9 @@ const skillsByRequirement = computed(() => {
         <div
           class="space-y-4 sm:space-y-6 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0"
         >
-          <div class="space-y-4 sm:space-y-6 lg:col-span-2">
-            <AppCard title="Details">
-              <dl class="grid gap-x-4 gap-y-3 sm:grid-cols-2">
+          <div class="space-y-4 sm:space-y-6 lg:col-span-2 lg:row-start-1">
+            <AppCard title="Summary">
+              <dl class="grid gap-x-4 gap-y-3 border-b border-default pb-4 sm:grid-cols-2">
                 <div>
                   <dt class="text-xs text-muted">Schedule</dt>
                   <dd class="text-sm" :class="{ 'text-muted': !listing.schedule }">
@@ -352,10 +352,21 @@ const skillsByRequirement = computed(() => {
                   </dd>
                 </div>
               </dl>
+              <p v-if="listing.description" class="mt-4 whitespace-pre-line text-sm">
+                {{ listing.description }}
+              </p>
+              <p v-else class="mt-4 text-sm text-muted">No summary</p>
             </AppCard>
+            <template v-if="listing.status === 'SAVED'">
+              <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
+              <ListingsApplication
+                v-model:apply-open="applyOpen"
+                :listing="listing"
+                @changed="refresh"
+              />
+            </template>
           </div>
-
-          <div class="space-y-4 sm:space-y-6 lg:col-start-3 lg:row-span-2">
+          <div class="space-y-4 sm:space-y-6 lg:col-start-3 lg:row-start-1">
             <AppCard title="Skills">
               <p v-if="!listing.skills.length" class="text-sm text-muted">No skills listed</p>
               <div v-else class="space-y-4">
@@ -365,10 +376,10 @@ const skillsByRequirement = computed(() => {
                     <div
                       v-for="(skill, i) in group.skills"
                       :key="i"
-                      class="flex flex-col gap-1 py-2"
+                      class="flex items-baseline justify-between gap-3 py-2"
                     >
                       <span class="min-w-0 break-words font-medium">{{ skill.skill.name }}</span>
-                      <span class="shrink-0 text-sm text-muted">
+                      <span class="shrink-0 whitespace-nowrap text-sm text-muted">
                         Level {{ skill.level }}/5<template v-if="skill.minYears">
                           · {{ skill.minYears }}+ yrs</template
                         >
@@ -393,24 +404,7 @@ const skillsByRequirement = computed(() => {
               <CompaniesContactList :contacts="listing.contacts.map(({ contact }) => contact)" />
             </AppCard>
           </div>
-          <div class="lg:col-span-2 lg:col-start-1 lg:row-start-2">
-            <AppCard title="Summary">
-              <p v-if="listing.description" class="whitespace-pre-line text-sm">
-                {{ listing.description }}
-              </p>
-              <p v-else class="text-sm text-muted">No summary</p>
-            </AppCard>
-          </div>
         </div>
-
-        <template v-if="listing.status === 'SAVED'">
-          <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
-          <ListingsApplication
-            v-model:apply-open="applyOpen"
-            :listing="listing"
-            @changed="refresh"
-          />
-        </template>
 
         <AppConfirmModal
           v-model:open="markOpen"

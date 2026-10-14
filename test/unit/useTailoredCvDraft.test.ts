@@ -196,7 +196,11 @@ describe('useTailoredCvDraft', () => {
 
     const content = calls.find((c) => c.query.includes('mutation SaveTailoredCvDraft'))!.variables
       .input!.content as Record<string, unknown>
-    expect(content).toMatchObject({ fullName: 'Existing owner', phone: '+47 400 00 000' })
+    expect(content).toMatchObject({
+      fullName: 'Existing owner',
+      phone: '+47 400 00 000',
+      sectionOrder: 'STANDARD'
+    })
     expect(Object.keys(content).sort()).toEqual(
       [
         'address',
@@ -213,6 +217,7 @@ describe('useTailoredCvDraft', () => {
         'phone',
         'projects',
         'referencesOnRequest',
+        'sectionOrder',
         'skills',
         'summary'
       ].sort()

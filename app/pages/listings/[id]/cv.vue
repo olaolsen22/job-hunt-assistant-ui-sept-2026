@@ -19,6 +19,16 @@ const DELETE_DOCUMENT = graphql(`
   }
 `)
 
+const SECTION_ORDER_OPTIONS = [
+  { label: 'Standard', value: 'STANDARD' },
+  { label: 'Developer', value: 'DEVELOPER' }
+]
+const SECTION_ORDER_HINTS = {
+  STANDARD: 'Standard order. Only changes the generated PDF, not the text you edit.',
+  DEVELOPER:
+    'Links under the contact lines; skills and projects moved up. Only changes the generated PDF, not the text you edit.'
+} as const
+
 const route = useRoute()
 const id = Number(route.params.id)
 
@@ -125,8 +135,28 @@ const generateLabel = computed(() =>
     ? 'Saving and generating…'
     : state.generating.value
       ? 'Generating PDF…'
-      : 'Generate PDF'
+      : dirty.value || !state.draft.value
+        ? 'Save and generate PDF'
+        : 'Generate PDF'
 )
+
+// Describes the draft only; the PDF state is a suffix once it matches.
+const saveStatus = computed(() => {
+  if (dirty.value) return state.pristine.value ? 'Not saved yet' : 'Unsaved changes'
+  return pdfCurrent.value ? 'Draft saved · PDF is up to date' : 'Draft saved'
+})
+
+const resetOpen = ref(false)
+const resetToProfile = () => {
+  state.reset()
+  resetOpen.value = false
+  toast.add({ title: 'CV reset to your profile. Save to keep it.', icon: 'i-lucide-rotate-ccw' })
+}
+// Nothing to lose on an untouched first draft, so it resets without asking.
+const requestReset = () => {
+  if (state.pristine.value && !suggestions.value.length) resetToProfile()
+  else resetOpen.value = true
+}
 
 // Applying from here returns to the listing, refreshed so it shows Applied.
 const applyOpen = ref(false)
@@ -231,15 +261,28 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             class="self-start"
             >Back to listing</UButton
           >
-          <div>
-            <h1 class="text-xl font-semibold text-highlighted">Tailored CV</h1>
-            <p
-              v-if="listing"
-              class="break-words text-sm text-muted"
-              data-testid="tailored-cv-listing"
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <h1 class="text-xl font-semibold text-highlighted">Tailored CV</h1>
+              <p
+                v-if="listing"
+                class="break-words text-sm text-muted"
+                data-testid="tailored-cv-listing"
+              >
+                {{ listing.title }} · {{ listing.company.name }}
+              </p>
+            </div>
+            <UButton
+              v-if="cv"
+              icon="i-lucide-rotate-ccw"
+              color="neutral"
+              variant="ghost"
+              :disabled="busy || analyzing || state.matchesProfile.value"
+              :title="state.matchesProfile.value ? 'Already matches your profile' : undefined"
+              data-testid="tailored-cv-reset"
+              @click="requestReset"
+              >Reset to profile</UButton
             >
-              {{ listing.title }} · {{ listing.company.name }}
-            </p>
           </div>
         </div>
 
@@ -287,6 +330,19 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 >Whole CV</UButton
               >
             </div>
+            <UFormField
+              label="PDF layout"
+              :description="SECTION_ORDER_HINTS[cv.sectionOrder]"
+              class="mt-3 border-t border-default pt-3"
+            >
+              <USelect
+                v-model="cv.sectionOrder"
+                :items="SECTION_ORDER_OPTIONS"
+                :disabled="analyzing"
+                class="w-full sm:w-56"
+                data-testid="tailored-cv-section-order"
+              />
+            </UFormField>
             <AppAiRetryConfirm
               v-if="aiNeedsConfirm && !analyzing"
               :message="aiErrorMessage"
@@ -407,6 +463,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 <UFormField label="Address" class="sm:col-span-2">
                   <UInput v-model="cv.address" class="w-full" autocomplete="street-address" />
                 </UFormField>
+                <UFormField label="Date of birth">
+                  <UInput v-model="cv.dateOfBirth" type="date" class="w-full" />
+                </UFormField>
+                <UFormField label="References" class="self-end">
+                  <USwitch v-model="cv.referencesOnRequest" label="Available on request" />
+                </UFormField>
               </div>
               <fieldset class="mt-4 space-y-2">
                 <legend class="mb-2 text-sm font-medium">Links</legend>
@@ -505,6 +567,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   :title="e.title"
                   :subtitle="e.employer"
                   :dates="dates(e.startMonth, e.endMonth, 'Present')"
+                  :location="e.location"
                   :analyzable="e.sourceEntryId != null"
                   :analyzing="analyzingKey === `experience:${e.sourceEntryId}`"
                   :disabled="busy"
@@ -535,6 +598,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                     /></UFormField>
                     <UFormField label="Employer"
                       ><UInput v-model="e.employer" class="w-full"
+                    /></UFormField>
+                    <UFormField label="Location" class="sm:col-span-2"
+                      ><UInput
+                        :model-value="e.location ?? undefined"
+                        class="w-full"
+                        @update:model-value="e.location = $event"
                     /></UFormField>
                     <UFormField label="Start"><AppMonthField v-model="e.startMonth" /></UFormField>
                     <UFormField label="End" help="Empty means present."
@@ -616,6 +685,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   :title="e.school"
                   :subtitle="[e.degree, e.field].filter(Boolean).join(', ')"
                   :dates="dates(e.startMonth, e.endMonth)"
+                  :location="e.location"
                   :analyzable="e.sourceEntryId != null"
                   :analyzing="analyzingKey === `education:${e.sourceEntryId}`"
                   :disabled="busy"
@@ -655,6 +725,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                         :model-value="e.field ?? undefined"
                         class="w-full"
                         @update:model-value="e.field = $event"
+                    /></UFormField>
+                    <UFormField label="Location" class="sm:col-span-2"
+                      ><UInput
+                        :model-value="e.location ?? undefined"
+                        class="w-full"
+                        @update:model-value="e.location = $event"
                     /></UFormField>
                     <UFormField label="Start"><AppMonthField v-model="e.startMonth" /></UFormField>
                     <UFormField label="End"><AppMonthField v-model="e.endMonth" /></UFormField>
@@ -743,6 +819,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   :title="p.name"
                   :subtitle="p.url"
                   :dates="dates(p.startMonth, p.endMonth)"
+                  :location="p.location"
                   @remove="cv.projects.splice(i, 1)"
                 >
                   <template #fields>
@@ -753,6 +830,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                         type="url"
                         class="w-full"
                         @update:model-value="p.url = $event"
+                    /></UFormField>
+                    <UFormField label="Location" class="sm:col-span-2"
+                      ><UInput
+                        :model-value="p.location ?? undefined"
+                        class="w-full"
+                        @update:model-value="p.location = $event"
                     /></UFormField>
                     <UFormField label="Start"><AppMonthField v-model="p.startMonth" /></UFormField>
                     <UFormField label="End"><AppMonthField v-model="p.endMonth" /></UFormField>
@@ -871,27 +954,33 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
              header. On phones the status takes its own line above equal buttons. Generate saves
              first; once the PDF matches the draft, the next step is applying with it. -->
             <div
-              class="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-md border border-default bg-default/90 p-3 backdrop-blur"
+              class="sticky bottom-0 z-10 grid grid-cols-2 items-center gap-3 rounded-md border border-default bg-default/90 p-3 backdrop-blur sm:flex sm:flex-wrap"
               data-testid="tailored-cv-save-bar"
             >
               <span
-                class="order-first w-full text-sm text-muted sm:order-none sm:w-auto sm:flex-1 sm:text-right"
-                ><span data-testid="tailored-cv-save-status">{{
-                  dirty ? 'Unsaved changes' : 'Saved'
-                }}</span
-                ><span
-                  v-if="suggestions.length"
-                  class="text-warning"
-                  data-testid="tailored-cv-pending"
-                >
-                  · {{ pendingLabel }} not reviewed</span
-                ></span
+                class="order-first col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted sm:order-none sm:col-auto sm:flex-1 sm:justify-end"
               >
+                <span class="inline-flex items-center gap-1.5">
+                  <UIcon
+                    :name="dirty ? 'i-lucide-circle-dot' : 'i-lucide-check'"
+                    :class="dirty && !state.pristine.value ? 'text-warning' : ''"
+                  />
+                  <span data-testid="tailored-cv-save-status">{{ saveStatus }}</span>
+                </span>
+                <UBadge
+                  v-if="suggestions.length"
+                  color="warning"
+                  variant="subtle"
+                  data-testid="tailored-cv-pending"
+                  >{{ pendingLabel }} to review</UBadge
+                >
+              </span>
               <UButton
                 icon="i-lucide-copy"
                 color="neutral"
                 variant="subtle"
-                class="flex-1 justify-center sm:order-first sm:flex-none"
+                class="w-full justify-center sm:order-first sm:w-auto"
+                :class="!dirty && !(pdfCurrent && pdf) ? 'col-span-2 sm:col-auto' : ''"
                 data-testid="tailored-cv-copy"
                 @click="copy(cv)"
                 >Copy as text</UButton
@@ -901,7 +990,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   icon="i-lucide-eye"
                   :color="canApply ? 'neutral' : 'primary'"
                   :variant="canApply ? 'subtle' : 'solid'"
-                  class="flex-1 justify-center sm:flex-none"
+                  class="w-full justify-center sm:w-auto"
                   data-testid="tailored-cv-preview-pdf"
                   @click="pdfOpen = true"
                   >Preview PDF</UButton
@@ -909,7 +998,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 <UButton
                   v-if="canApply"
                   icon="i-lucide-check"
-                  class="flex-1 justify-center sm:flex-none"
+                  class="col-span-2 w-full justify-center sm:col-auto sm:w-auto"
                   data-testid="tailored-cv-apply"
                   @click="openApply"
                   >Record with this CV</UButton
@@ -923,7 +1012,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   variant="subtle"
                   :loading="state.saving.value && !state.generating.value"
                   :disabled="busy || state.generating.value"
-                  class="flex-1 justify-center sm:flex-none"
+                  class="w-full justify-center sm:w-auto"
                   data-testid="tailored-cv-save"
                   @click="state.save()"
                   >Save draft</UButton
@@ -932,7 +1021,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   icon="i-lucide-file-down"
                   :loading="state.generating.value"
                   :disabled="busy || state.saving.value"
-                  class="flex-1 justify-center sm:flex-none"
+                  class="col-span-2 w-full justify-center sm:col-auto sm:w-auto"
                   data-testid="tailored-cv-generate"
                   @click="generatePdf"
                   >{{ generateLabel }}</UButton
@@ -966,6 +1055,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
         :scope="aiScope"
         :scope-label="aiScopeLabel"
         @analyze="runBuiltIn"
+      />
+
+      <AppConfirmModal
+        v-model:open="resetOpen"
+        title="Reset to your profile?"
+        :description="`Your edits${suggestions.length ? ` and ${pendingLabel} not yet reviewed` : ''} are replaced with your current profile. The saved draft and PDFs stay as they are until you save.`"
+        confirm-label="Reset"
+        @confirm="resetToProfile"
       />
 
       <AppConfirmModal

@@ -15,6 +15,7 @@ const CONTENT_FIELDS = graphql(`
     language
     dateOfBirth
     referencesOnRequest
+    sectionOrder
     links {
       label
       url
@@ -23,6 +24,7 @@ const CONTENT_FIELDS = graphql(`
     experiences {
       employer
       title
+      location
       startMonth
       endMonth
       sourceEntryId
@@ -37,6 +39,7 @@ const CONTENT_FIELDS = graphql(`
       school
       degree
       field
+      location
       startMonth
       endMonth
       sourceEntryId
@@ -64,6 +67,7 @@ const CONTENT_FIELDS = graphql(`
     projects {
       name
       url
+      location
       startMonth
       endMonth
       sourceEntryId
@@ -271,16 +275,41 @@ export const useTailoredCvDraft = (
   // Otherwise it waits as a suggestion, so the owner's work is never replaced silently.
   const fillsDirectly = () => !draft.value && !!cv.value && snapshot(cv.value) === seed.value
 
+  // The profile as a candidate, in the posting's language when the listing has one.
+  const fromProfile = (source: ProfileData) => {
+    const fresh = tailoredCvFromProfile(source)
+    if (postingLanguage.value) fresh.language = postingLanguage.value
+    return fresh
+  }
+  // No draft and no edits yet: the candidate is just the profile, so "unsaved" would blame the owner.
+  const pristine = computed(() => !draft.value && !!cv.value && snapshot(cv.value) === seed.value)
+  const matchesProfile = computed(
+    () =>
+      !!cv.value && !!profile.value && snapshot(cv.value) === snapshot(fromProfile(profile.value))
+  )
+
   // Builds the candidate once both the draft and the profile are in. Returns true for a new candidate.
   const init = () => {
     if (!profile.value || query.status.value !== 'success') return false
     const savedCv = draft.value ? tailoredCvFromContent(draft.value.content) : undefined
     const savedSnapshot = savedCv ? snapshot(savedCv) : null
-    cv.value = savedCv ?? tailoredCvFromProfile(profile.value)
+    cv.value = savedCv ?? fromProfile(profile.value)
+    // A saved draft follows the posting's language too, so the owner's old choice doesn't linger.
     if (postingLanguage.value) cv.value.language = postingLanguage.value
     seed.value = snapshot(cv.value)
     saved.value = savedSnapshot
     return !draft.value
+  }
+
+  // Starts over from the profile. Nothing is saved: the old draft stays until the owner saves, so
+  // leaving or reloading brings it back.
+  const reset = () => {
+    if (!profile.value) return
+    cv.value = fromProfile(profile.value)
+    seed.value = snapshot(cv.value)
+    suggestions.value = []
+    sectionErrors.value = {}
+    sectionDetails.value = {}
   }
 
   const offer = (key: TailoredCvSectionKey, value: unknown, direct: boolean) => {
@@ -535,7 +564,10 @@ export const useTailoredCvDraft = (
     draft,
     cv,
     dirty,
+    pristine,
+    matchesProfile,
     init,
+    reset,
     suggestions,
     sectionErrors,
     sectionDetails,

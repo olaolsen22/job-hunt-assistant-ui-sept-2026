@@ -69,6 +69,7 @@ export const tailoredCvFromProfile = (profile: ProfileData): TailoredCv => ({
   language: profile.contentLanguage,
   dateOfBirth: profile.dateOfBirth ?? '',
   referencesOnRequest: false,
+  sectionOrder: 'STANDARD',
   links: profile.links.map((l) => ({ label: linkLabel(l), url: l.url })),
   summary: profile.summary ?? '',
   experiences: profile.experiences.map(experienceFromProfile),
@@ -86,6 +87,7 @@ export const tailoredCvFromProfile = (profile: ProfileData): TailoredCv => ({
   projects: profile.projects.map((p) => ({
     name: p.name,
     url: p.url,
+    location: p.location ? formatLocation(p.location) : null,
     startMonth: p.startMonth,
     endMonth: p.endMonth,
     ...BULLET_CONTENT,
@@ -100,6 +102,7 @@ const educationFromProfile = (e: ProfileData['educations'][number]): TailoredCvE
   school: e.school,
   degree: e.degree,
   field: e.field,
+  location: e.location ? formatLocation(e.location) : null,
   startMonth: e.startMonth,
   endMonth: e.endMonth,
   ...BULLET_CONTENT,
@@ -110,6 +113,7 @@ const educationFromProfile = (e: ProfileData['educations'][number]): TailoredCvE
 const experienceFromProfile = (e: ProfileData['experiences'][number]): TailoredCvExperience => ({
   employer: e.employer,
   title: e.title,
+  location: e.location ? formatLocation(e.location) : null,
   startMonth: e.startMonth,
   endMonth: e.endMonth,
   ...BULLET_CONTENT,
@@ -139,6 +143,7 @@ export const tailoredCvFromContent = (content: TailoredCvContent): TailoredCv =>
   language: content.language,
   dateOfBirth: content.dateOfBirth ?? '',
   referencesOnRequest: content.referencesOnRequest,
+  sectionOrder: content.sectionOrder,
   links: [...(content.links ?? [])],
   summary: content.summary ?? '',
   experiences: [...(content.experiences ?? [])].map(withBullets),
@@ -167,12 +172,14 @@ export const toTailoredCvInput = (cv: TailoredCv): TailoredCvContentInput => {
     language: cv.language,
     dateOfBirth: blankToNull(cv.dateOfBirth),
     referencesOnRequest: cv.referencesOnRequest,
+    sectionOrder: cv.sectionOrder,
     summary: blankToNull(cv.summary),
     links: cv.links
       .filter((l) => l.url.trim())
       .map((l) => ({ label: l.label.trim(), url: l.url.trim() })),
     experiences: cv.experiences.map((e) => ({
       ...e,
+      location: blankToNull(e.location),
       bullets: bullets(e.bullets),
       paragraph: paragraph(e)
     })),
@@ -180,6 +187,7 @@ export const toTailoredCvInput = (cv: TailoredCv): TailoredCvContentInput => {
       ...e,
       degree: blankToNull(e.degree),
       field: blankToNull(e.field),
+      location: blankToNull(e.location),
       bullets: bullets(e.bullets),
       paragraph: paragraph(e)
     })),
@@ -193,6 +201,7 @@ export const toTailoredCvInput = (cv: TailoredCv): TailoredCvContentInput => {
     projects: cv.projects.map((p) => ({
       ...p,
       url: blankToNull(p.url),
+      location: blankToNull(p.location),
       bullets: bullets(p.bullets),
       paragraph: paragraph(p)
     })),
@@ -271,9 +280,10 @@ export const cvSectionFromAnalysis = (
   }
 }
 
-// The external prompt has no contact details, so the previewed candidate keeps the current ones.
+// The external prompt has no contact details or layout, so the previewed candidate keeps the current ones.
 export const mergeExternalCandidate = (cv: TailoredCv, external: TailoredCv): TailoredCv => ({
   ...external,
+  sectionOrder: cv.sectionOrder,
   fullName: cv.fullName,
   email: cv.email,
   phone: cv.phone,
@@ -305,9 +315,18 @@ const range = (start?: string | null, end?: string | null, open?: string) =>
 const entryText = (
   heading: string,
   dates: string,
-  content: { contentStyle?: string | null; paragraph?: string | null; bullets: TailoredCvBullet[] }
+  content: {
+    contentStyle?: string | null
+    paragraph?: string | null
+    bullets: TailoredCvBullet[]
+    location?: string | null
+    url?: string | null
+  }
 ) => {
-  const title = dates ? `${heading} (${dates})` : heading
+  const detail = [dates, content.location?.trim()].filter(Boolean).join(', ')
+  const title = [detail ? `${heading} (${detail})` : heading, content.url?.trim()]
+    .filter(Boolean)
+    .join(' – ')
   if (content.contentStyle === 'PARAGRAPH') {
     return [title, content.paragraph?.trim()].filter(Boolean).join('\n')
   }

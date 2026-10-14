@@ -29,11 +29,16 @@ const outcomeOpen = ref(false)
 
 <template>
   <AppCard title="Application">
+    <template v-if="listing.status === 'SAVED'" #actions>
+      <UButton size="sm" icon="i-lucide-check" data-testid="listing-apply" @click="applyOpen = true"
+        >Record application</UButton
+      >
+    </template>
     <div class="space-y-6">
       <div v-if="showSummary" class="flex flex-col items-start gap-3">
         <div
           v-if="listing.status === 'SAVED' || listing.company.applicationCount"
-          class="min-w-0 space-y-1"
+          class="w-full min-w-0 space-y-1 text-center"
         >
           <!-- The status badge is in the page header, so only what it doesn't say is here. -->
           <span
@@ -51,14 +56,7 @@ const outcomeOpen = ref(false)
           >
         </div>
 
-        <div v-if="listing.status === 'SAVED' || outcomes.length" class="flex flex-wrap gap-2">
-          <UButton
-            v-if="listing.status === 'SAVED'"
-            icon="i-lucide-check"
-            data-testid="listing-apply"
-            @click="applyOpen = true"
-            >Record application</UButton
-          >
+        <div v-if="outcomes.length" class="flex flex-wrap gap-2">
           <UButton
             v-if="outcomes.length"
             color="neutral"

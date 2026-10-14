@@ -144,8 +144,8 @@ describe('tailored CV candidate', () => {
     ).toBeNull()
   })
 
-  it('keeps contact details from the candidate when taking an external reply', () => {
-    const cv = tailoredCvFromProfile(profile())
+  it('keeps contact details and layout from the candidate when taking an external reply', () => {
+    const cv = { ...tailoredCvFromProfile(profile()), sectionOrder: 'DEVELOPER' as const }
     const external = {
       ...tailoredCvFromProfile(profile()),
       email: '',
@@ -156,7 +156,8 @@ describe('tailored CV candidate', () => {
     expect(merged).toMatchObject({
       email: 'owner@example.com',
       fullName: 'Existing owner',
-      summary: 'New'
+      summary: 'New',
+      sectionOrder: 'DEVELOPER'
     })
     expect(changedCvSections(cv, merged).map((s) => s.key)).toEqual(['summary'])
   })
@@ -177,9 +178,12 @@ describe('tailored CV candidate', () => {
   it('renders plain text with contact details first and sections in order', () => {
     const cv = tailoredCvFromProfile(profile())
     cv.summary = 'Frontend developer.'
+    cv.experiences[0]!.location = 'Lagos, Nigeria'
     const text = tailoredCvToText(cv)
     expect(text.startsWith('Existing owner\nEngineer\nowner@example.com · Oslo, Norway')).toBe(true)
-    expect(text).toContain('Developer – Acme (Jan 2020 – Jan 2022)\n- Built the checkout')
+    expect(text).toContain(
+      'Developer – Acme (Jan 2020 – Jan 2022, Lagos, Nigeria)\n- Built the checkout'
+    )
     const order = ['SUMMARY', 'EXPERIENCE', 'PROJECTS', 'SKILLS', 'LANGUAGES'].map((h) =>
       text.indexOf(`\n${h}\n`)
     )

@@ -4,6 +4,7 @@ import { RouterView } from 'vue-router'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
+import { USelect } from '#components'
 import CvPage from '~/pages/listings/[id]/cv.vue'
 import { tailoredCvFromProfile, toTailoredCvInput } from '~/utils/tailoredCv'
 import { cvProfile } from '../fixtures/profileCv'
@@ -154,7 +155,7 @@ describe('Tailored CV page', () => {
     await vi.waitFor(() => expect(el('tailored-cv-summary-input')).not.toBeNull())
     const values = [...document.body.querySelectorAll('input')].map((i) => i.value)
     expect(values).toContain('Existing owner')
-    expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+    expect(el('tailored-cv-save-status')!.textContent).toBe('Not saved yet')
     expect(ops('AnalyzeTailoredCvSection')).toHaveLength(0)
     expect(el('tailored-cv-progress')).toBeNull()
   })
@@ -297,7 +298,7 @@ describe('Tailored CV page', () => {
     ])
     expect(summaryValue()).toBe('Mine')
     expect(el('tailored-cv-suggestions')!.textContent).toContain('1 suggestion to review')
-    expect(el('tailored-cv-pending')!.textContent).toContain('1 suggestion not reviewed')
+    expect(el('tailored-cv-pending')!.textContent).toContain('1 suggestion to review')
     expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(false)
     await click('tailored-cv-accept')
     expect(summaryValue()).toBe('Tailored summary')
@@ -348,7 +349,7 @@ describe('Tailored CV page', () => {
     savedDraft = savedSummary()
     await mountPage()
     await vi.waitFor(() => expect(el('tailored-cv-summary-input')).not.toBeNull())
-    expect(el('tailored-cv-save-status')!.textContent).toBe('Saved')
+    expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved')
 
     const unload = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(unload)
@@ -369,7 +370,27 @@ describe('Tailored CV page', () => {
         languages: expect.any(Array)
       }
     })
-    await vi.waitFor(() => expect(el('tailored-cv-save-status')!.textContent).toBe('Saved'))
+    await vi.waitFor(() => expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved'))
+  })
+
+  it('saves the chosen PDF layout with the draft', async () => {
+    savedDraft = savedSummary()
+    const wrapper = await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-section-order')).not.toBeNull())
+    expect(el('tailored-cv-section-order')!.textContent).toContain('Standard')
+
+    wrapper
+      .findAllComponents(USelect)
+      .find((s) => s.vm.$attrs['data-testid'] === 'tailored-cv-section-order')!
+      .vm.$emit('update:modelValue', 'DEVELOPER')
+    await flushPromises()
+    expect(el('tailored-cv-save-status')!.textContent).not.toBe('Draft saved')
+    await click('tailored-cv-save')
+    await vi.waitFor(() => expect(ops('SaveTailoredCvDraft')).toHaveLength(1))
+
+    expect(ops('SaveTailoredCvDraft')[0]!.variables.input).toMatchObject({
+      content: { sectionOrder: 'DEVELOPER', summary: 'Mine' }
+    })
   })
 
   it('copies the external prompt and shows a rejected reply inline', async () => {
@@ -404,7 +425,7 @@ describe('Tailored CV page', () => {
 
     await vi.waitFor(() => expect(document.body.textContent).toContain('Unknown bullet id 999.'))
     expect(summaryValue()).toBe('Mine')
-    expect(el('tailored-cv-save-status')!.textContent).toBe('Saved')
+    expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved')
     vi.unstubAllGlobals()
   })
 
@@ -415,9 +436,7 @@ describe('Tailored CV page', () => {
       attachTo: document.body
     })
     mounted.push(wrapper)
-    await vi.waitFor(() =>
-      expect(el('tailored-cv-save-status')?.textContent).toBe('Unsaved changes')
-    )
+    await vi.waitFor(() => expect(el('tailored-cv-save-status')?.textContent).toBe('Not saved yet'))
 
     const router = useRouter()
     await router.push('/listings')
@@ -432,6 +451,27 @@ describe('Tailored CV page', () => {
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/listings/5/cv')
     expect(el('tailored-cv-summary-input')).not.toBeNull()
+  })
+
+  it('resets a saved draft to the profile after confirming, without saving', async () => {
+    savedDraft = savedSummary()
+    await mountPage()
+    await vi.waitFor(() => expect(summaryValue()).toBe('Mine'))
+    expect((el('tailored-cv-reset') as HTMLButtonElement).disabled).toBe(false)
+
+    await click('tailored-cv-reset')
+    expect(document.body.textContent).toContain('Reset to your profile?')
+    expect(summaryValue()).toBe('Mine')
+    const confirm = [...document.body.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === 'Reset'
+    )!
+    confirm.click()
+    await flushPromises()
+
+    expect(summaryValue()).not.toBe('Mine')
+    expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+    expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
+    expect((el('tailored-cv-reset') as HTMLButtonElement).disabled).toBe(true)
   })
 
   describe('Generate PDF', () => {
@@ -560,7 +600,7 @@ describe('Tailored CV page', () => {
       await click('tailored-cv-generate')
       await vi.waitFor(() => expect(el('tailored-cv-generate-error')).not.toBeNull())
       expect(el('tailored-cv-generate-error')!.textContent).toContain('Generate PDF saves it again')
-      expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Not saved yet')
 
       generateReply = () => ({
         document: null,
