@@ -1,0 +1,176 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
+import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
+import { readBody } from 'h3'
+import SkillCleanupModal from '~/components/profile/SkillCleanupModal.vue'
+import { llmModels } from '../fixtures/llmModels'
+
+let applyError = ''
+let skillsError = ''
+let suggested: { skillIds: number[]; names: string[] }[] = []
+const requests: { query: string; variables?: Record<string, unknown> }[] = []
+registerEndpoint('/graphql', {
+  method: 'POST',
+  handler: async (event) => {
+    const body = await readBody(event)
+    requests.push(body)
+    if (body.query.includes('query SkillCleanupPrompt'))
+      return { data: { skillCleanupPrompt: { instructions: 'Skills: 1: JS' } } }
+    if (body.query.includes('query AllSkillNames'))
+      return skillsError
+        ? { errors: [{ message: skillsError }] }
+        : {
+            data: {
+              skills: {
+                nodes: [
+                  { id: 1, name: 'JS' },
+                  { id: 2, name: 'Javascript' },
+                  { id: 3, name: 'Vue' }
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null }
+              }
+            }
+          }
+    if (body.query.includes('mutation SuggestSkillCleanup'))
+      return {
+        data: {
+          suggestSkillCleanup: {
+            result: { status: 'SUCCEEDED', error: null, operations: suggested },
+            errors: null
+          }
+        }
+      }
+    if (body.query.includes('mutation CleanUpSkills'))
+      return {
+        data: {
+          cleanUpSkills: applyError
+            ? {
+                skills: null,
+                errors: [{ __typename: 'InvalidSkillCleanupError', message: applyError }]
+              }
+            : { skills: [{ id: 1 }], errors: null }
+        }
+      }
+    if (body.query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
+    return {
+      data: {
+        llmUsageToday: {
+          model: 'fast',
+          requests: 3,
+          inputTokens: 100,
+          outputTokens: 20,
+          requestsLimit: 50,
+          remainingRequests: 47,
+          resetsAt: '2026-10-12T00:00:00Z'
+        }
+      }
+    }
+  }
+})
+
+const query = (id: string) => document.body.querySelector<HTMLElement>(`[data-testid="${id}"]`)
+const queryAll = (id: string) => [...document.body.querySelectorAll(`[data-testid="${id}"]`)]
+const click = async (id: string) => {
+  query(id)!.click()
+  await flushPromises()
+}
+const mounted: { unmount: () => void }[] = []
+const mountOpen = async () => {
+  const wrapper = await mountSuspended(SkillCleanupModal, {
+    props: { open: true },
+    attachTo: document.body
+  })
+  mounted.push(wrapper)
+  await flushPromises()
+  return wrapper
+}
+const applyRequests = () => requests.filter((r) => r.query.includes('mutation CleanUpSkills'))
+const suggest = async () => {
+  const wrapper = await mountOpen()
+  await click('cleanup-suggest')
+  await vi.waitFor(() => expect(query('cleanup-apply') ?? query('cleanup-empty')).not.toBeNull())
+  return wrapper
+}
+
+beforeEach(() => {
+  applyError = ''
+  skillsError = ''
+  suggested = [{ skillIds: [1, 2], names: ['JavaScript'] }]
+  requests.length = 0
+})
+afterEach(() => mounted.splice(0).forEach((w) => w.unmount()))
+
+describe('SkillCleanupModal', () => {
+  it('labels a merge with the current names and applies the edited plan', async () => {
+    const wrapper = await suggest()
+    expect(query('cleanup-from')!.textContent).toBe('JS, Javascript')
+    expect(document.body.textContent).toContain('Merge')
+
+    const input = query('cleanup-name') as HTMLInputElement
+    input.value = '  JavaScript  '
+    input.dispatchEvent(new Event('input'))
+    await click('cleanup-apply')
+
+    await vi.waitFor(() => expect(wrapper.emitted('changed')).toHaveLength(1))
+    expect(applyRequests()[0]!.variables).toEqual({
+      operations: [{ skillIds: [1, 2], names: ['JavaScript'] }]
+    })
+    expect(wrapper.emitted('update:open')?.at(-1)).toEqual([false])
+  })
+
+  it('shows an unknown id as invalid and blocks Apply until it is removed', async () => {
+    suggested = [
+      { skillIds: [1, 99], names: ['X'] },
+      { skillIds: [3], names: ['Vue.js'] }
+    ]
+    await suggest()
+    expect(document.body.textContent).toContain('Unknown skill')
+    expect((query('cleanup-apply') as HTMLButtonElement).disabled).toBe(true)
+
+    await click('cleanup-remove')
+    expect(queryAll('cleanup-row')).toHaveLength(1)
+    expect((query('cleanup-apply') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('says there is nothing to clean up for an empty plan', async () => {
+    suggested = []
+    await suggest()
+    expect(query('cleanup-empty')!.textContent).toContain('Nothing to clean up')
+    expect(query('cleanup-apply')).toBeNull()
+  })
+
+  it('keeps the review open and shows the API error when applying fails', async () => {
+    applyError = 'Skill is in two operations.'
+    const wrapper = await suggest()
+    await click('cleanup-apply')
+    await vi.waitFor(() => expect(query('cleanup-apply-error')).not.toBeNull())
+    expect(query('cleanup-apply-error')!.textContent).toContain('two operations')
+    expect(query('cleanup-name')).not.toBeNull()
+    expect(wrapper.emitted('changed')).toBeUndefined()
+  })
+
+  it('keeps a pasted reply that is not valid JSON and shows an error', async () => {
+    await mountOpen()
+    const tab = [...document.body.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) =>
+      t.textContent?.includes('own AI')
+    )!
+    tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    tab.click()
+    await flushPromises()
+    const box = query('cleanup-json') as HTMLTextAreaElement
+    box.value = 'not json'
+    box.dispatchEvent(new Event('input'))
+    await flushPromises()
+    await click('cleanup-preview')
+    expect(document.body.textContent).toContain('valid JSON')
+    expect((query('cleanup-json') as HTMLTextAreaElement).value).toBe('not json')
+  })
+
+  it('includes the API message when the skills cannot be loaded', async () => {
+    skillsError = 'Page size too large'
+    await mountOpen()
+    await click('cleanup-suggest')
+    await vi.waitFor(() => expect(query('cleanup-error')).not.toBeNull())
+    expect(query('cleanup-error')!.textContent).toContain('Page size too large')
+  })
+})

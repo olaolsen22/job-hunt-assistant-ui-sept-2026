@@ -8,6 +8,7 @@ const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const addOpen = ref(false)
 const editOpen = ref(false)
+const cleanupOpen = ref(false)
 </script>
 
 <template>
@@ -24,6 +25,16 @@ const editOpen = ref(false)
   >
     <template v-if="skills.length" #actions>
       <div class="flex gap-2">
+        <UButton
+          icon="i-lucide-sparkles"
+          color="neutral"
+          variant="subtle"
+          size="sm"
+          aria-label="Clean up skills"
+          data-testid="profile-skills-cleanup"
+          @click="cleanupOpen = true"
+          >Clean up</UButton
+        >
         <UButton
           icon="i-lucide-pencil"
           color="neutral"
@@ -71,5 +82,6 @@ const editOpen = ref(false)
 
   <!-- Outside the section: its body isn't rendered while the section is empty. -->
   <ProfileSkillModal v-model:open="addOpen" :skill="null" @changed="emit('changed')" />
+  <LazyProfileSkillCleanupModal v-model:open="cleanupOpen" @changed="emit('changed')" />
   <ProfileSkillsModal v-model:open="editOpen" :skills="skills" @changed="emit('changed')" />
 </template>
