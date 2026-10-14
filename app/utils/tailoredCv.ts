@@ -125,7 +125,8 @@ const experienceFromProfile = (e: ProfileData['experiences'][number]): TailoredC
 const skillFromProfile = (s: ProfileData['skills'][number]) => ({
   name: s.skill.name,
   level: s.level,
-  sourceSkillId: s.skill.id
+  sourceSkillId: s.skill.id,
+  category: s.skill.category ?? null
 })
 
 const withBullets = <T extends { bullets: readonly unknown[] }>(e: T) => ({
@@ -231,8 +232,8 @@ export const setCvSection = (cv: TailoredCv, key: TailoredCvSectionKey, value: u
 }
 
 // Turns one built-in analysis result into the section value it suggests, or null when it failed.
-// Only the selected profile bullets/skills are kept, in profile order; the owner's edits to an
-// entry's other fields (title, employer, school...) stay.
+// Only the selected profile bullets/skills are kept (bullets in profile order, skills in the AI's
+// order); the owner's edits to an entry's other fields (title, employer, school...) stay.
 export const cvSectionFromAnalysis = (
   cv: TailoredCv,
   profile: ProfileData,
@@ -241,11 +242,12 @@ export const cvSectionFromAnalysis = (
   if (result.status !== 'SUCCEEDED') return null
   if (result.section === 'SUMMARY') return { key: 'summary', value: result.summary ?? '' }
   if (result.section === 'SKILLS') {
-    const selected = new Set(result.selectedSkillIds)
-    return {
-      key: 'skills',
-      value: profile.skills.filter((s) => selected.has(s.skill.id)).map(skillFromProfile)
-    }
+    // The AI's order (most relevant first) is kept: it prints as is.
+    const value = (result.selectedSkillIds ?? [])
+      .map((id) => profile.skills.find((s) => s.skill.id === id))
+      .filter((s) => s != null)
+      .map(skillFromProfile)
+    return { key: 'skills', value }
   }
   const selected = new Set(result.selectedBulletIds)
   const pick = (bullets: readonly { id: number; text: string }[]) =>

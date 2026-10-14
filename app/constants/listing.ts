@@ -50,6 +50,17 @@ export const PROFICIENCY_OPTIONS = [
 // Labelled, so the closed select reads on its own; the API doesn't define what each level means.
 export const SKILL_LEVELS = [1, 2, 3, 4, 5].map((n) => ({ label: `Level ${n}`, value: n }))
 
+// null on a skill means uncategorized (normal for non-tech skills), so the selects add that item.
+export const SKILL_CATEGORY_OPTIONS = [
+  { label: 'Languages', value: 'LANGUAGE' },
+  { label: 'Frameworks', value: 'FRAMEWORK' },
+  { label: 'Databases', value: 'DATABASE' },
+  { label: 'Cloud & DevOps', value: 'CLOUD_DEVOPS' },
+  { label: 'Tools', value: 'TOOL' },
+  { label: 'Methods', value: 'METHOD' }
+] as const
+export type SkillCategory = (typeof SKILL_CATEGORY_OPTIONS)[number]['value']
+
 export const LINK_KIND_OPTIONS = [
   { label: 'GitHub', value: 'GITHUB', icon: 'i-lucide-github' },
   { label: 'LinkedIn', value: 'LINKEDIN', icon: 'i-lucide-linkedin' },

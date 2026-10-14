@@ -135,6 +135,7 @@ export const PROFILE_FIELDS = graphql(
         skill {
           id
           name
+          category
         }
       }
       languages {

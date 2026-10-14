@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SKILL_CATEGORY_OPTIONS } from '~/constants/listing'
 import type { ProfileSkill } from '~/composables/useProfile'
 
 // Read-only list; Add opens the single-skill form (it has the name search), Edit the bulk one.
@@ -53,6 +54,9 @@ const editOpen = ref(false)
         data-testid="profile-skill"
       >
         <span class="min-w-0 flex-1 truncate">{{ s.skill.name }}</span>
+        <UBadge v-if="s.skill.category" color="neutral" variant="outline" size="sm">{{
+          SKILL_CATEGORY_OPTIONS.find((o) => o.value === s.skill.category)?.label
+        }}</UBadge>
         <UBadge color="neutral" variant="subtle" size="sm">Level {{ s.level }}/5</UBadge>
         <span class="w-14 shrink-0 text-right text-sm text-muted">{{
           formatYears(s.experienceMonths)

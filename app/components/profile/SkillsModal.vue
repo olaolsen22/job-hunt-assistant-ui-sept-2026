@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import { SKILL_CATEGORY_OPTIONS, type SkillCategory } from '~/constants/listing'
 import type { ProfileSkill } from '~/composables/useProfile'
 
-// Every skill's level in one form, plus marking skills for removal. The API takes one skill per
+// Every skill's level and category in one form, plus marking skills for removal. The API takes one skill per
 // call, so Save sends one request per changed row; failed rows stay with their message.
 const { skills } = defineProps<{ skills: readonly ProfileSkill[] }>()
 const open = defineModel<boolean>('open', { required: true })
@@ -14,6 +15,19 @@ const SET_SKILL = graphql(`
       profileSkill {
         level
       }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
+const SET_CATEGORY = graphql(`
+  mutation SetSkillRowCategory($input: SetSkillCategoryInput!) {
+    setSkillCategory(input: $input) {
       errors {
         __typename
         ... on Error {
@@ -38,6 +52,11 @@ const REMOVE_SKILL = graphql(`
   }
 `)
 
+// A select can't hold null, so "uncategorized" is a sentinel that is sent as null.
+const NO_CATEGORY = 'NONE'
+const CATEGORY_ITEMS = [{ label: 'Uncategorized', value: NO_CATEGORY }, ...SKILL_CATEGORY_OPTIONS]
+type RowCategory = SkillCategory | typeof NO_CATEGORY
+
 const LEVELS = [1, 2, 3, 4, 5].map((n) => ({ label: String(n), value: n }))
 
 type Row = {
@@ -46,6 +65,8 @@ type Row = {
   years: string
   saved: number
   level: number
+  savedCategory: RowCategory
+  category: RowCategory
   remove: boolean
   error?: string
 }
@@ -59,13 +80,17 @@ watch(open, (isOpen) => {
     years: formatYears(s.experienceMonths),
     saved: s.level,
     level: s.level,
+    savedCategory: s.skill.category ?? NO_CATEGORY,
+    category: s.skill.category ?? NO_CATEGORY,
     remove: false
   }))
 })
 
-const changed = computed(() => rows.value.filter((r) => r.remove || r.level !== r.saved))
+const changed = computed(() =>
+  rows.value.filter((r) => r.remove || r.level !== r.saved || r.category !== r.savedCategory)
+)
 // Only pending changes count for the discard guard, so saved rows drop out of it.
-const state = computed(() => changed.value.map((r) => [r.id, r.level, r.remove]))
+const state = computed(() => changed.value.map((r) => [r.id, r.level, r.category, r.remove]))
 const removals = computed(() => changed.value.filter((r) => r.remove))
 const failed = computed(() => rows.value.filter((r) => r.error).length)
 
@@ -80,17 +105,34 @@ const submit = () => {
 
 const saveRow = async (row: Row) => {
   try {
-    const errors = row.remove
-      ? (await gql(REMOVE_SKILL, { input: { skillId: row.id } })).removeProfileSkill.errors
-      : (await gql(SET_SKILL, { input: { name: row.name, level: row.level } })).setProfileSkill
-          .errors
+    let errors: { message?: string }[] | null | undefined
+    if (row.remove) {
+      errors = (await gql(REMOVE_SKILL, { input: { skillId: row.id } })).removeProfileSkill.errors
+    } else {
+      if (row.level !== row.saved)
+        errors = (await gql(SET_SKILL, { input: { name: row.name, level: row.level } }))
+          .setProfileSkill.errors
+      // A level that failed to save stops here, so the row keeps one message.
+      if (!errors?.length && row.category !== row.savedCategory)
+        errors = (
+          await gql(SET_CATEGORY, {
+            input: {
+              skillId: row.id,
+              category: row.category === NO_CATEGORY ? null : row.category
+            }
+          })
+        ).setSkillCategory.errors
+    }
     row.error = errors?.[0]?.message
   } catch {
     row.error = ERROR_MESSAGES.generic
   }
   if (row.error) return false
   if (row.remove) rows.value = rows.value.filter((r) => r !== row)
-  else row.saved = row.level
+  else {
+    row.saved = row.level
+    row.savedCategory = row.category
+  }
   return true
 }
 
@@ -108,7 +150,7 @@ const save = async () => {
   <AppFormModal
     v-model:open="open"
     title="Edit skills"
-    description="Tap a level per skill. Each skill saves separately."
+    description="Tap a level and pick a category per skill. Each skill saves separately."
     :state="state"
     :loading="loading"
     :save-label="changed.length ? `Save ${changed.length}` : 'Save'"
@@ -141,6 +183,13 @@ const save = async () => {
             :disabled="r.remove"
             class="sm:w-56"
             :aria-label="`${r.name} level`"
+          />
+          <USelect
+            v-model="r.category"
+            :items="CATEGORY_ITEMS"
+            :disabled="r.remove"
+            :aria-label="`${r.name} category`"
+            class="w-40 shrink-0"
           />
           <UButton
             :icon="r.remove ? 'i-lucide-undo-2' : 'i-lucide-trash-2'"

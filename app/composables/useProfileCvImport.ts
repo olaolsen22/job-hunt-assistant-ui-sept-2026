@@ -70,6 +70,7 @@ export const CV_CANDIDATE = graphql(`
     skills {
       name
       level
+      category
     }
     languages {
       name

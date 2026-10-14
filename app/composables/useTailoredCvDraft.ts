@@ -79,6 +79,7 @@ const CONTENT_FIELDS = graphql(`
       name
       level
       sourceSkillId
+      category
     }
     languages {
       name

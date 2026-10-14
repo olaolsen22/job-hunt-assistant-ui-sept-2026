@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { TailoredCvSectionKey } from '~/utils/tailoredCv'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
-import { PROFICIENCY_OPTIONS } from '~/constants/listing'
+import { VueDraggable } from 'vue-draggable-plus'
+import { PROFICIENCY_OPTIONS, SKILL_CATEGORY_OPTIONS } from '~/constants/listing'
+import type { SkillCategory } from '~/constants/listing'
 
 definePageMeta({ title: 'Tailored CV' })
 
@@ -24,10 +26,19 @@ const SECTION_ORDER_OPTIONS = [
   { label: 'Developer', value: 'DEVELOPER' }
 ]
 const SECTION_ORDER_HINTS = {
-  STANDARD: 'Standard order. Only changes the generated PDF, not the text you edit.',
+  STANDARD:
+    'Standard order; skills print on one line, in the order shown. Only changes the generated PDF, not the text you edit.',
   DEVELOPER:
-    'Links under the contact lines; skills and projects moved up. Only changes the generated PDF, not the text you edit.'
+    'Links under the contact lines; skills and projects moved up, and skills grouped by category. Only changes the generated PDF, not the text you edit.'
 } as const
+
+// A select can't hold null, so "uncategorized" is a sentinel that is stored as null.
+const NO_CATEGORY = 'NONE'
+const CATEGORY_ITEMS = [{ label: 'Uncategorized', value: NO_CATEGORY }, ...SKILL_CATEGORY_OPTIONS]
+const moveSkill = (from: number, to: number) => {
+  const skills = cv.value!.skills
+  skills.splice(to, 0, ...skills.splice(from, 1))
+}
 
 const CONTENT_STYLE_OPTIONS = [
   { label: 'Bullets', value: 'BULLETS' },
@@ -699,27 +710,75 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 />
               </template>
               <div class="space-y-2">
-                <div class="flex flex-wrap gap-2" data-testid="tailored-cv-skill-list">
-                  <UBadge
+                <VueDraggable
+                  v-model="cv.skills"
+                  tag="ul"
+                  handle=".drag-handle"
+                  ghost-class="opacity-50"
+                  :animation="150"
+                  :disabled="analyzing"
+                  class="space-y-1"
+                  data-testid="tailored-cv-skill-list"
+                >
+                  <li
                     v-for="(skill, i) in cv.skills"
                     :key="`${skill.sourceSkillId ?? skill.name}-${i}`"
-                    color="neutral"
-                    variant="subtle"
-                    size="lg"
-                    class="gap-1"
+                    class="flex flex-wrap items-center gap-x-1 gap-y-1"
+                    data-testid="tailored-cv-skill"
                   >
-                    {{ skill.name }}
+                    <UButton
+                      icon="i-lucide-grip-vertical"
+                      color="neutral"
+                      variant="ghost"
+                      size="sm"
+                      :aria-label="`Drag ${skill.name} to reorder`"
+                      class="drag-handle shrink-0 cursor-grab touch-none"
+                    />
+                    <span class="min-w-24 flex-1 truncate">{{ skill.name }}</span>
+                    <USelect
+                      :model-value="skill.category ?? NO_CATEGORY"
+                      :items="CATEGORY_ITEMS"
+                      size="sm"
+                      :aria-label="`${skill.name} category`"
+                      class="w-40 shrink-0"
+                      @update:model-value="
+                        (category) =>
+                          (skill.category =
+                            category === NO_CATEGORY ? null : (category as SkillCategory))
+                      "
+                    />
+                    <!-- Dragging is awkward on touch and unusable by keyboard, so the order has buttons too. -->
+                    <UButton
+                      icon="i-lucide-chevron-up"
+                      color="neutral"
+                      variant="ghost"
+                      size="sm"
+                      :disabled="i === 0"
+                      :aria-label="`Move ${skill.name} earlier`"
+                      @click="moveSkill(i, i - 1)"
+                    />
+                    <UButton
+                      icon="i-lucide-chevron-down"
+                      color="neutral"
+                      variant="ghost"
+                      size="sm"
+                      :disabled="i === cv.skills.length - 1"
+                      :aria-label="`Move ${skill.name} later`"
+                      @click="moveSkill(i, i + 1)"
+                    />
                     <UButton
                       icon="i-lucide-x"
                       color="neutral"
-                      variant="link"
-                      size="xs"
-                      class="p-0"
+                      variant="ghost"
+                      size="sm"
                       :aria-label="`Remove ${skill.name}`"
                       @click="cv.skills.splice(i, 1)"
                     />
-                  </UBadge>
-                </div>
+                  </li>
+                </VueDraggable>
+                <p class="text-xs text-muted">
+                  Categories and order apply to this CV only, not your profile.
+                </p>
               </div>
             </ListingsTailoredCvSection>
 

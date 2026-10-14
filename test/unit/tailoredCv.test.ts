@@ -97,7 +97,8 @@ describe('tailored CV candidate', () => {
       profile(),
       result({ section: 'SKILLS', sourceEntryId: null, selectedSkillIds: [3, 1] })
     )
-    expect((skills?.value as { name: string }[]).map((s) => s.name)).toEqual(['Vue', 'TypeScript'])
+    // The AI's order (most relevant first) wins over the profile's order.
+    expect((skills?.value as { name: string }[]).map((s) => s.name)).toEqual(['TypeScript', 'Vue'])
     const summary = cvSectionFromAnalysis(
       cv,
       profile(),

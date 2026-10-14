@@ -9,6 +9,7 @@ import {
   EMPLOYMENT_TYPE_OPTIONS,
   LANGUAGE_OPTIONS,
   SCHEDULE_OPTIONS,
+  SKILL_CATEGORY_OPTIONS,
   SENIORITY_OPTIONS,
   WORK_MODE_OPTIONS
 } from '~/constants/listing'
@@ -19,6 +20,7 @@ import type {
   Language,
   Schedule,
   Seniority,
+  SkillCategory,
   WorkMode
 } from '~/constants/listing'
 
@@ -46,6 +48,8 @@ export interface ListingSkill {
   level: number
   minYears?: number | null
   isRequired: boolean
+  // Only set by a parsed draft; the API fills an empty category and never overwrites one.
+  category?: SkillCategory
 }
 
 // The API wants null, not "", for empty optional fields.
@@ -69,7 +73,8 @@ const cleanDraft = (d: Record<string, unknown>) => {
       name: text(s?.name),
       level: int(s?.level, 1, 5) ?? 3,
       minYears: int(s?.minYears, 1, 50) ?? null,
-      isRequired: s?.isRequired !== false
+      isRequired: s?.isRequired !== false,
+      category: option(SKILL_CATEGORY_OPTIONS, s?.category)
     }))
     .filter(
       (s, i, all) =>
@@ -189,7 +194,11 @@ export const useListingForm = () => {
     postingLanguage: state.postingLanguage ?? null,
     locations: state.locations.map((l) => ({ ...l, city: orNull(l.city) })),
     languages: state.languages.map((l) => ({ ...l, level: l.level ?? null })),
-    skills: state.skills.map((s) => ({ ...s, minYears: s.minYears ?? null })),
+    skills: state.skills.map((s) => ({
+      ...s,
+      minYears: s.minYears ?? null,
+      category: s.category ?? null
+    })),
     // updateListing replaces the whole listing, so leaving this out would clear the marker.
     isAnalyzed: state.isAnalyzed,
     // Always sent, so a removed row unlinks that contact. Blank rows are dropped.
