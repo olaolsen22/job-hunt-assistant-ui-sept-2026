@@ -31,7 +31,13 @@ const listing = (applied: boolean) => ({
     : [],
   interviews: [],
   documents: [
-    { id: 9, kind: 'CV', fileName: 'cv.pdf', sentAt: applied ? '2026-09-27T10:00:00Z' : null }
+    {
+      id: 9,
+      kind: 'CV',
+      fileName: 'cv.pdf',
+      createdAt: '2026-09-25T10:00:00Z',
+      sentAt: applied ? '2026-09-27T10:00:00Z' : null
+    }
   ],
   locations: [],
   languages: [],
