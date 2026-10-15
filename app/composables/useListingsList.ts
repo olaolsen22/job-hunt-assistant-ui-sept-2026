@@ -24,6 +24,7 @@ const LISTING_ITEM = graphql(`
     dueOn
     url
     favoritedAt
+    archivedAt
     analyzedAt
     status
     jobRole {

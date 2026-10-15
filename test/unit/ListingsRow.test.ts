@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { mountSuspended } from '@nuxt/test-utils/runtime'
+import { describe, expect, it, vi } from 'vitest'
+import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
+import { readBody } from 'h3'
 import Row from '~/components/listings/Row.vue'
 import type { ListingListItem } from '~/composables/useListingsList'
 
@@ -17,6 +18,7 @@ const listing = (overrides: Partial<ListingListItem> = {}): ListingListItem => (
   dueOn: '2026-12-01',
   url: 'https://example.com/ad',
   favoritedAt: null,
+  archivedAt: null,
   analyzedAt: '2026-10-02T10:00:00Z',
   status: 'SAVED',
   jobRole: { name: 'Developer' },
@@ -47,5 +49,40 @@ describe('ListingsRow', () => {
     expect(wrapper.get('[data-testid="listing-analyzed"]').text()).toBe('To analyze')
     expect(wrapper.text()).not.toContain('Senior')
     expect(wrapper.get('[data-testid="listing-location"]').text()).toBe('Location not specified')
+  })
+
+  it('archives from the row and asks the list to refresh', async () => {
+    const inputs: unknown[] = []
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: async (event) => {
+        inputs.push((await readBody(event)).variables.input)
+        return {
+          data: {
+            setListingArchived: {
+              listing: { id: 7, archivedAt: '2026-10-15T10:00:00Z' },
+              errors: null
+            }
+          }
+        }
+      }
+    })
+    const wrapper = await mountSuspended(Row, { props: { listing: listing() } })
+    const button = wrapper.get('[data-testid="listing-archive"]')
+    expect(button.attributes('aria-label')).toBe('Archive Frontend Developer')
+
+    await button.trigger('click')
+
+    await vi.waitFor(() => expect(inputs).toEqual([{ id: 7, isArchived: true }]))
+    await vi.waitFor(() => expect(wrapper.emitted('changed')).toHaveLength(1))
+  })
+
+  it('offers Unarchive on an archived listing', async () => {
+    const wrapper = await mountSuspended(Row, {
+      props: { listing: listing({ archivedAt: '2026-10-10T10:00:00Z' }) }
+    })
+    expect(wrapper.get('[data-testid="listing-archive"]').attributes('aria-label')).toBe(
+      'Unarchive Frontend Developer'
+    )
   })
 })

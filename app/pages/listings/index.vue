@@ -16,7 +16,8 @@ const {
   sort,
   facets,
   loading,
-  error
+  error,
+  refresh
 } = useListingsList(grid)
 
 const narrowed = computed(() => !!(filter.value || search.value || countActiveFacets(facets)))
@@ -184,7 +185,13 @@ const ADD_ITEMS = [
             <USkeleton class="h-24 w-full md:h-10" />
           </li>
         </template>
-        <ListingsRow v-for="listing in listings" v-else :key="listing.id" :listing="listing" />
+        <ListingsRow
+          v-for="listing in listings"
+          v-else
+          :key="listing.id"
+          :listing="listing"
+          @changed="refresh"
+        />
       </ul>
 
       <!-- UPagination still renders a lone "1" with disabled arrows when everything fits on one page. -->

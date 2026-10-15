@@ -23,6 +23,7 @@ const listing = (applied: boolean) => ({
   dueOn: '2026-10-04',
   postingLanguage: null,
   favoritedAt: null,
+  archivedAt: null,
   analyzedAt: null,
   archivedAt: null,
   status: applied ? 'APPLIED' : 'SAVED',

@@ -17,6 +17,7 @@ const item = (id: number, title: string) => ({
   dueOn: '2026-10-15',
   url: `https://example.com/${id}`,
   favoritedAt: null,
+  archivedAt: null,
   analyzedAt: '2026-10-01T10:00:00Z',
   status: 'SAVED',
   jobRole: { name: 'Developer' },
