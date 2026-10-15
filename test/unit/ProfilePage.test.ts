@@ -26,7 +26,16 @@ const emptyProfile = {
   dateOfBirth: null,
   nationality: null,
   workAuthorization: null,
+  streetAddress: null,
+  postalCode: null,
   hobbies: [],
+  story: {
+    origin: null,
+    upbringing: null,
+    careerJourney: null,
+    motivation: null,
+    values: null
+  } as Record<string, string | null>,
   location: null,
   links: [],
   references: [],
@@ -1329,6 +1338,190 @@ describe('ProfilePage clearing sections', () => {
 
     expect(document.body.textContent).toContain('Clear Skills?')
     expect(wrapper.find('[data-testid="profile-skills-empty"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+// UTextarea puts the test id on its wrapper or the textarea, depending on the attribute.
+const setText = (testid: string, value: string) => {
+  const el = document.body.querySelector<HTMLElement>(`[data-testid="${testid}"]`)!
+  const textarea = el instanceof HTMLTextAreaElement ? el : el.querySelector('textarea')!
+  textarea.value = value
+  textarea.dispatchEvent(new Event('input'))
+}
+
+describe('ProfilePage address', () => {
+  it('saves street and postcode together, sending a blank one as null', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
+      if (!body.query.includes('updateProfileAddress(')) return undefined
+      Object.assign(profile, body.variables.input)
+      return { updateProfileAddress: { profile, errors: null } }
+    })
+    await wrapper.get('[data-testid="profile-address-empty"] button').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="address-town"]')!.textContent).toContain(
+      'Oslo'
+    )
+    const street = document.body.querySelector<HTMLInputElement>(
+      'input[data-testid="address-street"]'
+    )!
+    street.value = ' Storgata 1 '
+    street.dispatchEvent(new Event('input'))
+    await flushPromises()
+    clickSave()
+
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="profile-address"]').text()).toContain('Storgata 1')
+    )
+    expect(wrapper.get('[data-testid="profile-address"]').text()).toContain('Oslo')
+    expect(
+      requests.find((r) => r.query.includes('updateProfileAddress('))!.variables.input
+    ).toEqual({ streetAddress: 'Storgata 1', postalCode: null })
+    wrapper.unmount()
+  })
+})
+
+describe('ProfilePage story', () => {
+  it('saves all five story parts together, sending a blank one as null', async () => {
+    const story = { ...emptyProfile.story, origin: 'Bergen', values: 'Calm' }
+    const { wrapper, requests } = await mountPage({ ...filledProfile, story }, (body, profile) => {
+      if (!body.query.includes('updateProfileStory(')) return undefined
+      profile.story = body.variables.input
+      return { updateProfileStory: { profile, errors: null } }
+    })
+    await wrapper.get('[data-testid="profile-story-edit"]').trigger('click')
+    await flushPromises()
+    setText('story-careerJourney', 'Started in support')
+    setText('story-values', '  ')
+    await flushPromises()
+    clickSave()
+
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="profile-story"]').text()).toContain('Started in support')
+    )
+    expect(requests.find((r) => r.query.includes('updateProfileStory('))!.variables.input).toEqual({
+      origin: 'Bergen',
+      upbringing: null,
+      careerJourney: 'Started in support',
+      motivation: null,
+      values: null
+    })
+    wrapper.unmount()
+  })
+
+  it('clears only the story from its section menu', async () => {
+    const story = { ...emptyProfile.story, motivation: 'Shipping' }
+    const { wrapper, requests } = await mountPage({ ...filledProfile, story }, (body, profile) =>
+      body.query.includes('clearProfileSections(')
+        ? {
+            clearProfileSections: {
+              profile: { ...profile, story: emptyProfile.story },
+              errors: null
+            }
+          }
+        : undefined
+    )
+    await chooseAction(wrapper, '[data-testid="profile-story-menu"]', 'Clear section')
+    expect(document.body.textContent).toContain('This permanently deletes your story')
+    clickConfirm()
+
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="profile-story-empty"]').exists()).toBe(true)
+    )
+    expect(
+      requests.find((r) => r.query.includes('clearProfileSections('))!.variables.input
+    ).toEqual({ sections: ['STORY'] })
+    wrapper.unmount()
+  })
+})
+
+describe('ProfilePage writing samples', () => {
+  const sample = (id: number, title = `Sample ${id}`) => ({
+    id,
+    title,
+    text: 'Kjære rekrutterer',
+    language: 'NORWEGIAN',
+    kind: 'COVER_LETTER',
+    updatedAt: '2026-10-01T10:00:00Z'
+  })
+  // The list fetches on its own once the profile has rendered it.
+  const mountWithSamples = async (samples: ReturnType<typeof sample>[], respond?: Respond) => {
+    clearNuxtData('writing-samples')
+    const mounted = await mountPage(filledProfile, (body, profile) =>
+      body.query.includes('query WritingSamples')
+        ? { writingSamples: { nodes: samples } }
+        : respond?.(body, profile)
+    )
+    await vi.waitFor(() =>
+      expect(mounted.wrapper.get('[data-testid="profile-writing-samples"]').text()).toMatch(
+        /\(\d+\/20\)/
+      )
+    )
+    return mounted
+  }
+
+  it('adds a sample and lists it after the refetch', async () => {
+    const samples = [sample(1)]
+    const { wrapper, requests } = await mountWithSamples(samples, (body) => {
+      if (!body.query.includes('addWritingSample(')) return undefined
+      samples.push({ ...sample(2), ...body.variables.input })
+      return { addWritingSample: { writingSample: { id: 2 }, errors: null } }
+    })
+    expect(wrapper.get('[data-testid="profile-writing-samples"]').text()).toContain(
+      'Writing samples (1/20)'
+    )
+    await wrapper.get('[data-testid="profile-writing-samples-add"]').trigger('click')
+    await flushPromises()
+    setInput('writing-sample-title', 'Letter to Acme')
+    setText('writing-sample-text', 'Dear Acme')
+    await flushPromises()
+    clickSave()
+
+    await vi.waitFor(() =>
+      expect(wrapper.findAll('[data-testid="profile-writing-sample"]')).toHaveLength(2)
+    )
+    expect(requests.find((r) => r.query.includes('addWritingSample('))!.variables.input).toEqual({
+      title: 'Letter to Acme',
+      text: 'Dear Acme',
+      language: 'NORWEGIAN',
+      kind: 'COVER_LETTER'
+    })
+    wrapper.unmount()
+  })
+
+  it('deletes a sample only after confirming', async () => {
+    const samples = [sample(1), sample(2)]
+    const { wrapper, requests } = await mountWithSamples(samples, (body) => {
+      if (!body.query.includes('deleteWritingSample(')) return undefined
+      samples.splice(0, 1)
+      return { deleteWritingSample: { id: 1, errors: null } }
+    })
+    await chooseAction(wrapper, '[data-testid="profile-writing-sample-actions"]', 'Delete')
+    expect(requests.some((r) => r.query.includes('deleteWritingSample('))).toBe(false)
+    clickConfirm()
+
+    await vi.waitFor(() =>
+      expect(wrapper.findAll('[data-testid="profile-writing-sample"]')).toHaveLength(1)
+    )
+    expect(requests.find((r) => r.query.includes('deleteWritingSample('))!.variables.input).toEqual(
+      { id: 1 }
+    )
+    wrapper.unmount()
+  })
+
+  it('stops offering Add at the 20-sample limit', async () => {
+    const { wrapper } = await mountWithSamples(Array.from({ length: 20 }, (_, i) => sample(i + 1)))
+    const card = wrapper.get('[data-testid="profile-writing-samples"]')
+    expect(card.text()).toContain('Limit reached (20).')
+    expect(card.find('[data-testid="profile-writing-samples-add"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows an empty state explaining what samples are for', async () => {
+    const { wrapper } = await mountWithSamples([])
+    expect(wrapper.get('[data-testid="profile-writing-samples-empty"]').text()).toContain(
+      'Samples in the language you apply in teach the AI your style best.'
+    )
     wrapper.unmount()
   })
 })

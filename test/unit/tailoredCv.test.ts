@@ -4,12 +4,12 @@ import type { TailoredCvAnalysis } from '~/composables/useTailoredCvDraft'
 import {
   changedCvSections,
   cvSectionFromAnalysis,
-  latestCvDocument,
   mergeExternalCandidate,
   tailoredCvFromProfile,
   tailoredCvToText,
   toTailoredCvInput
 } from '~/utils/tailoredCv'
+import { latestUnsentDocument } from '~/utils/documents'
 import { cvProfile } from '../fixtures/profileCv'
 
 const profile = (): ProfileData => {
@@ -212,7 +212,7 @@ describe('tailored CV candidate', () => {
   })
 })
 
-describe('latestCvDocument', () => {
+describe('latestUnsentDocument', () => {
   const doc = (id: number, kind: string, createdAt: string, sentAt: string | null = null) => ({
     id,
     kind,
@@ -221,24 +221,40 @@ describe('latestCvDocument', () => {
   })
 
   it('picks the newest unsent CV', () => {
-    const latest = latestCvDocument([
-      doc(1, 'CV', '2026-10-01T10:00:00Z'),
-      doc(2, 'CV', '2026-10-03T10:00:00Z'),
-      doc(3, 'CV', '2026-10-02T10:00:00Z')
-    ])
+    const latest = latestUnsentDocument(
+      [
+        doc(1, 'CV', '2026-10-01T10:00:00Z'),
+        doc(2, 'CV', '2026-10-03T10:00:00Z'),
+        doc(3, 'CV', '2026-10-02T10:00:00Z')
+      ],
+      'CV'
+    )
     expect(latest?.id).toBe(2)
   })
 
   it('skips sent CVs and cover letters', () => {
-    const latest = latestCvDocument([
-      doc(1, 'CV', '2026-10-01T10:00:00Z'),
-      doc(2, 'CV', '2026-10-05T10:00:00Z', '2026-10-06T10:00:00Z'),
-      doc(3, 'COVER_LETTER', '2026-10-07T10:00:00Z')
-    ])
+    const latest = latestUnsentDocument(
+      [
+        doc(1, 'CV', '2026-10-01T10:00:00Z'),
+        doc(2, 'CV', '2026-10-05T10:00:00Z', '2026-10-06T10:00:00Z'),
+        doc(3, 'COVER_LETTER', '2026-10-07T10:00:00Z')
+      ],
+      'CV'
+    )
     expect(latest?.id).toBe(1)
   })
 
+  it('picks cover letters when asked', () => {
+    const latest = latestUnsentDocument(
+      [doc(1, 'CV', '2026-10-05T10:00:00Z'), doc(2, 'COVER_LETTER', '2026-10-01T10:00:00Z')],
+      'COVER_LETTER'
+    )
+    expect(latest?.id).toBe(2)
+  })
+
   it('returns nothing without an unsent CV', () => {
-    expect(latestCvDocument([doc(1, 'COVER_LETTER', '2026-10-01T10:00:00Z')])).toBeUndefined()
+    expect(
+      latestUnsentDocument([doc(1, 'COVER_LETTER', '2026-10-01T10:00:00Z')], 'CV')
+    ).toBeUndefined()
   })
 })

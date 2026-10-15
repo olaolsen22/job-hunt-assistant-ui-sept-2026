@@ -94,8 +94,9 @@ const pdf = computed(
       ? state.generated.value
       : undefined) ??
     (listing.value &&
-      latestCvDocument(
-        listing.value.documents.filter((document) => !deletedPdfIds.value.includes(document.id))
+      latestUnsentDocument(
+        listing.value.documents.filter((document) => !deletedPdfIds.value.includes(document.id)),
+        'CV'
       ))
 )
 const pdfCurrent = computed(

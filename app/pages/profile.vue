@@ -5,6 +5,7 @@ import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { PROFILE, type ProfileData } from '~/composables/useProfile'
 import type { ProfileSectionName } from '~/components/profile/ClearSectionsModal.vue'
+import { STORY_FIELDS } from '~/constants/profileStory'
 
 definePageMeta({ title: 'Profile' })
 
@@ -13,8 +14,16 @@ const { profile, loading, error, refresh } = useProfile()
 const basicsOpen = ref(false)
 const summaryOpen = ref(false)
 const hobbiesOpen = ref(false)
+const storyOpen = ref(false)
+const addressOpen = ref(false)
 const cvImportOpen = ref(false)
 const clearTarget = ref<ProfileSectionName | 'ALL' | null>(null)
+
+const hasAddress = computed(() => !!(profile.value?.streetAddress || profile.value?.postalCode))
+const postalLine = computed(() =>
+  [profile.value?.postalCode, profile.value?.location?.city].filter(Boolean).join(' ')
+)
+const hasStory = computed(() => STORY_FIELDS.some((f) => profile.value?.story[f.key]))
 
 // Keep the mounted review and its edits if fetching fresh update targets fails.
 const refreshCvProfile = async () => {
@@ -331,6 +340,74 @@ const contact = computed(() => {
               @changed="refresh"
               @clear="clearTarget = 'REFERENCES'"
             />
+
+            <!-- Cover letter material, kept together below the CV sections. -->
+            <ProfileSection
+              title="Address"
+              icon="i-lucide-map-pin"
+              testid="profile-address"
+              :empty="!hasAddress"
+              empty-message="No address yet. Add it to fill in the sender block on cover letters."
+              add-label="Add address"
+              @add="addressOpen = true"
+            >
+              <template v-if="hasAddress" #actions>
+                <UButton
+                  icon="i-lucide-pencil"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Edit address"
+                  data-testid="profile-address-edit"
+                  @click="addressOpen = true"
+                />
+              </template>
+              <div class="space-y-1 text-sm">
+                <p v-if="profile.streetAddress" class="break-words">{{ profile.streetAddress }}</p>
+                <p>{{ postalLine }}</p>
+                <p v-if="!profile.location?.city" class="text-muted">Add your town under Basics.</p>
+                <p class="text-xs text-muted">
+                  Printed in the sender block of cover letters. Never sent to AI.
+                </p>
+              </div>
+            </ProfileSection>
+
+            <ProfileSection
+              title="My story"
+              icon="i-lucide-book-open"
+              testid="profile-story"
+              clearable
+              :empty="!hasStory"
+              empty-message="Tell your story for cover letters. Optional, and only cover letters use it."
+              add-label="Add your story"
+              @add="storyOpen = true"
+              @clear="clearTarget = 'STORY'"
+            >
+              <template v-if="hasStory" #actions>
+                <UButton
+                  icon="i-lucide-pencil"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Edit story"
+                  data-testid="profile-story-edit"
+                  @click="storyOpen = true"
+                />
+              </template>
+              <dl class="space-y-3">
+                <div v-for="f in STORY_FIELDS" :key="f.key">
+                  <dt class="text-xs text-muted">{{ f.label }}</dt>
+                  <dd
+                    class="line-clamp-2 whitespace-pre-line break-words text-sm"
+                    :class="{ 'text-muted': !profile.story[f.key] }"
+                  >
+                    {{ profile.story[f.key] || 'Not written' }}
+                  </dd>
+                </div>
+              </dl>
+            </ProfileSection>
+
+            <ProfileWritingSampleList />
           </div>
 
           <div class="space-y-4">
@@ -440,6 +517,18 @@ const contact = computed(() => {
         />
         <ProfileHobbiesModal
           v-model:open="hobbiesOpen"
+          :profile="profile"
+          @saved="onSaved"
+          @changed="refresh"
+        />
+        <ProfileAddressModal
+          v-model:open="addressOpen"
+          :profile="profile"
+          @saved="onSaved"
+          @changed="refresh"
+        />
+        <ProfileStoryModal
+          v-model:open="storyOpen"
           :profile="profile"
           @saved="onSaved"
           @changed="refresh"

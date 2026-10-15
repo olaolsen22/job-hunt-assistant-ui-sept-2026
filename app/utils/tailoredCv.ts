@@ -428,17 +428,3 @@ export const tailoredCvToText = (cv: TailoredCv) => {
     .map((s) => `${s.title}\n${s.body}`)
   return [head.join('\n'), ...sections].filter(Boolean).join('\n\n')
 }
-
-// The newest CV still free to send. The API doesn't mark generated PDFs, so an uploaded CV counts too.
-export const latestCvDocument = <
-  T extends { kind: string; createdAt: string; sentAt?: string | null }
->(
-  documents: T[]
-): T | undefined =>
-  documents
-    .filter((d) => d.kind === 'CV' && !d.sentAt)
-    .reduce<T | undefined>(
-      (latest, d) =>
-        !latest || Date.parse(d.createdAt) > Date.parse(latest.createdAt) ? d : latest,
-      undefined
-    )

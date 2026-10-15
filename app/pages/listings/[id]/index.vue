@@ -314,6 +314,7 @@ const skillsByRequirement = computed(() => {
             @changed="refresh"
           />
           <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
+          <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
         </template>
 
         <div
@@ -359,6 +360,7 @@ const skillsByRequirement = computed(() => {
             </AppCard>
             <template v-if="listing.status === 'SAVED'">
               <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
+              <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
               <ListingsApplication
                 v-model:apply-open="applyOpen"
                 :listing="listing"

@@ -28,8 +28,9 @@ const resetOpen = ref(false)
 const editorPath = computed(() => `/listings/${listing.id}/cv`)
 const deletedPdfIds = ref<number[]>([])
 const pdf = computed(() =>
-  latestCvDocument(
-    listing.documents.filter((document) => !deletedPdfIds.value.includes(document.id))
+  latestUnsentDocument(
+    listing.documents.filter((document) => !deletedPdfIds.value.includes(document.id)),
+    'CV'
   )
 )
 const canApply = computed(() => listing.status === 'SAVED')

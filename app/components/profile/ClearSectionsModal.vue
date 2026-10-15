@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { VariablesOf } from 'gql.tada'
 import { PROFILE_FIELDS, type ProfileData } from '~/composables/useProfile'
+import { STORY_FIELDS } from '~/constants/profileStory'
 
 const CLEAR_SECTIONS = graphql(
   `
@@ -91,12 +92,19 @@ const SECTIONS: Section[] = [
     count: (p) => p.certifications.length,
     noun: ['certification', 'certifications'],
     bullets: true
+  },
+  {
+    value: 'STORY',
+    label: 'My story',
+    count: (p) => (STORY_FIELDS.some((f) => p.story[f.key]) ? 1 : 0),
+    noun: ['', '']
   }
 ]
 
 // Names what the API deletes, so the owner sees the loss before confirming.
 const what = (s: Section) => {
   if (s.value === 'SUMMARY') return 'your headline, summary and their translations'
+  if (s.value === 'STORY') return 'your story for cover letters'
   const n = s.count(props.profile)
   const items = `${n} ${n === 1 ? s.noun[0] : s.noun[1]}`
   return s.bullets ? `${items}, with their bullets and translations` : items
@@ -110,7 +118,9 @@ watch(target, (value) => {
 })
 const section = computed(() => SECTIONS.find((s) => s.value === shown.value))
 
-const filled = computed(() => SECTIONS.filter((s) => s.count(props.profile) > 0))
+// "Clear all CV content" leaves the story: it's cover letter material, cleared from its own menu.
+const CV_SECTIONS = SECTIONS.filter((s) => s.value !== 'STORY')
+const filled = computed(() => CV_SECTIONS.filter((s) => s.count(props.profile) > 0))
 
 const open = computed({
   get: () => !!target.value,
@@ -127,7 +137,7 @@ const clear = async () => {
   let saved: ProfileData | null = null
   const ok = await run(async () => {
     const { clearProfileSections } = await gql(CLEAR_SECTIONS, {
-      input: { sections: all ? SECTIONS.map((s) => s.value) : [section.value!.value] }
+      input: { sections: all ? CV_SECTIONS.map((s) => s.value) : [section.value!.value] }
     })
     saved = clearProfileSections.profile
     return clearProfileSections.errors
@@ -165,7 +175,8 @@ const clear = async () => {
         </li>
       </ul>
       <p class="text-muted">
-        Kept: your name, contact details, links, job preferences, CV language and tailored CVs.
+        Kept: your name, contact details, links, job preferences, CV language, your story and
+        tailored CVs.
       </p>
     </div>
   </AppConfirmModal>

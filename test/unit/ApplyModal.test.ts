@@ -171,4 +171,33 @@ describe('ApplyModal', () => {
     expect(sentInput).toMatchObject({ cvDocumentId: null })
     wrapper.unmount()
   })
+  it('preselects the newest unsent cover letter', async () => {
+    const wrapper = await mountOpen([
+      {
+        id: 90,
+        kind: 'COVER_LETTER',
+        fileName: 'old.pdf',
+        createdAt: '2026-10-01T10:00:00Z',
+        sentAt: null
+      },
+      {
+        id: 91,
+        kind: 'COVER_LETTER',
+        fileName: 'new.pdf',
+        createdAt: '2026-10-03T10:00:00Z',
+        sentAt: null
+      },
+      {
+        id: 92,
+        kind: 'COVER_LETTER',
+        fileName: 'sent.pdf',
+        createdAt: '2026-10-05T10:00:00Z',
+        sentAt: '2026-10-06T10:00:00Z'
+      }
+    ])
+    document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!.click()
+    await vi.waitFor(() => expect(wrapper.emitted('changed')).toBeTruthy())
+    expect(sentInput).toMatchObject({ cvDocumentId: null, coverLetterDocumentId: 91 })
+    wrapper.unmount()
+  })
 })

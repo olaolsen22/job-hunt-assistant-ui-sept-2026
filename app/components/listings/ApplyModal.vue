@@ -3,7 +3,8 @@ import { print } from '@0no-co/graphql.web'
 import type { ResultOf } from 'gql.tada'
 import type { ListingDetail } from '~/composables/useListing'
 
-// `cvDocumentId` preselects a CV, e.g. the PDF just generated for this listing.
+// `cvDocumentId` preselects a CV, e.g. the PDF just generated for this listing. The newest unsent
+// cover letter is preselected, since one written for this listing is the one to send.
 const { listing, cvDocumentId = undefined } = defineProps<{
   listing: ListingDetail
   cvDocumentId?: number
@@ -62,7 +63,7 @@ const note = ref('')
 const initialized = ref(false)
 const resetForm = () => {
   cvId.value = cvDocumentId
-  coverId.value = undefined
+  coverId.value = latestUnsentDocument(listing.documents, 'COVER_LETTER')?.id
   cvFile.value = coverFile.value = null
   appliedAt.value = toDateTimeLocal()
   note.value = ''

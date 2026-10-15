@@ -43,7 +43,16 @@ export const PROFILE_FIELDS = graphql(
       dateOfBirth
       nationality
       workAuthorization
+      streetAddress
+      postalCode
       hobbies
+      story {
+        origin
+        upbringing
+        careerJourney
+        motivation
+        values
+      }
       location {
         city
         countryCode
