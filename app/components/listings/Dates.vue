@@ -6,32 +6,9 @@ const { listing } = defineProps<{
   listing: Pick<ListingListItem, 'postedOn' | 'deadlineType' | 'deadlineOn' | 'dueOn'>
 }>()
 
-const RED = 'text-red-600/85 dark:text-red-400/85'
-const ORANGE = 'text-orange-600/85 dark:text-orange-400/85'
-const YELLOW = 'text-yellow-600/85 dark:text-yellow-400/85'
-const GREEN = 'text-green-600/85 dark:text-green-400/85'
-const BLUE = 'text-blue-600/85 dark:text-blue-400/85'
-
-// Past deadlines fall into the `<= 0` bucket and stay red.
-const deadlineColor = (daysLeft: number) => {
-  if (daysLeft <= 0) return RED
-  if (daysLeft <= 3) return ORANGE
-  if (daysLeft <= 5) return YELLOW
-  if (daysLeft <= 7) return GREEN
-  return BLUE
-}
-
-const postedColor = (daysAgo: number) => {
-  if (daysAgo <= 0) return BLUE
-  if (daysAgo <= 3) return GREEN
-  if (daysAgo <= 5) return YELLOW
-  if (daysAgo <= 7) return ORANGE
-  return RED
-}
-
 const daysSincePosted = computed(() => -daysFromToday(listing.postedOn))
 
-const postedClass = computed(() => postedColor(daysSincePosted.value))
+const postedClass = computed(() => URGENCY_TEXT[postedLevel(daysSincePosted.value)])
 
 const hasDeadlineDate = computed(() => listing.deadlineType === 'DATE' && !!listing.deadlineOn)
 
@@ -41,7 +18,7 @@ const dueDaysLeft = computed(() => daysFromToday(listing.dueOn))
 
 const isExpired = computed(() => dueDaysLeft.value < 0)
 
-const deadlineClass = computed(() => (isExpired.value ? RED : deadlineColor(dueDaysLeft.value)))
+const deadlineClass = computed(() => URGENCY_TEXT[deadlineLevel(dueDaysLeft.value)])
 
 const deadlineLabel = computed(() => {
   if (hasDeadlineDate.value) {

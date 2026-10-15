@@ -66,23 +66,25 @@ remove it when you delete one.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
   active option clears it. Generic over the option value type. Rule in the form: 3 or fewer options use this, more use a
   clearable `USelectMenu` (`USelect` can't go back to empty).
-- `<ListingsFilterPanel :facets v-model:sort v-model:search>` — the `/listings` toolbar (search, sort, "Filters (n)"
-  toggle, clear all) and the facet panel, closed by default at every width; edits `facets` in place.
+- `<ListingsFilterPanel :facets v-model:sort v-model:search>` — the `/listings` toolbar (search, sort, "Filters (n)",
+  Favorites toggle), a removable chip per active facet + Clear all, and the facet sheet (`USlideover`, right from `md`,
+  bottom on phones); edits `facets` in place.
 - `<ListingsFilterCombobox v-model lookup="skills" | "locations" placeholder?>` — multi-select search over
   existing skills (by name) or locations (by id, labelled `City, Country`); no create option.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
 - `<ListingsSkillsField v-model>` — `{ name, level, minYears?, isRequired }[]` rows (two lines on phones, column headers from `sm`) + skill search below.
 - `<ListingsLanguagesField v-model>` — `{ language, level?, isRequired }[]` rows, one per language.
-- `<ListingsCard listing>` — plain `UCard` for one `ListingListItem`, stacked mobile-first: title
-  (links to `/listings/{id}`) + `<ListingsFavoriteButton>` on one row, `<ListingsAnalyzedBadge>` on
-  its own row below, then company, location `<ListingsLocation>`, `<ListingsDates>`, and a labelled
-  "View ad" external link button.
+- `<ListingsRow listing>` — `<li>` for one `ListingListItem` in the `/listings` list: a one-line row from `lg`
+  (star, title + company · role, location +N, seniority, posted, due, status, View ad), two lines from `md`, a small
+  card led by the due chip on phones. The title link is stretched over the row.
+- `<ListingsDueChip listing>` — compact due badge ("3 days left", "ASAP · ~12 days left", "Expired", "Likely filled");
+  urgency from `utils/dueUrgency.ts`, shared with `<ListingsDates>`.
 - `<ListingsFavoriteButton id favoritedAt size?>` — star toggle button (`size` `xs` default, `md` in the detail header);
-  owns its optimistic state and the `setListingFavorite` mutation. Used by `<ListingsCard>` and the listing detail page.
-- `<ListingsAnalyzedBadge analyzedAt>` — "Analyzed" / "To analyze" badge. Used by `<ListingsCard>`
+  owns its optimistic state and the `setListingFavorite` mutation. Used by `<ListingsRow>` and the listing detail page.
+- `<ListingsAnalyzedBadge analyzedAt>` — "Analyzed" / "To analyze" badge. Used by `<ListingsRow>`
   and the listing detail page.
 - `<ListingsStatusBadge status>` — application status badge (colors in `APPLICATION_STATUS_OPTIONS`).
-  Used by `<ListingsCard>` and `<ListingsApplication>`.
+  Used by `<ListingsRow>` and `<ListingsApplication>`.
 - `<ListingsApplication listing v-model:apply-open @changed>` — the detail page's Application card: status/archived
   badges, company application count, Record application / Record outcome buttons per status, and
   `<ListingsStatusTimeline>` + `<ListingsInterviews>`. `@changed` = refetch the listing.

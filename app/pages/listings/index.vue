@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ListingsFilter } from '~/composables/useListingsList'
+import type { ListingsFilter, QuickToggle } from '~/composables/useListingsList'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Job listings' })
@@ -20,70 +20,138 @@ const {
 } = useListingsList(grid)
 
 const narrowed = computed(() => !!(filter.value || search.value || countActiveFacets(facets)))
+// Before the first response there is nothing to count yet; the toolbar still shows so the list
+// is measured at its final height.
+const firstLoad = computed(() => loading.value && listings.value.length === 0)
 
-// Clicking the active filter clears it.
-const toggle = (value: ListingsFilter) => (filter.value = filter.value === value ? null : value)
-
-const FILTERS = [
-  { value: 'closingSoon', label: 'closing soon', color: 'error', icon: 'i-lucide-alarm-clock' },
-  { value: 'toAnalyze', label: 'to analyze', color: 'warning', icon: 'i-lucide-clock' },
-  { value: 'archived', label: 'archived', color: 'neutral', icon: 'i-lucide-archive' }
+// "All" makes the no-preset state a visible choice, so a preset is left by picking another one.
+const PRESETS = [
+  { value: null, label: 'All', color: 'neutral', icon: 'i-lucide-list' },
+  { value: 'closingSoon', label: 'Closing soon', color: 'error', icon: 'i-lucide-alarm-clock' },
+  { value: 'toAnalyze', label: 'To analyze', color: 'warning', icon: 'i-lucide-clock' },
+  { value: 'archived', label: 'Archived', color: 'neutral', icon: 'i-lucide-archive' }
 ] as const
+
+const presetCount = (value: ListingsFilter | null) => counts.value[value ?? 'all']
+
+// Facets, not presets: each narrows whichever preset is active, so its count does too.
+const QUICK_TOGGLES: {
+  key: QuickToggle
+  label: string
+  icon: string
+  active: () => boolean
+  toggle: () => void
+}[] = [
+  {
+    key: 'preferred',
+    label: 'Preferred locations',
+    icon: 'i-lucide-map-pin',
+    active: () => facets.preferredLocations,
+    toggle: () => (facets.preferredLocations = !facets.preferredLocations)
+  },
+  {
+    key: 'it',
+    label: 'IT',
+    icon: 'i-lucide-monitor',
+    active: () => facets.itRoles,
+    toggle: () => (facets.itRoles = !facets.itRoles)
+  },
+  {
+    key: 'english',
+    label: 'English OK',
+    icon: 'i-lucide-languages',
+    active: () => facets.englishOk,
+    toggle: () => (facets.englishOk = !facets.englishOk)
+  }
+]
 
 const heading = computed(() => {
   const n = totalCount.value
   const adjective = filter.value === 'archived' ? 'archived' : 'active'
   return `${n} ${adjective} listing${n === 1 ? '' : 's'}`
 })
+
+const clearEverything = () => {
+  Object.assign(facets, emptyFacets())
+  filter.value = null
+  search.value = ''
+}
+
+const ADD_ITEMS = [
+  { label: 'Add listing', icon: 'i-lucide-plus', to: '/listings/add' },
+  { label: 'Quick add', icon: 'i-lucide-list-plus', to: '/listings/quick-add' }
+]
 </script>
 
 <template>
-  <div class="space-y-6">
-    <!-- Shown while loading too, so the grid sits at the same height when its page size is measured.
-         `:facets`, not v-model: the panel edits the composable's reactive object in place. -->
-    <ListingsFilterPanel
-      v-if="loading || listings.length || narrowed"
-      v-model:search="search"
-      v-model:sort="sort"
-      :facets="facets"
-    />
-
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <!-- "Active" listings because those past their deadline are filtered out server-side.
-           Kept visible while a filter is on, so an empty filtered page can still clear it. -->
-      <div v-if="listings.length || narrowed" class="flex flex-wrap items-center gap-2">
-        <p class="text-lg font-semibold text-highlighted" data-testid="listings-total">
-          {{ heading }}
-        </p>
-        <template v-for="f in FILTERS" :key="f.value">
-          <UButton
-            v-if="counts[f.value] || filter === f.value"
-            :color="f.color"
-            :variant="filter === f.value ? 'solid' : 'subtle'"
-            size="sm"
-            :icon="f.icon"
-            :trailing-icon="filter === f.value ? 'i-lucide-x' : undefined"
-            :data-testid="`listings-filter-${f.value}`"
-            @click="toggle(f.value)"
-            >{{ counts[f.value] }} {{ f.label }}</UButton
-          >
-        </template>
-      </div>
-      <div class="flex flex-col gap-2 sm:ml-auto sm:flex-row">
+  <div class="space-y-4">
+    <div class="flex items-center justify-between gap-3">
+      <!-- "Active" listings because those past their deadline are filtered out server-side. -->
+      <USkeleton v-if="firstLoad" class="h-7 w-40" />
+      <p
+        v-else-if="listings.length || narrowed"
+        class="text-lg font-semibold text-highlighted"
+        data-testid="listings-total"
+      >
+        {{ heading }}
+      </p>
+      <div class="hidden gap-2 sm:flex">
         <UButton
           to="/listings/quick-add"
           icon="i-lucide-list-plus"
           color="neutral"
           variant="subtle"
-          class="justify-center"
           data-testid="quick-add-open"
           >Quick add</UButton
         >
-        <UButton to="/listings/add" icon="i-lucide-plus" class="justify-center">
-          Add listing
-        </UButton>
+        <UButton to="/listings/add" icon="i-lucide-plus">Add listing</UButton>
       </div>
+      <UDropdownMenu :items="ADD_ITEMS" class="sm:hidden">
+        <UButton icon="i-lucide-plus" trailing-icon="i-lucide-chevron-down" aria-label="Add" />
+      </UDropdownMenu>
     </div>
+
+    <!-- Kept while a filter is on, so an empty filtered page can still clear it.
+         `:facets`, not v-model: the panel edits the composable's reactive object in place. -->
+    <template v-if="loading || listings.length || narrowed">
+      <ListingsFilterPanel v-model:search="search" v-model:sort="sort" :facets="facets" />
+
+      <!-- Phones scroll this strip sideways instead of wrapping it into several rows. -->
+      <div class="overflow-x-auto">
+        <div class="flex w-max items-center gap-2 sm:w-auto sm:flex-wrap">
+          <template v-for="p in PRESETS" :key="p.value ?? 'all'">
+            <UButton
+              v-if="!p.value || presetCount(p.value) || filter === p.value"
+              :color="p.color"
+              :variant="filter === p.value ? 'solid' : 'subtle'"
+              size="sm"
+              :icon="p.icon"
+              :aria-pressed="filter === p.value"
+              :data-testid="`listings-filter-${p.value ?? 'all'}`"
+              @click="filter = p.value"
+              >{{ p.label }}
+              <span v-if="!firstLoad" class="tabular-nums opacity-80">{{
+                presetCount(p.value)
+              }}</span></UButton
+            >
+          </template>
+          <template v-for="t in QUICK_TOGGLES" :key="t.key">
+            <UButton
+              v-if="counts[t.key] || t.active()"
+              color="primary"
+              :variant="t.active() ? 'solid' : 'outline'"
+              size="sm"
+              :icon="t.icon"
+              :aria-pressed="t.active()"
+              :data-testid="`listings-filter-${t.key}`"
+              @click="t.toggle"
+              >{{ t.label }}
+              <span class="tabular-nums opacity-80">{{ counts[t.key] }}</span></UButton
+            >
+          </template>
+        </div>
+      </div>
+    </template>
 
     <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />
 
@@ -95,15 +163,29 @@ const heading = computed(() => {
       <UIcon name="i-lucide-inbox" class="size-10 text-muted" />
       <p>{{ narrowed ? 'No listings match.' : 'No listings yet.' }}</p>
       <UButton v-if="!narrowed" to="/listings/add">Add listing</UButton>
+      <UButton
+        v-else
+        color="neutral"
+        variant="subtle"
+        data-testid="listings-empty-clear"
+        @click="clearEverything"
+        >Clear search and filters</UButton
+      >
     </div>
 
     <template v-else>
-      <div ref="grid" class="grid gap-4 lg:grid-cols-2" data-testid="listings-grid">
-        <template v-if="loading && listings.length === 0">
-          <USkeleton v-for="i in pageSize" :key="i" class="h-42 w-full" />
+      <ul
+        ref="grid"
+        class="space-y-3 md:divide-y md:divide-default md:space-y-0 md:overflow-hidden md:rounded-lg md:border md:border-default"
+        data-testid="listings-grid"
+      >
+        <template v-if="firstLoad">
+          <li v-for="i in pageSize" :key="i" class="p-3 md:px-4">
+            <USkeleton class="h-24 w-full md:h-10" />
+          </li>
         </template>
-        <ListingsCard v-for="listing in listings" v-else :key="listing.id" :listing="listing" />
-      </div>
+        <ListingsRow v-for="listing in listings" v-else :key="listing.id" :listing="listing" />
+      </ul>
 
       <!-- UPagination still renders a lone "1" with disabled arrows when everything fits on one page. -->
       <div v-if="totalCount > pageSize" class="flex justify-center sm:justify-end">

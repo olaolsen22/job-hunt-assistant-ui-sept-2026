@@ -29,30 +29,30 @@ const LISTING_ITEM = graphql(`
     jobRole {
       name
     }
+    seniority
   }
 `)
 
 export type ListingListItem = ResultOf<typeof LISTING_ITEM>
 
 // Page size is decided once per page load, not reactive to resize: changing it mid-pagination
-// would shift page boundaries under the user. From `md` up it is how many cards fit between the
+// would shift page boundaries under the user. From `md` up it is how many rows fit between the
 // grid's top and the bottom of the viewport, so the pager is visible without scrolling. Phones keep 5.
 const PHONE_PAGE_SIZE = 5
 const MAX_PAGE_SIZE = 12
-// Nominal card height (one-line title) plus a little slack, and the grid's `gap-4`. If the pager
-// ends up below the fold on a device, raise CARD_HEIGHT; if rows go unused, lower it.
-const CARD_HEIGHT = 168
-const GRID_GAP = 16
+// Nominal listing row height (`md:min-h-16` plus a little slack); the rows sit flush, without a gap.
+// If the pager ends up below the fold on a device, raise ROW_HEIGHT; if rows go unused, lower it.
+const ROW_HEIGHT = 72
 // Pager (~40) + the gap above it + the panel's bottom padding + the filter chips wrapping onto a second
 // line once counts arrive (the grid is measured before any data exists).
 const RESERVED_BELOW = 120
 
-export const measurePageSize = (grid: HTMLElement, cardHeight = CARD_HEIGHT, gap = GRID_GAP) => {
+export const measurePageSize = (grid: HTMLElement, itemHeight = ROW_HEIGHT, gap = 0) => {
   if (!window.matchMedia('(min-width: 768px)').matches) return PHONE_PAGE_SIZE
   // Counting the resolved tracks keeps this independent of the grid's breakpoint classes.
   const columns = getComputedStyle(grid).gridTemplateColumns.split(' ').length
   const available = window.innerHeight - grid.getBoundingClientRect().top - RESERVED_BELOW
-  const rows = Math.floor((available + gap) / (cardHeight + gap))
+  const rows = Math.floor((available + gap) / (itemHeight + gap))
   return Math.min(Math.max(rows, 2) * columns, MAX_PAGE_SIZE)
 }
 
@@ -70,6 +70,13 @@ export type ListingsSort = (typeof SORTS)[number]
 
 export interface ListingsFacets {
   favorites: boolean
+  // In one of the profile's target locations (Location.isTarget).
+  preferredLocations: boolean
+  // Job role in the "IT" role category (the category belongs to the role, not the listing).
+  itRoles: boolean
+  // No required Norwegian, whatever the posting language: lenient on purpose, so a listing whose
+  // languages weren't analyzed still shows.
+  englishOk: boolean
   statuses: ListingListItem['status'][]
   skills: string[]
   locationIds: number[]
@@ -86,6 +93,9 @@ const CLOSING_SOON_DAYS = 7
 
 export const emptyFacets = (): ListingsFacets => ({
   favorites: false,
+  preferredLocations: false,
+  itRoles: false,
+  englishOk: false,
   statuses: [],
   skills: [],
   locationIds: [],
@@ -134,6 +144,9 @@ export const parseListingsQuery = (query: Record<string, unknown>): ListingsView
     filter: known(FILTER_KEYS, query.filter)[0] ?? null,
     facets: {
       favorites: query.favorites === '1',
+      preferredLocations: query.preferred === '1',
+      itRoles: query.it === '1',
+      englishOk: query.english === '1',
       statuses: known(
         APPLICATION_STATUS_OPTIONS.map((o) => o.value),
         query.status
@@ -167,6 +180,9 @@ export const toListingsQuery = ({ search, sort, filter, facets, page }: Listings
     postedTo: facets.postedTo,
     due: facets.dueWithinDays ? String(facets.dueWithinDays) : '',
     favorites: facets.favorites ? '1' : '',
+    preferred: facets.preferredLocations ? '1' : '',
+    it: facets.itRoles ? '1' : '',
+    english: facets.englishOk ? '1' : '',
     page: page > 1 ? String(page) : ''
   }
   return Object.fromEntries(Object.entries(query).filter(([, value]) => value))
@@ -179,7 +195,7 @@ export const useCompaniesView = () => useState('companiesView', () => '/companie
 
 type ListingsResult = {
   listings: { items: ListingListItem[]; totalCount: number } | null
-} & Record<ListingsFilter, { totalCount: number } | null>
+} & Record<ListingsFilter | 'all' | QuickToggle, { totalCount: number } | null>
 
 // Dated deadlines that have passed are filtered out; a listing stays visible through its deadline
 // day. ASAP and UNSPECIFIED listings have no deadlineOn to filter on, so an "expired" one is
@@ -209,6 +225,16 @@ const FACETS = {
   }
 } as const
 
+// Quick toggles beside the presets. Each is a facet clause with its own count under the active
+// preset and facets. IT matches the role category by name, so no id lookup is needed first; a
+// renamed category just counts 0 and the toggle hides.
+const QUICK = {
+  preferred: 'locations: { some: { location: { isTarget: { eq: true } } } }',
+  it: 'jobRole: { category: { name: { eq: "IT" } } }',
+  english: 'languages: { none: { language: { eq: NORWEGIAN }, isRequired: { eq: true } } }'
+} as const
+export type QuickToggle = keyof typeof QUICK
+
 // No `order` for "due": the backend's default order is upcoming by due date, then expired by due
 // date, then newest added, using the server-computed due date (DATE: deadlineOn, ASAP: postedOn + 14,
 // UNSPECIFIED: postedOn + 30). dueOn itself isn't sortable, and any client `order` turns the default off.
@@ -231,6 +257,9 @@ export const buildListingsQuery = (
   ]
   const variables: Record<string, unknown> = { order: ORDERS[sort] }
   const facetClauses = facets.favorites ? ['favoritedAt: { neq: null }'] : []
+  if (facets.preferredLocations) facetClauses.push(QUICK.preferred)
+  if (facets.itRoles) facetClauses.push(QUICK.it)
+  if (facets.englishOk) facetClauses.push(QUICK.english)
   const posted = [
     facets.postedFrom && 'gte: $postedFrom',
     facets.postedTo && 'lte: $postedTo'
@@ -253,9 +282,16 @@ export const buildListingsQuery = (
   // Picking statuses is asking for those applications, so they stay visible past their deadline.
   const withExpiry = !facets.statuses.length
 
-  const field = (preset: ListingsFilter | 'none', args: string[], selection: string) => {
+  const field = (
+    preset: ListingsFilter | 'none',
+    args: string[],
+    selection: string,
+    extra: string[] = []
+  ) => {
     const { args: presetArgs, where } = PRESETS[preset]
-    const clauses = [...where.filter((c) => withExpiry || c !== EXPIRY), ...facetClauses]
+    const clauses = [
+      ...new Set([...where.filter((c) => withExpiry || c !== EXPIRY), ...facetClauses, ...extra])
+    ]
     // Both windows start today, so with closing soon active the narrower one is the intersection.
     const days =
       preset === 'closingSoon'
@@ -270,12 +306,23 @@ export const buildListingsQuery = (
     return `listings(${all.filter(Boolean).join(', ')}) { ${selection} }`
   }
 
+  const quickCounts = (Object.keys(QUICK) as QuickToggle[])
+    .map((key) => {
+      const counted = field(filter ?? 'none', ['take: 1', 'search: $search'], 'totalCount', [
+        QUICK[key]
+      ])
+      return `${key}: ${counted}`
+    })
+    .join('\n')
+
   const text = `
     query Listings(%DECLARATIONS%) {
       ${field(filter ?? 'none', ['skip: $skip', 'take: $take', 'search: $search', 'order: $order'], 'items { ...ListingListItem } totalCount')}
+      all: ${field('none', ['take: 1', 'search: $search'], 'totalCount')}
       toAnalyze: ${field('toAnalyze', ['take: 1', 'search: $search'], 'totalCount')}
       archived: ${field('archived', ['take: 1', 'search: $search'], 'totalCount')}
       closingSoon: ${field('closingSoon', ['take: 1', 'search: $search'], 'totalCount')}
+      ${quickCounts}
     }
     ${print(LISTING_ITEM)}
   `
@@ -367,9 +414,13 @@ export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) 
     listings: computed(() => data.value?.listings?.items ?? []),
     totalCount: computed(() => data.value?.listings?.totalCount ?? 0),
     counts: computed(() => ({
+      all: data.value?.all?.totalCount ?? 0,
       closingSoon: data.value?.closingSoon?.totalCount ?? 0,
       toAnalyze: data.value?.toAnalyze?.totalCount ?? 0,
-      archived: data.value?.archived?.totalCount ?? 0
+      archived: data.value?.archived?.totalCount ?? 0,
+      preferred: data.value?.preferred?.totalCount ?? 0,
+      it: data.value?.it?.totalCount ?? 0,
+      english: data.value?.english?.totalCount ?? 0
     })),
     page,
     pageSize,

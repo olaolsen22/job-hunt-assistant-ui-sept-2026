@@ -57,11 +57,13 @@ const open = ref(false)
 const loading = ref(false)
 const results = shallowRef<Item[]>([])
 // Selected values can drop out of the current results; their labels are kept so the tags still read.
+// After a remount (reopening the filter sheet, a deep link) the map is empty, so a value shows as
+// itself until the first search brings its label back; a location shows its id until then.
 const selected = new Map<T, Item>()
 const items = computed(() => {
   const extra = model.value
     .filter((v) => !results.value.some((r) => r.value === v))
-    .map((v) => selected.get(v)!)
+    .map((v) => selected.get(v) ?? { label: String(v), value: v })
   return [...extra, ...results.value]
 })
 watch(results, (list) => list.forEach((i) => selected.set(i.value, i)))

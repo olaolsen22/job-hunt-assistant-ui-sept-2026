@@ -19,7 +19,8 @@ const item = (id: number, title: string) => ({
   favoritedAt: null,
   analyzedAt: '2026-10-01T10:00:00Z',
   status: 'SAVED',
-  jobRole: { name: 'Developer' }
+  jobRole: { name: 'Developer' },
+  seniority: null
 })
 
 // The query is built at runtime and printed one argument per line; the main field is the one without
@@ -40,6 +41,7 @@ test('searches listings and filters by closing soon', async ({ page }) => {
       json: {
         data: {
           listings: { items, totalCount: items.length },
+          all: { totalCount: 2 },
           toAnalyze: { totalCount: 0 },
           archived: { totalCount: 0 },
           closingSoon: { totalCount: 1 }
@@ -72,6 +74,7 @@ test('filters by status', async ({ page }) => {
       json: {
         data: {
           listings: { items, totalCount: items.length },
+          all: { totalCount: 2 },
           toAnalyze: { totalCount: 0 },
           archived: { totalCount: 0 },
           closingSoon: { totalCount: 0 }
@@ -89,6 +92,7 @@ test('filters by status', async ({ page }) => {
   await expect(page.getByTestId('listings-total')).toHaveText('1 active listing')
 
   await page.keyboard.press('Escape')
+  await page.getByTestId('listings-sheet-done').click()
   await page.getByTestId('listings-filters-clear').click()
   await expect(page.getByTestId('listings-total')).toHaveText('2 active listings')
 })

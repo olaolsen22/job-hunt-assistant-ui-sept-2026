@@ -23,6 +23,9 @@ describe('listings URL query', () => {
       filter: 'closingSoon',
       facets: {
         favorites: true,
+        preferredLocations: true,
+        itRoles: true,
+        englishOk: true,
         statuses: ['APPLIED', 'OFFER'],
         skills: ['Vue', 'TypeScript'],
         locationIds: [3, 7],
@@ -45,6 +48,8 @@ describe('listings URL query', () => {
     expect(parseListingsQuery({ filter: 'toAnalyze' }).filter).toBe('toAnalyze')
     expect(parseListingsQuery({ status: 'OFFER' }).facets.statuses).toEqual(['OFFER'])
     expect(parseListingsQuery({ favorites: '1' }).facets.favorites).toBe(true)
+    expect(parseListingsQuery({ preferred: '1' }).facets.preferredLocations).toBe(true)
+    expect(parseListingsQuery({ it: '1' }).facets.itRoles).toBe(true)
   })
 
   it('ignores unknown values', () => {

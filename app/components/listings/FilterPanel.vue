@@ -22,9 +22,80 @@ const DUE_ITEMS = [
   ...DUE_WITHIN_OPTIONS.map((days) => ({ label: `Due within ${days} days`, value: days }))
 ]
 
-const activeCount = computed(() => countActiveFacets(facets.value))
-// Closed by default at every width; the badge and Clear all keep active filters visible.
+// These are toggles outside the sheet, so the Filters badge counts only what is inside it, and the
+// sheet's own Clear leaves them alone. Clear all still resets every facet.
+const outsideToggles = () => {
+  const { favorites, preferredLocations, itRoles, englishOk } = facets.value
+  return { favorites, preferredLocations, itRoles, englishOk }
+}
+const sheetCount = computed(() =>
+  countActiveFacets({
+    ...facets.value,
+    favorites: false,
+    preferredLocations: false,
+    itRoles: false,
+    englishOk: false
+  })
+)
+const anyActive = computed(() => countActiveFacets(facets.value) > 0)
+
+const labels = (options: readonly { label: string; value: string }[], values: string[]) =>
+  values.map((v) => options.find((o) => o.value === v)?.label ?? v).join(', ')
+
+// One removable chip per facet in the sheet, so a deep link or a forgotten filter stays visible.
+// Locations are ids whose labels only the lookup knows, so that chip shows a count.
+const chips = computed(() => {
+  const f = facets.value
+  const range = [f.postedFrom && formatDate(f.postedFrom), f.postedTo && formatDate(f.postedTo)]
+  return [
+    f.statuses.length && {
+      key: 'status',
+      label: `Status: ${labels(APPLICATION_STATUS_OPTIONS, f.statuses)}`,
+      clear: () => (f.statuses = [])
+    },
+    f.skills.length && {
+      key: 'skill',
+      label: `Skill: ${f.skills.join(', ')}`,
+      clear: () => (f.skills = [])
+    },
+    f.locationIds.length && {
+      key: 'location',
+      label: `Locations: ${f.locationIds.length}`,
+      clear: () => (f.locationIds = [])
+    },
+    f.postingLanguages.length && {
+      key: 'postingLanguage',
+      label: `Posted in: ${labels(LANGUAGE_OPTIONS, f.postingLanguages)}`,
+      clear: () => (f.postingLanguages = [])
+    },
+    f.languages.length && {
+      key: 'language',
+      label: `Requires: ${labels(LANGUAGE_OPTIONS, f.languages)}`,
+      clear: () => (f.languages = [])
+    },
+    (f.postedFrom || f.postedTo) && {
+      key: 'posted',
+      label: `Posted: ${range[0] || '…'} – ${range[1] || '…'}`,
+      clear: () => Object.assign(f, { postedFrom: '', postedTo: '' })
+    },
+    f.dueWithinDays && {
+      key: 'due',
+      label: `Due within ${f.dueWithinDays} days`,
+      clear: () => (f.dueWithinDays = null)
+    }
+  ].filter((chip) => !!chip)
+})
+
+const clearAll = () => Object.assign(facets.value, emptyFacets())
+const clearSheet = () => Object.assign(facets.value, { ...emptyFacets(), ...outsideToggles() })
+
 const open = ref(false)
+// A side sheet from tablet up, a bottom sheet on phones. Decided on click, so SSR never needs it.
+const side = ref<'right' | 'bottom'>('right')
+const openSheet = () => {
+  side.value = window.matchMedia('(min-width: 768px)').matches ? 'right' : 'bottom'
+  open.value = true
+}
 </script>
 
 <template>
@@ -34,6 +105,7 @@ const open = ref(false)
         v-model="search"
         icon="i-lucide-search"
         placeholder="Search title, company, role"
+        aria-label="Search listings"
         class="col-span-2 w-full md:flex-1"
         data-testid="listings-search"
       >
@@ -42,6 +114,7 @@ const open = ref(false)
             icon="i-lucide-x"
             color="neutral"
             variant="link"
+            aria-label="Clear search"
             data-testid="listings-search-clear"
             @click="search = ''"
           />
@@ -50,6 +123,7 @@ const open = ref(false)
       <USelect
         v-model="sort"
         :items="SORT_OPTIONS"
+        aria-label="Sort by"
         class="w-full md:w-48"
         data-testid="listings-sort"
       />
@@ -57,95 +131,159 @@ const open = ref(false)
         color="neutral"
         variant="subtle"
         icon="i-lucide-sliders-horizontal"
-        :trailing-icon="open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
         class="justify-center"
         data-testid="listings-filters-toggle"
-        @click="open = !open"
+        @click="openSheet"
       >
         Filters
-        <UBadge v-if="activeCount" size="sm">{{ activeCount }}</UBadge>
+        <UBadge v-if="sheetCount" size="sm">{{ sheetCount }}</UBadge>
       </UButton>
       <UButton
-        v-if="activeCount"
+        :color="facets.favorites ? 'warning' : 'neutral'"
+        :variant="facets.favorites ? 'soft' : 'subtle'"
+        :aria-pressed="facets.favorites"
+        class="col-span-2 justify-center md:col-span-1"
+        data-testid="listings-facet-favorites"
+        @click="facets.favorites = !facets.favorites"
+      >
+        <!-- Filled when on, like ListingsFavoriteButton; see the comment there. -->
+        <UIcon
+          name="i-lucide-star"
+          mode="svg"
+          class="size-5"
+          :class="{ '[&_*]:fill-current': facets.favorites }"
+        />
+        Favorites
+      </UButton>
+    </div>
+
+    <div v-if="anyActive" class="flex flex-wrap items-center gap-2" data-testid="listings-active">
+      <UButton
+        v-for="chip in chips"
+        :key="chip.key"
         color="neutral"
-        variant="ghost"
-        icon="i-lucide-x"
-        class="col-span-2 justify-center"
+        variant="soft"
+        size="sm"
+        trailing-icon="i-lucide-x"
+        :aria-label="`Remove filter ${chip.label}`"
+        :data-testid="`listings-chip-${chip.key}`"
+        @click="chip.clear"
+        >{{ chip.label }}</UButton
+      >
+      <UButton
+        color="neutral"
+        variant="link"
+        size="sm"
         data-testid="listings-filters-clear"
-        @click="Object.assign(facets, emptyFacets())"
+        @click="clearAll"
         >Clear all</UButton
       >
     </div>
 
-    <div v-if="open" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <USelectMenu
-        v-model="facets.statuses"
-        :items="[...APPLICATION_STATUS_OPTIONS]"
-        value-key="value"
-        multiple
-        placeholder="Status"
-        :search-input="false"
-        data-testid="listings-facet-status"
-      />
-      <ListingsFilterCombobox
-        v-model="facets.skills"
-        lookup="skills"
-        placeholder="Skill"
-        data-testid="listings-facet-skill"
-      />
-      <ListingsFilterCombobox
-        v-model="facets.locationIds"
-        lookup="locations"
-        placeholder="Location"
-        data-testid="listings-facet-location"
-      />
-      <USelectMenu
-        v-model="facets.postingLanguages"
-        :items="[...LANGUAGE_OPTIONS]"
-        value-key="value"
-        multiple
-        placeholder="Posting language"
-        :search-input="false"
-        data-testid="listings-facet-postingLanguage"
-      />
-      <USelectMenu
-        v-model="facets.languages"
-        :items="[...LANGUAGE_OPTIONS]"
-        value-key="value"
-        multiple
-        placeholder="Required language"
-        :search-input="false"
-        data-testid="listings-facet-requiredLanguage"
-      />
-      <USelect
-        :model-value="facets.dueWithinDays ?? 0"
-        :items="DUE_ITEMS"
-        data-testid="listings-facet-due"
-        @update:model-value="facets.dueWithinDays = $event || null"
-      />
-      <UFormField label="Posted from">
-        <UInput
-          v-model="facets.postedFrom"
-          type="date"
-          :max="facets.postedTo || undefined"
-          class="w-full"
-          data-testid="listings-facet-postedFrom"
-        />
-      </UFormField>
-      <UFormField label="Posted to">
-        <UInput
-          v-model="facets.postedTo"
-          type="date"
-          :min="facets.postedFrom || undefined"
-          class="w-full"
-          data-testid="listings-facet-postedTo"
-        />
-      </UFormField>
-      <USwitch
-        v-model="facets.favorites"
-        label="Favorites only"
-        data-testid="listings-facet-favorites"
-      />
-    </div>
+    <USlideover
+      v-model:open="open"
+      :side="side"
+      title="Filters"
+      description="Narrow the list. Changes apply right away."
+    >
+      <template #body>
+        <div class="space-y-4">
+          <UFormField label="Status">
+            <USelectMenu
+              v-model="facets.statuses"
+              :items="[...APPLICATION_STATUS_OPTIONS]"
+              value-key="value"
+              multiple
+              placeholder="Any status"
+              :search-input="false"
+              class="w-full"
+              data-testid="listings-facet-status"
+            />
+          </UFormField>
+          <UFormField label="Skill">
+            <ListingsFilterCombobox
+              v-model="facets.skills"
+              lookup="skills"
+              placeholder="Any skill"
+              data-testid="listings-facet-skill"
+            />
+          </UFormField>
+          <UFormField label="Location">
+            <ListingsFilterCombobox
+              v-model="facets.locationIds"
+              lookup="locations"
+              placeholder="Any location"
+              data-testid="listings-facet-location"
+            />
+          </UFormField>
+          <UFormField label="Due">
+            <USelect
+              :model-value="facets.dueWithinDays ?? 0"
+              :items="DUE_ITEMS"
+              class="w-full"
+              data-testid="listings-facet-due"
+              @update:model-value="facets.dueWithinDays = $event || null"
+            />
+          </UFormField>
+          <div class="grid grid-cols-2 gap-3">
+            <UFormField label="Posted from">
+              <UInput
+                v-model="facets.postedFrom"
+                type="date"
+                :max="facets.postedTo || undefined"
+                class="w-full"
+                data-testid="listings-facet-postedFrom"
+              />
+            </UFormField>
+            <UFormField label="Posted to">
+              <UInput
+                v-model="facets.postedTo"
+                type="date"
+                :min="facets.postedFrom || undefined"
+                class="w-full"
+                data-testid="listings-facet-postedTo"
+              />
+            </UFormField>
+          </div>
+          <UFormField label="Posting language">
+            <USelectMenu
+              v-model="facets.postingLanguages"
+              :items="[...LANGUAGE_OPTIONS]"
+              value-key="value"
+              multiple
+              placeholder="Any"
+              :search-input="false"
+              class="w-full"
+              data-testid="listings-facet-postingLanguage"
+            />
+          </UFormField>
+          <UFormField label="Required language">
+            <USelectMenu
+              v-model="facets.languages"
+              :items="[...LANGUAGE_OPTIONS]"
+              value-key="value"
+              multiple
+              placeholder="Any"
+              :search-input="false"
+              class="w-full"
+              data-testid="listings-facet-requiredLanguage"
+            />
+          </UFormField>
+        </div>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-between gap-2">
+          <UButton
+            color="neutral"
+            variant="ghost"
+            :disabled="!sheetCount"
+            data-testid="listings-sheet-clear"
+            @click="clearSheet"
+            >Clear filters</UButton
+          >
+          <UButton data-testid="listings-sheet-done" @click="open = false">Done</UButton>
+        </div>
+      </template>
+    </USlideover>
   </div>
 </template>

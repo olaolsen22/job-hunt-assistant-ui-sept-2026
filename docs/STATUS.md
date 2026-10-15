@@ -1,13 +1,13 @@
 # Status
 
-Updated: 2026-10-15 · Last logged commit: 19777a1 (+ uncommitted changes)
+Updated: 2026-10-15 · Last logged commit: e27e0d5 (+ uncommitted changes)
 
 ## Pages
 
 - `/` dashboard: ten widgets (closing soon, upcoming interviews, offers, stale, pipeline, applied this week, to analyze, favorited listings, favorited companies with open listings, LLM usage today for the default model, labelled) in the user's saved order, hidden ones not mounted; "Edit dashboard" (drag by grip handle, show/hide, Reset to default, Save/Cancel); `ApiHealth`; one query per widget · `/login` (auth layout, guest login)
-- `/listings` — whole view (search, sort, preset, facets, page) in the URL query via `router.replace`, so back/refresh restore it; dashboard links use `?filter=`, `?status=`, `?favorites=1`; toolbar (debounced search, sort, Filters toggle with active count, Clear all) + facet panel (status, skill,
-  location, posting/required language, posted from/to, due within, favorites; closed by default at every width), presets (closing soon, to analyze,
-  archived), offset pagination
+- `/listings` — whole view (search, sort, preset, facets, page) in the URL query via `router.replace`, so back/refresh restore it; dashboard links use `?filter=`, `?status=`, `?favorites=1`; dense triage list: one row per listing from `lg` (star, title + company · role, location +N, seniority, posted, due chip, status/to-analyze, View ad), two lines from `md`, due-led cards on phones; toolbar (debounced search, sort, Favorites toggle, Filters (n)) + removable chip per active facet + Clear all; facets in a sheet (right from `md`, bottom on phones: status, skill,
+  location, due within, posted from/to, posting/required language); presets with counts (All, closing soon, to analyze,
+  archived) + quick toggles with counts (preferred locations, IT = job role category named "IT", English OK = no required Norwegian); Add listing / Quick add (one + menu on phones); offset pagination, page size = rows fitting the viewport (phones 5)
 - `/listings/add` (full form incl. Contacts, "Analyze ad" parser modal opening on From link with its own link input (`parseUrl`), paste fallback on errors, dismissible filled-from-ad notice)
 - `/listings/quick-add` — Paste text / Collected jobs; explicit Built-in AI / Use your own AI. Full listing JSON → authenticated Check jobs (≤100 URLs, saved/repeated URLs skipped) → collected/skipped/ready counts → Process N jobs (sequential QUICK calls, ≤20 complete jobs and ≤12,000 compact JSON chars) → Review → Save. Labelled progress, current batch, processed/skipped-after-failure/unprocessed counts; failures pause for Retry batch / Skip batch and continue / Stop and review. Drafts append once at completion/stop, existing review rows stay, nothing saves during processing; running/paused controls locked. Free text and external Copy prompt keep one payload. Checked input is read-only; Edit collected jobs / Restart processing confirm reset and retain saved/earlier rows. Back to listings and in-app navigation confirm pending nonblank drafts, checked input, or unfinished batch work before the first save too; reload/close uses native confirmation; discarded responses ignored. All saved with no remaining collection work → View listings. Save-only-on-Save; flagged "Needs a look" (Compare / Keep both / Remove new one, previous-attempt Got it), collapsible added receipt, Not saved, saved/fixing counts retained.
 - `/listings/[id]` — compact Back to listings navigation above the Analyze/Edit/More toolbar (shared button height); header with title, favorite, status badges, company, role, locations, dates, work mode/employment/seniority and View ad + Record application shortcut; saved listings show Details, Skills/Contacts then Summary before Tailored CV/Application; active applications keep workflow cards first; desktop Skills/Contacts beside Details/Summary; wrapping skill/document names; CV Saved draft/Latest PDF sections side by side from `xl`, stacked below; Cover letter card under the Tailored CV card (Write cover letter / Edit letter / Copy as text, latest PDF Preview + Delete, "older than the letter"); metadata above local actions; Application controls grouped below summary, timeline/interviews split from `xl`; unsent PDF Preview + confirmed Delete; record-application dialog explains tracking, preserves cancelled input while mounted and keeps successful uploads on partial failure; timeline, interviews, documents with muted creation timestamps beneath filenames, and archive recovery.
@@ -27,8 +27,8 @@ Updated: 2026-10-15 · Last logged commit: 19777a1 (+ uncommitted changes)
 - `companies/`: FavoriteButton, AvoidedBadge, NotesModal, ContactList, ContactModal
 - `settings/`: AiModelSection, ProviderKeysSection, ProviderKeyModal, DailyLimitsSection, DailyLimitModal · `profile/`: LocationField, ReferenceList/Modal, Section (`clearable`), ClearSectionsModal, Entry, RowActions, Bullets (card / `editable`), EntryBullets, NamesField, BasicsModal (Details), SummaryModal, HobbiesModal, StoryModal, WritingSampleList/Modal, PreferencesCard/Modal, TargetLocations, Experience/Education/Certification/Project List + Modal, SkillList/Modal, LanguageList/Modal, BulletTranslation, TranslationBlock, CvImportModal, CvReview, CvEntryReview, CvField, CvSection
 - `dashboard/`: ApiHealth, Widget (shell), Row, ClosingSoon, Interviews, Offers, Stale, Pipeline, AppliedThisWeek, ToAnalyze, FavoriteListings, FavoriteCompanies, Editor
-- `listings/`: Card, Form, Dates (server `dueOn`), Location, LocationsField, LanguagesField, SkillsField, ContactsField, NameCombobox,
-  FilterPanel (toolbar + facets), FilterCombobox,
+- `listings/`: Row, DueChip, Form, Dates (server `dueOn`), Location, LocationsField, LanguagesField, SkillsField, ContactsField, NameCombobox,
+  FilterPanel (toolbar, facet chips, facet sheet), FilterCombobox,
   ToggleGroup, FavoriteButton (`size`), AnalyzedBadge, ParseModal (tabs: From link / Paste ad / Use your own AI); application: Application, ApplyModal (Record application; CV optional, `cv-document-id` preselect, newest unsent cover letter preselected; cancellation preserves local input; partial uploads retry independently), DocumentPicker (`help`),
   OutcomeModal (per-status labels), StatusBadge (Accepted solid + icon), StatusChangeModal, StatusTimeline, Interviews, InterviewModal; CompareModal (new vs existing, row per field, stacks on phones); tailored CV: TailoredCvCard, TailoredCvAiModal, TailoredCvPdfModal (iframe preview of a document id, 10 s fallback, 30 s give-up, optional Record with this CV), TailoredCvSection, TailoredCvEntry, TailoredCvSuggestion; cover letter: CoverLetterCard, CoverLetterModal (`source` ai | json | text)
 
@@ -87,7 +87,7 @@ Updated: 2026-10-15 · Last logged commit: 19777a1 (+ uncommitted changes)
 ## Next up
 
 - Parse queue + `onParseJobUpdated` over SSE (waiting on the backend); tailored CV analysis progress over SSE later
-- `job-listings-cards-layout-rework` (two-column cards, measured page size)
+- `job-listings-cards-layout-rework` OpenSpec change is superseded by the triage-list rework; close or archive it
 - Sync/archive dependencies `quick-add-save-flow` and `precheck-collected-job-urls` before syncing `batch-collected-job-processing` (expanded Leaving quick-add requirement).
 
 ## Decisions log
@@ -125,4 +125,4 @@ Updated: 2026-10-15 · Last logged commit: 19777a1 (+ uncommitted changes)
 - 2026-10-06 — List views live in the URL query (`router.replace`), not Pinia or keepalive; listing Back uses `useState` for the last list URL.
 - 2026-10-06 — Companies list: numbered pager built on per-page cursors (`first` capped at 50, no skip); jumping ahead walks page by page.
 - 2026-10-05 — Accepted looks like Offer (success) but solid with an icon; no new color.
-- 2026-10-06 — Filter facets live in a panel closed by default at every width; search, sort and Clear all stay in the toolbar.
+- 2026-10-15 — /listings is a dense triage list (ui-ux-expert Direction A); facets live in a sheet, active ones show as chips; "All" replaces click-again-to-clear for presets.

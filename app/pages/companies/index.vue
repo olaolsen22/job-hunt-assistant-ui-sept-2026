@@ -226,7 +226,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
         >
           <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-6">
             <div class="min-w-0 lg:flex-1">
-              <!-- The ::after overlay stretches the link over the card (like ListingsCard), so the
+              <!-- The ::after overlay stretches the link over the card (like ListingsRow), so the
                    favorite button isn't nested inside an <a>. -->
               <NuxtLink
                 :to="`/companies/${c.id}`"
