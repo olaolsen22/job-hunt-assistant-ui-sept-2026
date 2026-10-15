@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import type { ListingDetail } from '~/composables/useListing'
 import {
   EMPLOYMENT_TYPE_OPTIONS,
   LANGUAGE_OPTIONS,
@@ -129,6 +130,14 @@ const skillsByRequirement = computed(() => {
     { title: 'Nice to have', skills: skills.filter((s) => !s.isRequired) }
   ].filter((group) => group.skills.length)
 })
+
+// Mounted on first use so the profile it needs is only fetched when the owner adds a skill.
+const skillModalOpen = ref(false)
+const selectedSkill = ref<ListingDetail['skills'][number]>()
+const openSkillModal = (skill: ListingDetail['skills'][number]) => {
+  selectedSkill.value = skill
+  skillModalOpen.value = true
+}
 </script>
 
 <template>
@@ -378,14 +387,49 @@ const skillsByRequirement = computed(() => {
                     <div
                       v-for="(skill, i) in group.skills"
                       :key="i"
-                      class="flex items-baseline justify-between gap-3 py-2"
+                      class="space-y-1 py-2"
+                      data-testid="listing-skill"
                     >
-                      <span class="min-w-0 break-words font-medium">{{ skill.skill.name }}</span>
-                      <span class="shrink-0 whitespace-nowrap text-sm text-muted">
-                        Level {{ skill.level }}/5<template v-if="skill.minYears">
-                          · {{ skill.minYears }}+ yrs</template
-                        >
-                      </span>
+                      <div class="flex items-baseline justify-between gap-3">
+                        <span class="flex min-w-0 items-baseline gap-1.5 font-medium">
+                          <template v-if="skill.skill.profileLevel != null">
+                            <UIcon
+                              name="i-lucide-circle-check"
+                              class="size-4 shrink-0 self-center text-success"
+                            />
+                            <span class="sr-only">On your profile:</span>
+                          </template>
+                          <span class="break-words">{{ skill.skill.name }}</span>
+                        </span>
+                        <span class="shrink-0 whitespace-nowrap text-sm text-muted">
+                          Level {{ skill.level }}/5<template v-if="skill.minYears">
+                            · {{ skill.minYears }}+ yrs</template
+                          >
+                        </span>
+                      </div>
+                      <div
+                        v-if="skill.skill.profileLevel != null"
+                        class="flex items-center gap-1 text-xs text-muted"
+                      >
+                        You: {{ skill.skill.profileLevel }}/5
+                        <UButton
+                          icon="i-lucide-pencil"
+                          color="neutral"
+                          variant="ghost"
+                          size="sm"
+                          :aria-label="`Edit ${skill.skill.name} on your profile`"
+                          @click="openSkillModal(skill)"
+                        />
+                      </div>
+                      <UButton
+                        v-else
+                        label="Add to profile"
+                        icon="i-lucide-plus"
+                        color="neutral"
+                        variant="outline"
+                        size="sm"
+                        @click="openSkillModal(skill)"
+                      />
                     </div>
                   </div>
                 </div>
@@ -415,6 +459,13 @@ const skillsByRequirement = computed(() => {
           confirm-label="Mark analyzed"
           :loading="marking"
           @confirm="markAnalyzed"
+        />
+        <LazyListingsSkillProfileModal
+          v-if="selectedSkill"
+          v-model:open="skillModalOpen"
+          :skill="selectedSkill.skill"
+          :listing-level="selectedSkill.level"
+          @changed="refresh"
         />
       </template>
     </div>

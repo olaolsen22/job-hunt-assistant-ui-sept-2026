@@ -62,7 +62,9 @@ const LISTING = graphql(
         }
         skills {
           skill {
+            id
             name
+            profileLevel
           }
           level
           minYears

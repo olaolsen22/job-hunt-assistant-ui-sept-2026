@@ -72,6 +72,8 @@ remove it when you delete one.
 - `<ListingsFilterCombobox v-model lookup="skills" | "locations" placeholder?>` — multi-select search over
   existing skills (by name) or locations (by id, labelled `City, Country`); no create option.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
+- `<ListingsSkillProfileModal v-model:open skill listing-level @changed>` — add a listing skill (`{ id, name, profileLevel }`) to the profile
+  or change its level: level select + experience/project checkboxes (already-tagged entries locked on). Refreshes `'profile'`.
 - `<ListingsSkillsField v-model>` — `{ name, level, minYears?, isRequired }[]` rows (two lines on phones, column headers from `sm`) + skill search below.
 - `<ListingsLanguagesField v-model>` — `{ language, level?, isRequired }[]` rows, one per language.
 - `<ListingsRow listing>` — `<li>` for one `ListingListItem` in the `/listings` list: a one-line row from `lg`

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
+import { readBody } from 'h3'
 import ListingPage from '~/pages/listings/[id]/index.vue'
 
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
@@ -31,8 +32,18 @@ const listing = {
   locations: [],
   languages: [],
   skills: [
-    { skill: { name: 'Vue' }, level: 4, minYears: null, isRequired: true },
-    { skill: { name: 'Docker' }, level: 2, minYears: null, isRequired: false }
+    {
+      skill: { id: 1, name: 'Vue', profileLevel: 3 as number | null },
+      level: 4,
+      minYears: null,
+      isRequired: true
+    },
+    {
+      skill: { id: 2, name: 'Docker', profileLevel: null },
+      level: 2,
+      minYears: null,
+      isRequired: false
+    }
   ],
   contacts: [] as { contact: Record<string, unknown> }[]
 }
@@ -144,6 +155,125 @@ describe('Listing page', () => {
     expect(contact.text()).toContain('Kari Nordmann')
     expect(contact.find('a[href="tel:+47 123"]').exists()).toBe(true)
     expect(contact.find('[data-testid="contact-edit"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+describe('Listing skills on the profile', () => {
+  type Request = { query: string; variables: { input?: Record<string, unknown> } }
+
+  const profile = {
+    experiences: [
+      { id: 10, employer: 'Acme', title: 'Developer', skills: [{ id: 1, name: 'Vue' }] },
+      { id: 11, employer: 'Globex', title: 'Engineer', skills: [] }
+    ],
+    projects: [{ id: 20, name: 'Side project', skills: [] }]
+  }
+
+  const mountWithProfile = async () => {
+    const requests: Request[] = []
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: async (event) => {
+        const body: Request = await readBody(event)
+        requests.push(body)
+        if (body.query.includes('addSkillToProfile('))
+          return {
+            data: {
+              addSkillToProfile: { profileSkill: { level: 2, skill: { id: 2 } }, errors: null }
+            }
+          }
+        if (body.query.includes('query Profile')) return { data: { profile } }
+        return { data: { listingById: listing } }
+      }
+    })
+    clearNuxtData('profile')
+    const wrapper = await mountSuspended(ListingPage, {
+      route: '/listings/5',
+      attachTo: document.body
+    })
+    await flushPromises()
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="listing-header"]').exists()).toBe(true)
+    )
+    return { wrapper, requests }
+  }
+
+  const skillRow = (wrapper: Awaited<ReturnType<typeof mountSuspended>>, name: string) =>
+    wrapper.findAll('[data-testid="listing-skill"]').find((row) => row.text().includes(name))!
+
+  const checkbox = (label: string) =>
+    document.body.querySelector<HTMLButtonElement>(`[role="checkbox"][aria-label="${label}"]`)!
+
+  const clickSave = () =>
+    document.body.querySelector<HTMLButtonElement>('[data-testid="form-modal-save"]')!.click()
+
+  it('marks skills on the profile and offers to add the others', async () => {
+    const { wrapper } = await mountWithProfile()
+
+    expect(skillRow(wrapper, 'Vue').text()).toContain('On your profile')
+    expect(skillRow(wrapper, 'Vue').text()).toContain('You: 3/5')
+    expect(skillRow(wrapper, 'Docker').text()).toContain('Add to profile')
+    expect(skillRow(wrapper, 'Docker').text()).not.toContain('On your profile')
+    wrapper.unmount()
+  })
+
+  it('adds a missing skill at the listing level, tagged on the ticked entries', async () => {
+    const { wrapper, requests } = await mountWithProfile()
+    await skillRow(wrapper, 'Docker').get('button').trigger('click')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Add Docker to profile'))
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Side project'))
+
+    clickSave()
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('Tick at least one experience or project.')
+    )
+    expect(requests.some((r) => r.query.includes('addSkillToProfile('))).toBe(false)
+
+    checkbox('Side project').click()
+    await flushPromises()
+    const listingLoads = requests.filter((r) => r.query.includes('ListingById')).length
+    clickSave()
+    await vi.waitFor(() =>
+      expect(requests.find((r) => r.query.includes('addSkillToProfile('))?.variables.input).toEqual(
+        {
+          skillId: 2,
+          level: 2,
+          experienceIds: [],
+          projectIds: [20]
+        }
+      )
+    )
+    await vi.waitFor(() =>
+      expect(requests.filter((r) => r.query.includes('ListingById')).length).toBeGreaterThan(
+        listingLoads
+      )
+    )
+    wrapper.unmount()
+  })
+
+  it('keeps already-tagged entries ticked so an owned skill can change only its level', async () => {
+    const { wrapper, requests } = await mountWithProfile()
+    await skillRow(wrapper, 'Vue')
+      .get('button[aria-label="Edit Vue on your profile"]')
+      .trigger('click')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Edit Vue on profile'))
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Already tagged'))
+
+    expect(checkbox('Acme').getAttribute('aria-checked')).toBe('true')
+    expect(checkbox('Acme').disabled).toBe(true)
+
+    clickSave()
+    await vi.waitFor(() =>
+      expect(requests.find((r) => r.query.includes('addSkillToProfile('))?.variables.input).toEqual(
+        {
+          skillId: 1,
+          level: 3,
+          experienceIds: [10],
+          projectIds: []
+        }
+      )
+    )
     wrapper.unmount()
   })
 })
