@@ -85,6 +85,22 @@ describe('ParseModal', () => {
     wrapper.unmount()
   })
 
+  it('copies a prompt with the ad link when the own-AI source is Ad link', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    const wrapper = await mountOpen({ url: 'https://example.com/job' })
+    wrapper.vm.tab = 'ai'
+    wrapper.vm.aiSource = 'link'
+    await flushPromises()
+
+    await click('parse-copy-prompt')
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('https://example.com/job'))
+    expect(document.body.querySelector('[data-testid="parse-ad"]')).toBeNull()
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
   it('emits the parsed draft from the saved listing and closes', async () => {
     respondToUrlParse({
       parseJob: { status: 'SUCCEEDED', result: '{"title":"Dev"}', error: null },

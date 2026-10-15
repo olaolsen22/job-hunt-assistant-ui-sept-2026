@@ -125,13 +125,20 @@ export const useParsePrompt = (name: PromptName) => {
     }
   }
 
-  const copy = async (posting: string) => {
-    await navigator.clipboard.writeText(
-      `${instructions.value}\n\n<posting>\n${posting.trim()}\n</posting>`
-    )
+  const copyText = async (text: string) => {
+    await navigator.clipboard.writeText(text)
     copied.value = true
     setTimeout(() => (copied.value = false), 1500)
   }
+
+  const copy = (posting: string) =>
+    copyText(`${instructions.value}\n\n<posting>\n${posting.trim()}\n</posting>`)
+
+  // For AIs that can browse: the prompt points at the ad instead of containing it.
+  const copyLink = (url: string) =>
+    copyText(
+      `${instructions.value}\n\nOpen this job ad link and use the ad on that page as the posting:\n${url.trim()}`
+    )
 
   // For pages without an error spot of their own. A daily limit is changed in Settings.
   const toastError = ({ error, code }: { error: string; code?: string }) =>
@@ -215,6 +222,7 @@ export const useParsePrompt = (name: PromptName) => {
     copied,
     load,
     copy,
+    copyLink,
     parsing,
     parse,
     parsingUrl,

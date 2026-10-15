@@ -12,6 +12,7 @@ const {
   copied,
   load,
   copy,
+  copyLink,
   parsing,
   parse,
   parsingUrl,
@@ -35,6 +36,15 @@ const tab = ref<Tab>('link')
 // The pasted ad is shared by the Paste ad and Use your own AI tabs, so a failed parse keeps it
 // when the user switches to the other method.
 const ad = ref('')
+// Use your own AI: hand the AI the pasted text, or the link when it can browse.
+const aiSource = ref<'text' | 'link'>('text')
+const aiSourceItems = [
+  { label: 'Ad text', value: 'text' },
+  { label: 'Ad link', value: 'link' }
+]
+const linkValid = computed(() => isHttpUrl(link.value.trim()))
+const canCopy = computed(() => (aiSource.value === 'link' ? linkValid.value : !!ad.value.trim()))
+const copyPrompt = () => (aiSource.value === 'link' ? copyLink(link.value) : copy(ad.value))
 const json = ref('')
 const jsonError = ref('')
 const urlError = ref('')
@@ -193,7 +203,36 @@ const retryConfirmed = () => {
         </div>
 
         <template v-else>
-          <UFormField :label="tab === 'ai' ? '1. Paste the ad' : 'Paste the ad'">
+          <URadioGroup
+            v-if="tab === 'ai'"
+            v-model="aiSource"
+            legend="1. Give the AI the ad"
+            :items="aiSourceItems"
+            orientation="horizontal"
+            variant="card"
+            data-testid="parse-ai-source"
+          />
+
+          <UFormField
+            v-if="tab === 'ai' && aiSource === 'link'"
+            label="Ad link"
+            help="The AI must be able to open web pages. If it can’t read the ad, use Ad text."
+            :error="
+              link.trim() && !linkValid
+                ? 'Enter a link starting with http:// or https://'
+                : undefined
+            "
+          >
+            <UInput
+              v-model="link"
+              type="url"
+              placeholder="https://"
+              class="w-full"
+              data-testid="parse-ai-link"
+            />
+          </UFormField>
+
+          <UFormField v-else :label="tab === 'ai' ? undefined : 'Paste the ad'">
             <UTextarea
               v-model="ad"
               :rows="6"
@@ -234,9 +273,9 @@ const retryConfirmed = () => {
                 :color="copied ? 'success' : 'primary'"
                 variant="subtle"
                 :loading="!instructions"
-                :disabled="!ad.trim()"
+                :disabled="!canCopy"
                 data-testid="parse-copy-prompt"
-                @click="copy(ad)"
+                @click="copyPrompt"
               >
                 {{ copied ? 'Copied' : 'Copy prompt' }}
               </UButton>
