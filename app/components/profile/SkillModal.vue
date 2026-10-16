@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SKILL_CATEGORY_OPTIONS, SKILL_LEVELS, type SkillCategory } from '~/constants/listing'
+import { SKILL_LEVELS } from '~/constants/listing'
 import type { ProfileSkill } from '~/composables/useProfile'
 
 // Without `skill` it adds one; with it, it changes that skill's level and category (the name is fixed).
@@ -39,19 +39,17 @@ const SET_CATEGORY = graphql(`
   }
 `)
 
-// A select can't hold null, so "uncategorized" is a sentinel that is sent as null.
-const NO_CATEGORY = 'NONE'
-const CATEGORY_ITEMS = [{ label: 'Uncategorized', value: NO_CATEGORY }, ...SKILL_CATEGORY_OPTIONS]
+const { items: categoryItems } = useSkillCategories()
 
 const name = ref<string>()
 const level = ref(3)
-const category = ref<SkillCategory | typeof NO_CATEGORY>(NO_CATEGORY)
+const category = ref<CategoryChoice>(NO_CATEGORY)
 
 watch(open, (isOpen) => {
   if (!isOpen) return
   name.value = skill?.skill.name
   level.value = skill?.level ?? 3
-  category.value = skill?.skill.category ?? NO_CATEGORY
+  category.value = toCategoryChoice(skill?.skill.categoryId)
 })
 
 const validate = () => formErrors({ name: requiredError(name.value, 'a skill') })
@@ -64,11 +62,10 @@ const submit = async () => {
       input: { name: name.value!.trim(), level: level.value }
     })
     const skillId = setProfileSkill.profileSkill?.skill.id
-    const wanted = category.value === NO_CATEGORY ? null : category.value
+    const categoryId = fromCategoryChoice(category.value)
     if (setProfileSkill.errors?.length || skillId == null) return setProfileSkill.errors
-    if (wanted === (skill?.skill.category ?? null)) return null
-    return (await gql(SET_CATEGORY, { input: { skillId, category: wanted } })).setSkillCategory
-      .errors
+    if (categoryId === (skill?.skill.categoryId ?? null)) return null
+    return (await gql(SET_CATEGORY, { input: { skillId, categoryId } })).setSkillCategory.errors
   })
   if (!ok) return
   // A new skill is a new name, so the cached suggestions are stale.
@@ -103,7 +100,7 @@ const submit = async () => {
       <UFormField label="Category" description="Groups this skill in the Developer CV layout.">
         <USelect
           v-model="category"
-          :items="CATEGORY_ITEMS"
+          :items="categoryItems"
           class="w-full"
           data-testid="skill-category"
         />

@@ -60,13 +60,18 @@ export const toCoverLetterInput = (letter: CoverLetter) => {
   }
 }
 
-// The letter as it reads, for pasting into an application form.
-export const coverLetterToText = (letter: CoverLetter) =>
+// The letter as it reads, for pasting into an application form. Forms usually hold the contact
+// details already, so the header block can be left out.
+export const coverLetterToText = (letter: CoverLetter, includeHeader = true) =>
   [
-    [letter.fullName, letter.address, letter.phone, letter.email],
-    [letter.date],
-    [letter.organization, letter.recipientName, letter.recipientAddress],
-    [letter.subject],
+    ...(includeHeader
+      ? [
+          [letter.fullName, letter.address, letter.phone, letter.email],
+          [letter.date],
+          [letter.organization, letter.recipientName, letter.recipientAddress],
+          [letter.subject]
+        ]
+      : []),
     [letter.greeting],
     ...letter.paragraphs.map((p) => [p]),
     [letter.closing, letter.fullName]

@@ -58,13 +58,22 @@ const QUICK_TOGGLES: {
     toggle: () => (facets.itRoles = !facets.itRoles)
   },
   {
-    key: 'english',
-    label: 'English OK',
+    key: 'englishPosting',
+    label: 'English posting',
     icon: 'i-lucide-languages',
-    active: () => facets.englishOk,
-    toggle: () => (facets.englishOk = !facets.englishOk)
+    active: () => facets.englishPosting,
+    toggle: () => (facets.englishPosting = !facets.englishPosting)
+  },
+  {
+    key: 'englishMentioned',
+    label: 'English mentioned',
+    icon: 'i-lucide-message-circle',
+    active: () => facets.englishMentioned,
+    toggle: () => (facets.englishMentioned = !facets.englishMentioned)
   }
 ]
+
+const quickVisible = computed(() => QUICK_TOGGLES.some((t) => counts.value[t.key] || t.active()))
 
 const heading = computed(() => {
   const n = totalCount.value
@@ -117,39 +126,55 @@ const ADD_ITEMS = [
     <template v-if="loading || listings.length || narrowed">
       <ListingsFilterPanel v-model:search="search" v-model:sort="sort" :facets="facets" />
 
-      <!-- Phones scroll this strip sideways instead of wrapping it into several rows. -->
-      <div class="overflow-x-auto">
-        <div class="flex w-max items-center gap-2 sm:w-auto sm:flex-wrap">
-          <template v-for="p in PRESETS" :key="p.value ?? 'all'">
-            <UButton
-              v-if="!p.value || presetCount(p.value) || filter === p.value"
-              :color="p.color"
-              :variant="filter === p.value ? 'solid' : 'subtle'"
-              size="sm"
-              :icon="p.icon"
-              :aria-pressed="filter === p.value"
-              :data-testid="`listings-filter-${p.value ?? 'all'}`"
-              @click="filter = p.value"
-              >{{ p.label }}
-              <span v-if="!firstLoad" class="tabular-nums opacity-80">{{
-                presetCount(p.value)
-              }}</span></UButton
-            >
-          </template>
-          <template v-for="t in QUICK_TOGGLES" :key="t.key">
-            <UButton
-              v-if="counts[t.key] || t.active()"
-              color="primary"
-              :variant="t.active() ? 'solid' : 'outline'"
-              size="sm"
-              :icon="t.icon"
-              :aria-pressed="t.active()"
-              :data-testid="`listings-filter-${t.key}`"
-              @click="t.toggle"
-              >{{ t.label }}
-              <span class="tabular-nums opacity-80">{{ counts[t.key] }}</span></UButton
-            >
-          </template>
+      <!-- Phones stack two labelled groups so nothing hides off-screen; sm+ flattens them back into one
+           wrapping row (`sm:contents`) and the labels become screen-reader only. -->
+      <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
+        <div role="group" aria-label="Show" class="flex flex-col gap-1 sm:contents">
+          <span class="text-xs text-muted sm:sr-only" aria-hidden="true">Show</span>
+          <div class="flex flex-wrap items-center gap-2 sm:contents">
+            <template v-for="p in PRESETS" :key="p.value ?? 'all'">
+              <UButton
+                v-if="!p.value || presetCount(p.value) || filter === p.value"
+                :color="p.color"
+                :variant="filter === p.value ? 'solid' : 'subtle'"
+                size="sm"
+                class="max-sm:py-2"
+                :icon="p.icon"
+                :aria-pressed="filter === p.value"
+                :data-testid="`listings-filter-${p.value ?? 'all'}`"
+                @click="filter = p.value"
+                >{{ p.label }}
+                <span v-if="!firstLoad" class="tabular-nums opacity-80">{{
+                  presetCount(p.value)
+                }}</span></UButton
+              >
+            </template>
+          </div>
+        </div>
+        <div
+          v-if="quickVisible"
+          role="group"
+          aria-label="Narrow by"
+          class="flex flex-col gap-1 sm:contents"
+        >
+          <span class="text-xs text-muted sm:sr-only" aria-hidden="true">Narrow by</span>
+          <div class="flex flex-wrap items-center gap-2 sm:contents">
+            <template v-for="t in QUICK_TOGGLES" :key="t.key">
+              <UButton
+                v-if="counts[t.key] || t.active()"
+                color="primary"
+                :variant="t.active() ? 'solid' : 'outline'"
+                size="sm"
+                class="max-sm:py-2"
+                :icon="t.active() ? 'i-lucide-check' : t.icon"
+                :aria-pressed="t.active()"
+                :data-testid="`listings-filter-${t.key}`"
+                @click="t.toggle"
+                >{{ t.label }}
+                <span class="tabular-nums opacity-80">{{ counts[t.key] }}</span></UButton
+              >
+            </template>
+          </div>
         </div>
       </div>
     </template>

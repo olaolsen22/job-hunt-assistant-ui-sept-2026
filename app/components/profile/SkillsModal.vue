@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
-import { LANGUAGE_OPTIONS, SKILL_CATEGORY_OPTIONS, type SkillCategory } from '~/constants/listing'
+import { LANGUAGE_OPTIONS } from '~/constants/listing'
 import type { ProfileSkill } from '~/composables/useProfile'
 
-// Every skill's level and category in one form, plus marking skills for removal. The API takes one skill per
+// Every skill's level and translated name in one form, plus marking skills for removal. Categories
+// are edited on the skills page, next to the categories themselves. The API takes one skill per
 // call, so Save sends one request per changed row; failed rows stay with their message.
 const { skills } = defineProps<{ skills: readonly ProfileSkill[] }>()
 const open = defineModel<boolean>('open', { required: true })
@@ -15,19 +16,6 @@ const SET_SKILL = graphql(`
       profileSkill {
         level
       }
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
-
-const SET_CATEGORY = graphql(`
-  mutation SetSkillRowCategory($input: SetSkillCategoryInput!) {
-    setSkillCategory(input: $input) {
       errors {
         __typename
         ... on Error {
@@ -78,11 +66,6 @@ const REMOVE_SKILL = graphql(`
   }
 `)
 
-// A select can't hold null, so "uncategorized" is a sentinel that is sent as null.
-const NO_CATEGORY = 'NONE'
-const CATEGORY_ITEMS = [{ label: 'Uncategorized', value: NO_CATEGORY }, ...SKILL_CATEGORY_OPTIONS]
-type RowCategory = SkillCategory | typeof NO_CATEGORY
-
 // The page's translation language: the one that isn't the profile's content language.
 const { target } = useProfileTranslation()
 const targetLabel = computed(() => LANGUAGE_OPTIONS.find((o) => o.value === target.value)!.label)
@@ -95,8 +78,6 @@ type Row = {
   years: string
   saved: number
   level: number
-  savedCategory: RowCategory
-  category: RowCategory
   savedTranslation: string
   translation: string
   remove: boolean
@@ -116,8 +97,6 @@ watch(open, (isOpen) => {
     years: formatYears(s.experienceMonths),
     saved: s.level,
     level: s.level,
-    savedCategory: s.skill.category ?? NO_CATEGORY,
-    category: s.skill.category ?? NO_CATEGORY,
     savedTranslation: translationOf(s),
     translation: translationOf(s),
     remove: false
@@ -125,15 +104,10 @@ watch(open, (isOpen) => {
 })
 
 const changed = computed(() =>
-  rows.value.filter(
-    (r) =>
-      r.remove || r.level !== r.saved || r.category !== r.savedCategory || translationChanged(r)
-  )
+  rows.value.filter((r) => r.remove || r.level !== r.saved || translationChanged(r))
 )
 // Only pending changes count for the discard guard, so saved rows drop out of it.
-const state = computed(() =>
-  changed.value.map((r) => [r.id, r.level, r.category, r.translation, r.remove])
-)
+const state = computed(() => changed.value.map((r) => [r.id, r.level, r.translation, r.remove]))
 const removals = computed(() => changed.value.filter((r) => r.remove))
 const failed = computed(() => rows.value.filter((r) => r.error).length)
 
@@ -156,15 +130,6 @@ const saveRow = async (row: Row) => {
         errors = (await gql(SET_SKILL, { input: { name: row.name, level: row.level } }))
           .setProfileSkill.errors
       // A level that failed to save stops here, so the row keeps one message.
-      if (!errors?.length && row.category !== row.savedCategory)
-        errors = (
-          await gql(SET_CATEGORY, {
-            input: {
-              skillId: row.id,
-              category: row.category === NO_CATEGORY ? null : row.category
-            }
-          })
-        ).setSkillCategory.errors
       if (!errors?.length && translationChanged(row)) {
         const name = row.translation.trim()
         const input = { skillId: row.id, language: target.value }
@@ -181,7 +146,6 @@ const saveRow = async (row: Row) => {
   if (row.remove) rows.value = rows.value.filter((r) => r !== row)
   else {
     row.saved = row.level
-    row.savedCategory = row.category
     row.translation = row.savedTranslation = row.translation.trim()
   }
   return true
@@ -201,7 +165,7 @@ const save = async () => {
   <AppFormModal
     v-model:open="open"
     title="Edit skills"
-    :description="`Tap a level and pick a category per skill. Add a ${targetLabel} name only for word skills (Code review → Kodegjennomgang), not products. Each skill saves separately.`"
+    :description="`Tap a level per skill. Add a ${targetLabel} name only for word skills (Code review → Kodegjennomgang), not products. Each skill saves separately.`"
     :state="state"
     :loading="loading"
     :save-label="changed.length ? `Save ${changed.length}` : 'Save'"
@@ -242,13 +206,6 @@ const save = async () => {
             :disabled="r.remove"
             class="sm:w-56"
             :aria-label="`${r.name} level`"
-          />
-          <USelect
-            v-model="r.category"
-            :items="CATEGORY_ITEMS"
-            :disabled="r.remove"
-            :aria-label="`${r.name} category`"
-            class="w-40 shrink-0"
           />
           <UButton
             :icon="r.remove ? 'i-lucide-undo-2' : 'i-lucide-trash-2'"

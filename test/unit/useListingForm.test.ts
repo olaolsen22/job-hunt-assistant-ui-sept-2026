@@ -128,6 +128,18 @@ describe('useListingForm', () => {
     })
   })
 
+  it("passes a parsed skill's category name through to the save", () => {
+    const { state, fillDraft, toInput } = useListingForm()
+    fillRequired(state)
+    // Any name: the API matches it to the owner's categories and ignores one it doesn't know.
+    fillDraft({ skills: [{ name: 'Vue', categoryName: ' Frameworks ' }, { name: 'Jira' }] })
+
+    expect(toInput().skills).toEqual([
+      expect.objectContaining({ name: 'Vue', categoryName: 'Frameworks' }),
+      expect.objectContaining({ name: 'Jira', categoryName: null })
+    ])
+  })
+
   it('merges a parsed draft into a saved listing, keeping what the parse lacks', () => {
     const { state, mergeDraft } = useListingForm()
     Object.assign(state, {

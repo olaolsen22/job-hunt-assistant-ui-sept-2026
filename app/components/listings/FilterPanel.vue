@@ -25,8 +25,8 @@ const DUE_ITEMS = [
 // These are toggles outside the sheet, so the Filters badge counts only what is inside it, and the
 // sheet's own Clear leaves them alone. Clear all still resets every facet.
 const outsideToggles = () => {
-  const { favorites, preferredLocations, itRoles, englishOk } = facets.value
-  return { favorites, preferredLocations, itRoles, englishOk }
+  const { favorites, preferredLocations, itRoles, englishPosting, englishMentioned } = facets.value
+  return { favorites, preferredLocations, itRoles, englishPosting, englishMentioned }
 }
 const sheetCount = computed(() =>
   countActiveFacets({
@@ -34,7 +34,8 @@ const sheetCount = computed(() =>
     favorites: false,
     preferredLocations: false,
     itRoles: false,
-    englishOk: false
+    englishPosting: false,
+    englishMentioned: false
   })
 )
 const anyActive = computed(() => countActiveFacets(facets.value) > 0)

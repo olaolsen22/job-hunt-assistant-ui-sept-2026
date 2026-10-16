@@ -127,7 +127,7 @@ const skillFromProfile = (s: ProfileData['skills'][number], language?: Language)
   name: s.skill.translations.find((t) => t.language === language)?.name ?? s.skill.name,
   level: s.level,
   sourceSkillId: s.skill.id,
-  category: s.skill.category ?? null
+  categoryId: s.skill.categoryId ?? null
 })
 
 const withBullets = <T extends { bullets: readonly unknown[] }>(e: T) => ({

@@ -9,7 +9,6 @@ import {
   EMPLOYMENT_TYPE_OPTIONS,
   LANGUAGE_OPTIONS,
   SCHEDULE_OPTIONS,
-  SKILL_CATEGORY_OPTIONS,
   SENIORITY_OPTIONS,
   WORK_MODE_OPTIONS
 } from '~/constants/listing'
@@ -20,7 +19,6 @@ import type {
   Language,
   Schedule,
   Seniority,
-  SkillCategory,
   WorkMode
 } from '~/constants/listing'
 
@@ -48,8 +46,9 @@ export interface ListingSkill {
   level: number
   minYears?: number | null
   isRequired: boolean
-  // Only set by a parsed draft; the API fills an empty category and never overwrites one.
-  category?: SkillCategory
+  // Only set by a parsed draft, as one of the owner's category names. The API fills an empty category
+  // from it, never overwrites one, and ignores a name it doesn't know.
+  categoryName?: string
 }
 
 // The API wants null, not "", for empty optional fields.
@@ -74,7 +73,7 @@ const cleanDraft = (d: Record<string, unknown>) => {
       level: int(s?.level, 1, 5) ?? 3,
       minYears: int(s?.minYears, 1, 50) ?? null,
       isRequired: s?.isRequired !== false,
-      category: option(SKILL_CATEGORY_OPTIONS, s?.category)
+      categoryName: text(s?.categoryName) || undefined
     }))
     .filter(
       (s, i, all) =>
@@ -197,7 +196,7 @@ export const useListingForm = () => {
     skills: state.skills.map((s) => ({
       ...s,
       minYears: s.minYears ?? null,
-      category: s.category ?? null
+      categoryName: s.categoryName ?? null
     })),
     // updateListing replaces the whole listing, so leaving this out would clear the marker.
     isAnalyzed: state.isAnalyzed,

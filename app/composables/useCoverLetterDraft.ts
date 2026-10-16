@@ -310,7 +310,15 @@ export const useCoverLetterDraft = (listingId: number) => {
   }
 
   // Loaded before the copy button is usable: browsers can refuse a clipboard write after an await.
-  const instructions = ref('')
+  const apiInstructions = ref('')
+  // The prompt query takes no notes, so the owner's current notes (even unsaved) are appended here.
+  const instructions = computed(() => {
+    const notes = letter.value?.brief.trim()
+    if (!apiInstructions.value || !notes || apiInstructions.value.includes(notes)) {
+      return apiInstructions.value
+    }
+    return `${apiInstructions.value}\n\nNotes from the applicant (follow these):\n${notes}`
+  })
   const promptError = ref('')
   const promptLoading = ref(false)
   const copied = ref(false)
@@ -318,7 +326,9 @@ export const useCoverLetterDraft = (listingId: number) => {
     promptLoading.value = true
     promptError.value = ''
     try {
-      instructions.value = (await gql(PROMPT, { listingId })).coverLetterExternalPrompt.instructions
+      apiInstructions.value = (
+        await gql(PROMPT, { listingId })
+      ).coverLetterExternalPrompt.instructions
     } catch {
       promptError.value = 'Could not load the prompt.'
     } finally {

@@ -75,9 +75,10 @@ export interface ListingsFacets {
   preferredLocations: boolean
   // Job role in the "IT" role category (the category belongs to the role, not the listing).
   itRoles: boolean
-  // No required Norwegian, whatever the posting language: lenient on purpose, so a listing whose
-  // languages weren't analyzed still shows.
-  englishOk: boolean
+  // The ad itself is written in English.
+  englishPosting: boolean
+  // The ad lists English among its languages, required or not.
+  englishMentioned: boolean
   statuses: ListingListItem['status'][]
   skills: string[]
   locationIds: number[]
@@ -96,7 +97,8 @@ export const emptyFacets = (): ListingsFacets => ({
   favorites: false,
   preferredLocations: false,
   itRoles: false,
-  englishOk: false,
+  englishPosting: false,
+  englishMentioned: false,
   statuses: [],
   skills: [],
   locationIds: [],
@@ -147,7 +149,8 @@ export const parseListingsQuery = (query: Record<string, unknown>): ListingsView
       favorites: query.favorites === '1',
       preferredLocations: query.preferred === '1',
       itRoles: query.it === '1',
-      englishOk: query.english === '1',
+      englishPosting: query.englishPosting === '1',
+      englishMentioned: query.englishMentioned === '1',
       statuses: known(
         APPLICATION_STATUS_OPTIONS.map((o) => o.value),
         query.status
@@ -183,7 +186,8 @@ export const toListingsQuery = ({ search, sort, filter, facets, page }: Listings
     favorites: facets.favorites ? '1' : '',
     preferred: facets.preferredLocations ? '1' : '',
     it: facets.itRoles ? '1' : '',
-    english: facets.englishOk ? '1' : '',
+    englishPosting: facets.englishPosting ? '1' : '',
+    englishMentioned: facets.englishMentioned ? '1' : '',
     page: page > 1 ? String(page) : ''
   }
   return Object.fromEntries(Object.entries(query).filter(([, value]) => value))
@@ -232,7 +236,8 @@ const FACETS = {
 const QUICK = {
   preferred: 'locations: { some: { location: { isTarget: { eq: true } } } }',
   it: 'jobRole: { category: { name: { eq: "IT" } } }',
-  english: 'languages: { none: { language: { eq: NORWEGIAN }, isRequired: { eq: true } } }'
+  englishPosting: 'postingLanguage: { eq: ENGLISH }',
+  englishMentioned: 'languages: { some: { language: { eq: ENGLISH } } }'
 } as const
 export type QuickToggle = keyof typeof QUICK
 
@@ -260,7 +265,8 @@ export const buildListingsQuery = (
   const facetClauses = facets.favorites ? ['favoritedAt: { neq: null }'] : []
   if (facets.preferredLocations) facetClauses.push(QUICK.preferred)
   if (facets.itRoles) facetClauses.push(QUICK.it)
-  if (facets.englishOk) facetClauses.push(QUICK.english)
+  if (facets.englishPosting) facetClauses.push(QUICK.englishPosting)
+  if (facets.englishMentioned) facetClauses.push(QUICK.englishMentioned)
   const posted = [
     facets.postedFrom && 'gte: $postedFrom',
     facets.postedTo && 'lte: $postedTo'
@@ -421,7 +427,8 @@ export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) 
       archived: data.value?.archived?.totalCount ?? 0,
       preferred: data.value?.preferred?.totalCount ?? 0,
       it: data.value?.it?.totalCount ?? 0,
-      english: data.value?.english?.totalCount ?? 0
+      englishPosting: data.value?.englishPosting?.totalCount ?? 0,
+      englishMentioned: data.value?.englishMentioned?.totalCount ?? 0
     })),
     page,
     pageSize,

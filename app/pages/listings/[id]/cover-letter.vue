@@ -23,6 +23,7 @@ const DELETE_DOCUMENT = graphql(`
 // The API prints line 1 as the street and line 2 as postcode and town, splitting one line at a comma.
 const ADDRESS_HELP = 'Street and number on line 1, postcode and town on line 2.'
 
+const toast = useToast()
 const route = useRoute()
 const id = Number(route.params.id)
 
@@ -104,6 +105,28 @@ const pdfCurrent = computed(
     !dirty.value &&
     Date.parse(pdf.value.createdAt) >= Date.parse(editor.draft.value.updatedAt)
 )
+// Plain-text copy for application forms without a PDF upload; follows unsaved edits.
+const view = ref<'edit' | 'preview'>('edit')
+const VIEW_ITEMS = [
+  { label: 'Edit', value: 'edit', icon: 'i-lucide-pen-line' },
+  { label: 'Preview', value: 'preview', icon: 'i-lucide-eye' }
+]
+const includeHeader = ref(true)
+const hasBody = computed(() => !!letter.value?.paragraphs.some((p) => p.trim()))
+const letterText = computed(() =>
+  letter.value && hasBody.value ? coverLetterToText(letter.value, includeHeader.value) : ''
+)
+const textCopied = ref(false)
+const copyText = async () => {
+  try {
+    await navigator.clipboard.writeText(letterText.value)
+    textCopied.value = true
+    setTimeout(() => (textCopied.value = false), 2000)
+  } catch {
+    toast.add({ title: 'Could not copy the cover letter. Try again.', color: 'error' })
+  }
+}
+
 const pdfOpen = ref(false)
 const generatePdf = async () => {
   if (!(await editor.generatePdf())) return
@@ -119,7 +142,6 @@ const selectPdfForDeletion = () => {
   deletePdfOpen.value = true
 }
 const { run: runDeleteDocument, loading: deletingPdf } = useMutation(refreshListing)
-const toast = useToast()
 const deletePdf = async () => {
   const target = pdfToDelete.value
   if (!target) return
@@ -245,7 +267,49 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
 
         <fieldset :disabled="busy" class="min-w-0 space-y-4 sm:space-y-6">
           <AppCard title="Letter" data-testid="cover-letter-body">
-            <div class="space-y-4">
+            <template #actions>
+              <UTabs
+                v-model="view"
+                :items="VIEW_ITEMS"
+                :content="false"
+                size="sm"
+                data-testid="cover-letter-view"
+              />
+            </template>
+            <div v-if="view === 'preview'" class="space-y-3" data-testid="cover-letter-text">
+              <div
+                v-if="!hasBody"
+                class="flex flex-col items-center gap-2 py-4 text-center text-sm text-muted"
+                data-testid="cover-letter-text-empty"
+              >
+                <UIcon name="i-lucide-text" class="size-6" />
+                Write the body to see the text here.
+              </div>
+              <template v-else>
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <USwitch
+                    v-model="includeHeader"
+                    label="Include header (name, contact, recipient, subject)"
+                    size="sm"
+                  />
+                  <UButton
+                    :icon="textCopied ? 'i-lucide-check' : 'i-lucide-clipboard-copy'"
+                    color="neutral"
+                    variant="subtle"
+                    size="sm"
+                    data-testid="cover-letter-copy-text"
+                    @click="copyText"
+                    >{{ textCopied ? 'Copied' : 'Copy text' }}</UButton
+                  >
+                </div>
+                <pre
+                  class="max-h-[32rem] overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-elevated p-3 font-sans text-sm"
+                  data-testid="cover-letter-text-preview"
+                  >{{ letterText }}</pre>
+                <p v-if="dirty" class="text-xs text-muted">Includes unsaved changes.</p>
+              </template>
+            </div>
+            <div v-else class="space-y-4">
               <UFormField label="Greeting" help="Leave empty for Norwegian letters.">
                 <UInput
                   v-model="letter.greeting"

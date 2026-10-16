@@ -44,6 +44,8 @@ registerEndpoint('/graphql', {
     if (query.includes('query CoverLetterDraft(')) return { data: { coverLetterDraft: savedDraft } }
     if (query.includes('query CoverLetterDraftFromProfile'))
       return { data: { coverLetterDraftFromProfile: content() } }
+    if (query.includes('query CoverLetterExternalPrompt'))
+      return { data: { coverLetterExternalPrompt: { instructions: 'Write the letter.' } } }
     if (query.includes('mutation SaveCoverLetterDraft')) {
       savedDraft = {
         id: 1,
@@ -163,6 +165,45 @@ afterEach(() => {
 })
 
 describe('Cover letter page', () => {
+  it('appends the current notes, saved or not, to the external prompt', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    await mountPage()
+    await type('[data-testid="cover-letter-brief"]', 'Mention the meetup')
+    await chooseSource('Use an external chat')
+    await vi.waitFor(() =>
+      expect(el('cover-letter-copy-prompt')!.hasAttribute('disabled')).toBe(false)
+    )
+    await click('cover-letter-copy-prompt')
+    expect(writeText.mock.calls[0]![0]).toMatch(/^Write the letter\.[\s\S]*Mention the meetup$/)
+    vi.unstubAllGlobals()
+  })
+
+  it('copies the letter as text, live with unsaved edits and without the header on request', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    await mountPage()
+    await click('cover-letter-add-paragraph')
+    await type('[data-testid="cover-letter-paragraph"] textarea', 'I build things.')
+    const previewTab = [...document.body.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+      (t) => t.textContent?.trim() === 'Preview'
+    )!
+    previewTab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    previewTab.click()
+    await flushPromises()
+    expect(el('cover-letter-text-preview')!.textContent).toContain('Ada Lovelace')
+    expect(el('cover-letter-text-preview')!.textContent).toContain('I build things.')
+
+    await click('cover-letter-copy-text')
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('I build things.'))
+    expect(writeText.mock.calls[0]![0]).toContain('Storgata 1')
+
+    document.body.querySelector<HTMLElement>('[role="switch"]')!.click()
+    await flushPromises()
+    expect(el('cover-letter-text-preview')!.textContent).not.toContain('Storgata 1')
+    vi.unstubAllGlobals()
+  })
+
   it('prefills the header from the profile without saving, then saves the whole letter', async () => {
     await mountPage()
     expect(el('cover-letter-save-status')!.textContent).toBe('Not saved yet')

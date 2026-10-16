@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SKILL_CATEGORY_OPTIONS } from '~/constants/listing'
 import type { ProfileData, ProfileSkill } from '~/composables/useProfile'
 
 // Read-only list; Add opens the single-skill form (it has the name search), Edit the bulk one.
@@ -91,7 +90,7 @@ const translated = (s: ProfileSkill) =>
           ></span
         >
         <UBadge v-if="s.skill.category" color="neutral" variant="outline" size="sm">{{
-          SKILL_CATEGORY_OPTIONS.find((o) => o.value === s.skill.category)?.label
+          s.skill.category.name
         }}</UBadge>
         <UBadge color="neutral" variant="subtle" size="sm">Level {{ s.level }}/5</UBadge>
         <span class="w-14 shrink-0 text-right text-sm text-muted">{{
@@ -103,6 +102,12 @@ const translated = (s: ProfileSkill) =>
     <p v-if="skills.some((s) => s.level === 1)" class="mt-3 text-xs text-muted">
       Skills added from your entries start at level 1. Raise the level where it's higher.
     </p>
+    <ULink
+      to="/skills"
+      class="mt-3 inline-block text-sm text-primary"
+      data-testid="profile-skills-manage"
+      >Categories, renames and merges are on the Skills page</ULink
+    >
   </ProfileSection>
 
   <!-- Outside the section: its body isn't rendered while the section is empty. -->

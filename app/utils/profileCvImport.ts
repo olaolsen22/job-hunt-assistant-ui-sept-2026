@@ -1,7 +1,6 @@
 import type { InjectionKey, Ref } from 'vue'
 import type { CvCandidate, CvSelection } from '~/composables/useProfileCvImport'
 import type { ProfileData } from '~/composables/useProfile'
-import type { SkillCategory } from '~/constants/listing'
 import { PROFICIENCY_OPTIONS } from '~/constants/listing'
 import { formatLocation } from '~/utils/formatLocation'
 import { isHttpUrl } from '~/utils/isHttpUrl'
@@ -213,8 +212,8 @@ export type CvDraft = {
     include: boolean
     name: string
     level: number | null
-    // Not editable in the review; the API only fills an empty category from it.
-    category: SkillCategory | null
+    // Not editable in the review; the API only fills an empty category from it (by name).
+    categoryName: string | null
     defaultNote?: string
   }[]
   languages: {
@@ -282,7 +281,7 @@ export const createCvDraft = (candidate: CvCandidate, profile: ProfileData): CvD
         include: true,
         name: skill.name ?? '',
         level: skill.level ?? saved?.level ?? 1,
-        category: skill.category ?? null,
+        categoryName: skill.categoryName ?? null,
         ...(skill.level == null
           ? {
               defaultNote: saved
@@ -527,7 +526,7 @@ export const reviewCvSelection = (
     selection.skills = skills.map((skill) => ({
       name: skill.name.trim(),
       level: skill.level,
-      category: skill.category
+      categoryName: skill.categoryName
     }))
     count += skills.length
     if (skills.length > 200) error('skills', 'At most 200 skills are allowed.')

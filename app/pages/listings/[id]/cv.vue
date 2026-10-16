@@ -2,8 +2,7 @@
 import type { TailoredCvSectionKey } from '~/utils/tailoredCv'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { VueDraggable } from 'vue-draggable-plus'
-import { PROFICIENCY_OPTIONS, SKILL_CATEGORY_OPTIONS } from '~/constants/listing'
-import type { SkillCategory } from '~/constants/listing'
+import { PROFICIENCY_OPTIONS } from '~/constants/listing'
 
 definePageMeta({ title: 'Tailored CV' })
 
@@ -32,9 +31,8 @@ const SECTION_ORDER_HINTS = {
     'Links under the contact lines; skills and projects moved up, and skills grouped by category. Only changes the generated PDF, not the text you edit.'
 } as const
 
-// A select can't hold null, so "uncategorized" is a sentinel that is stored as null.
-const NO_CATEGORY = 'NONE'
-const CATEGORY_ITEMS = [{ label: 'Uncategorized', value: NO_CATEGORY }, ...SKILL_CATEGORY_OPTIONS]
+// The owner's categories (edited on the skills page); a deleted one shows as uncategorized.
+const { items: categoryItems, known: knownCategory } = useSkillCategories()
 const moveSkill = (from: number, to: number) => {
   const skills = cv.value!.skills
   skills.splice(to, 0, ...skills.splice(from, 1))
@@ -737,15 +735,13 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                     />
                     <span class="min-w-24 flex-1 truncate">{{ skill.name }}</span>
                     <USelect
-                      :model-value="skill.category ?? NO_CATEGORY"
-                      :items="CATEGORY_ITEMS"
+                      :model-value="knownCategory(skill.categoryId)"
+                      :items="categoryItems"
                       size="sm"
                       :aria-label="`${skill.name} category`"
                       class="w-40 shrink-0"
                       @update:model-value="
-                        (category) =>
-                          (skill.category =
-                            category === NO_CATEGORY ? null : (category as SkillCategory))
+                        (choice) => (skill.categoryId = fromCategoryChoice(choice))
                       "
                     />
                     <!-- Dragging is awkward on touch and unusable by keyboard, so the order has buttons too. -->

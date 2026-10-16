@@ -52,13 +52,14 @@ describe('preferred locations', () => {
 describe('IT and English toggles', () => {
   const itClause = 'jobRole: {category: {name: {eq: "IT"}}}'
 
-  it('counts IT roles and English postings under the active preset', () => {
+  it('counts IT roles and the English postings under the active preset', () => {
     const text = print(buildListingsQuery('toAnalyze', emptyFacets(), 'due').document)
     expect(text).toMatch(
       /it: listings\([^)]*analyzedAt: \{eq: null\}[^)]*category: \{name: \{eq: "IT"\}/
     )
+    expect(text).toMatch(/englishPosting: listings\([^)]*postingLanguage: \{eq: ENGLISH\}/)
     expect(text).toMatch(
-      /english: listings\([^)]*languages: \{none: \{language: \{eq: NORWEGIAN\}, isRequired: \{eq: true\}\}\}/
+      /englishMentioned: listings\([^)]*languages: \{some: \{language: \{eq: ENGLISH\}\}\}/
     )
     expect(text.match(/category:/g)).toHaveLength(1)
   })

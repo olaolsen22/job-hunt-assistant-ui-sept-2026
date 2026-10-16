@@ -51,7 +51,8 @@ const SUGGEST = graphql(`
     }
   }
 `)
-const APPLY = graphql(`
+// Also the skills page's merge and rename: one operation with the kept name.
+export const CLEAN_UP_SKILLS = graphql(`
   mutation CleanUpSkills(
     $operations: [SkillCleanupOperationInput!]!
     $translations: [SkillCleanupTranslationInput!]
@@ -202,7 +203,7 @@ export const useSkillCleanup = () => {
   const apply = async ({ operations, translations }: CleanupPlan): Promise<{ error?: string }> => {
     busy.value = true
     try {
-      const { cleanUpSkills: payload } = await gql(APPLY, { operations, translations })
+      const { cleanUpSkills: payload } = await gql(CLEAN_UP_SKILLS, { operations, translations })
       return payload.errors?.length ? { error: payload.errors[0]!.message } : {}
     } catch (e) {
       return { error: failure(ERROR_MESSAGES.generic, e) }

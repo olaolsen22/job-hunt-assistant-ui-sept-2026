@@ -11,6 +11,7 @@ const items: NavigationMenuItem[] = [
   { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/' },
   { label: 'Job listings', icon: 'i-lucide-file-text', to: '/listings' },
   { label: 'Companies', icon: 'i-lucide-building-2', to: '/companies' },
+  { label: 'Skills', icon: 'i-lucide-tags', to: '/skills' },
   { label: 'Profile', icon: 'i-lucide-user-round', to: '/profile' },
   { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' }
 ]

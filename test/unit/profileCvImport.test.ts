@@ -16,7 +16,7 @@ describe('reviewed CV selections', () => {
     const draft = createCvDraft(
       cvCandidate({
         skills: [
-          { name: 'New skill', level: null, category: 'FRAMEWORK' },
+          { name: 'New skill', level: null, categoryName: 'Frameworks' },
           { name: ' vue ', level: null },
           { name: 'Explicit', level: 5 }
         ]
@@ -29,7 +29,9 @@ describe('reviewed CV selections', () => {
     draft.skills[0]!.level = 2
     expect(reviewCvSelection(draft, cvProfile()).selection.skills![0]!.level).toBe(2)
     // The parsed category goes to the API untouched; it only fills an empty one there.
-    expect(reviewCvSelection(draft, cvProfile()).selection.skills![0]!.category).toBe('FRAMEWORK')
+    expect(reviewCvSelection(draft, cvProfile()).selection.skills![0]!.categoryName).toBe(
+      'Frameworks'
+    )
   })
 
   it('maps filtered submission rows and bullets back to their original draft positions', () => {
