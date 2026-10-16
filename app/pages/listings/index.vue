@@ -205,6 +205,21 @@ const ADD_ITEMS = [
         class="space-y-3 md:divide-y md:divide-default md:space-y-0 md:overflow-hidden md:rounded-lg md:border md:border-default"
         data-testid="listings-grid"
       >
+        <!-- Column labels only where the row is a real column layout (lg+); widths mirror Row.vue.
+             A <li> so the divider and padding match the rows exactly. -->
+        <li
+          class="hidden gap-4 px-4 py-2 text-xs font-medium text-muted uppercase lg:flex"
+          aria-hidden="true"
+        >
+          <span class="w-8 shrink-0" />
+          <span class="min-w-48 flex-1">Title</span>
+          <span class="w-40 shrink-0">Location</span>
+          <span class="w-16 shrink-0">Seniority</span>
+          <span class="w-20 shrink-0">Posted</span>
+          <span class="w-44 shrink-0">Due</span>
+          <span class="w-52 shrink-0">Status</span>
+          <span class="w-17 shrink-0" />
+        </li>
         <template v-if="firstLoad">
           <li v-for="i in pageSize" :key="i" class="p-3 md:px-4">
             <USkeleton class="h-24 w-full md:h-10" />

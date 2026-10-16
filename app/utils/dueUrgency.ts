@@ -27,6 +27,15 @@ export const URGENCY_TEXT: Record<UrgencyLevel, string> = {
   blue: 'text-blue-600/85 dark:text-blue-400/85'
 }
 
+// Badges only take theme colors, so orange and yellow share warning; the label carries the days.
+export const URGENCY_BADGE_COLOR = {
+  red: 'error',
+  orange: 'warning',
+  yellow: 'warning',
+  green: 'success',
+  blue: 'info'
+} as const satisfies Record<UrgencyLevel, string>
+
 // Short label for a list row. The server owns dueOn (DATE: the deadline, ASAP: posted + 14,
 // otherwise posted + 30), so ASAP/unstated deadlines are estimates and say so with "~".
 export const dueSummary = (listing: { deadlineType: string; dueOn: string }) => {

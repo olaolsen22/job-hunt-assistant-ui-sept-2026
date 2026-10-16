@@ -66,35 +66,39 @@ const postedLabel = computed(() =>
 </script>
 
 <template>
-  <!-- DOM order is the row order from md up; on phones `order-*` turns it into a small card led by
-       the due date. The ::after on the title link stretches it over the item, so the item stays a
-       real <a> (middle-click, new tab) while the star and ad link sit above it with z-10. -->
+  <!-- Below lg the status badges sit inline after the title text (so they follow its last
+       character when it wraps), and due + posted share the last line. Phones: a small card.
+       md to lg: two lines (star, title, actions, then meta and dates). lg+: aligned columns under
+       the header in the list page (status moves to its own column); keep the widths in sync
+       with it. Nothing is hidden at any width.
+       The ::after on the title link stretches it over the item, so the item stays a real <a>
+       (middle-click, new tab) while the star and ad link sit above it with z-10. -->
   <li
-    class="group relative flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-default p-3 hover:bg-elevated/50 md:min-h-16 md:flex-nowrap md:gap-4 md:rounded-none md:border-0 md:px-4"
+    class="group relative flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-default p-3 hover:bg-elevated/50 md:gap-x-4 md:gap-y-1 md:rounded-none md:border-0 md:px-4 lg:min-h-16 lg:flex-nowrap"
     data-testid="listing-row"
   >
     <ListingsFavoriteButton
       :id="listing.id"
       :favorited-at="listing.favoritedAt"
       size="md"
-      class="relative z-10 order-2 ml-auto md:order-1 md:ml-0"
+      class="relative z-10 order-2 md:order-1 lg:w-8 lg:shrink-0"
     />
 
-    <div class="order-3 w-full min-w-0 md:order-2 md:w-auto md:flex-1">
-      <h3 class="font-semibold text-highlighted md:line-clamp-1">
+    <div class="order-1 min-w-0 flex-1 align-middle md:order-2 md:min-w-48">
+      <h3 class="font-semibold text-highlighted lg:line-clamp-2">
         <NuxtLink
           :to="`/listings/${listing.id}`"
           class="group-hover:underline after:absolute after:inset-0"
           >{{ listing.title }}</NuxtLink
         >
-      </h3>
-      <p class="text-sm text-muted md:truncate">
-        {{ listing.company.name }} · {{ listing.jobRole.name }}
-        <!-- Location and seniority get their own columns from lg. -->
-        <span class="lg:hidden">
-          · {{ firstLocation }}<template v-if="moreLocations"> +{{ moreLocations }}</template>
-          <template v-if="seniority"> · {{ seniority }}</template>
+        <!-- lg+ shows the same badges in the Status column instead. -->
+        <span class="ml-1 inline-flex flex-wrap gap-1 align-middle lg:hidden">
+          <ListingsStatusBadge :status="listing.status" />
+          <ListingsAnalyzedBadge v-if="!listing.analyzedAt" :analyzed-at="null" />
         </span>
+      </h3>
+      <p class="text-sm text-muted lg:truncate">
+        {{ listing.company.name }} · {{ listing.jobRole.name }}
         <!-- Inline, not a badge: a third badge would wrap the status cell and break the row height. -->
         <span
           v-if="listing.company.avoidedAt"
@@ -105,37 +109,52 @@ const postedLabel = computed(() =>
       </p>
     </div>
 
-    <p
-      class="hidden w-40 shrink-0 text-sm text-muted lg:order-3 lg:block lg:truncate"
-      data-testid="listing-location"
-    >
-      {{ firstLocation }}
-      <span v-if="moreLocations" class="text-dimmed">+{{ moreLocations }}</span>
-    </p>
-    <p class="hidden w-16 shrink-0 text-sm text-muted lg:order-4 lg:block">
-      {{ seniority ?? '—' }}
-    </p>
-    <time
-      :datetime="listing.postedOn"
-      :title="`Posted ${formatDate(listing.postedOn)}`"
-      class="relative z-10 hidden w-16 shrink-0 text-sm lg:order-5 lg:block"
-      :class="URGENCY_TEXT[postedLevel(daysSincePosted)]"
-      data-testid="listing-posted"
-      >{{ postedLabel }}</time
-    >
+    <!-- Forces the md-lg second line; the title above is free to take the whole first line. -->
+    <div class="order-4 hidden basis-full md:block lg:hidden" aria-hidden="true" />
 
-    <!-- z-10 keeps the date tooltips reachable above the stretched link. Fixed widths only from lg,
-         so the title keeps room on tablets. -->
-    <div class="relative z-10 order-1 md:order-6 md:shrink-0 lg:w-44">
-      <ListingsDueChip :listing="listing" />
+    <!-- Meta wraps as one line below lg; at lg `contents` hands each field to the row as a column. -->
+    <div
+      class="order-3 flex w-full flex-wrap items-center gap-x-1.5 gap-y-1 text-sm text-muted md:order-5 md:w-auto lg:contents"
+    >
+      <p class="lg:order-3 lg:w-40 lg:shrink-0 lg:truncate" data-testid="listing-location">
+        {{ firstLocation }}
+        <span v-if="moreLocations" class="text-dimmed">+{{ moreLocations }}</span>
+      </p>
+      <span v-if="seniority" class="lg:hidden" aria-hidden="true">·</span>
+      <p :class="seniority ? '' : 'max-lg:hidden'" class="lg:order-4 lg:w-16 lg:shrink-0">
+        {{ seniority ?? '—' }}
+      </p>
     </div>
 
-    <div class="order-4 flex flex-wrap gap-1 md:order-7 md:shrink-0 md:flex-nowrap lg:w-52">
+    <!-- Due + posted: the last line below lg; `contents` hands them to the row as columns at lg. -->
+    <div class="order-4 flex items-center gap-2 md:order-6 lg:contents">
+      <!-- z-10 keeps the date tooltips reachable above the stretched link. -->
+      <div class="relative z-10 lg:order-6 lg:w-44 lg:shrink-0">
+        <ListingsDueChip :listing="listing" />
+      </div>
+      <!-- Wrapper keeps the badge from stretching in its fixed-width column. -->
+      <div class="relative z-10 lg:order-5 lg:w-20 lg:shrink-0">
+        <UBadge
+          :color="URGENCY_BADGE_COLOR[postedLevel(daysSincePosted)]"
+          variant="subtle"
+          data-testid="listing-posted"
+        >
+          <UIcon name="i-lucide-calendar-plus" class="size-4 shrink-0 lg:hidden" />
+          <time :datetime="listing.postedOn" :title="`Posted ${formatDate(listing.postedOn)}`"
+            ><span class="lg:hidden">Posted </span>{{ postedLabel }}</time
+          >
+        </UBadge>
+      </div>
+    </div>
+
+    <div class="hidden lg:order-7 lg:flex lg:w-52 lg:shrink-0 lg:gap-1">
       <ListingsStatusBadge :status="listing.status" />
       <ListingsAnalyzedBadge v-if="!listing.analyzedAt" :analyzed-at="null" />
     </div>
 
-    <div class="relative z-10 order-5 ml-auto flex gap-1 md:order-8 md:ml-0 md:shrink-0">
+    <div
+      class="relative z-10 order-5 ml-auto flex gap-1 md:order-3 md:ml-0 lg:order-8 lg:w-17 lg:shrink-0"
+    >
       <UButton
         variant="ghost"
         color="neutral"
