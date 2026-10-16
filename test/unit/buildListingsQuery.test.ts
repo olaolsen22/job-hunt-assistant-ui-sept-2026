@@ -43,8 +43,8 @@ describe('preferred locations', () => {
 
   it('narrows the list and every count when on, without repeating the clause', () => {
     const { text } = build({ preferredLocations: true })
-    // The list, its four preset counts and the three quick-toggle counts.
-    expect(text.match(/isTarget/g)).toHaveLength(8)
+    // The list, its four preset counts and the four quick-toggle counts.
+    expect(text.match(/isTarget/g)).toHaveLength(9)
     expect(text).not.toContain(`${clause}}, {${clause}`)
   })
 })
@@ -66,7 +66,7 @@ describe('IT and English toggles', () => {
 
   it('narrows the list and every count to IT roles when on', () => {
     const { text } = build({ itRoles: true })
-    expect(text.match(/category:/g)).toHaveLength(8)
+    expect(text.match(/category:/g)).toHaveLength(9)
     expect(text).not.toContain(`${itClause}}, {${itClause}`)
   })
 })
@@ -100,7 +100,7 @@ describe('date facets', () => {
   it('adds dueWithinDays to the list and the counts, narrowing closing soon', () => {
     const { text } = build({ dueWithinDays: 3 })
     expect(text).toContain('closingSoon: listings(take: 1, search: $search, dueWithinDays: 3')
-    expect(text.match(/dueWithinDays: 3/g)).toHaveLength(8)
+    expect(text.match(/dueWithinDays: 3/g)).toHaveLength(9)
     expect(build({ dueWithinDays: 14 }).text).toContain(
       'closingSoon: listings(take: 1, search: $search, dueWithinDays: 7'
     )
