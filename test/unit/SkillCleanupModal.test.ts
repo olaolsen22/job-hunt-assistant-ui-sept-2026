@@ -9,6 +9,7 @@ let applyError = ''
 let skillsError = ''
 let suggested: { skillIds: number[]; names: string[] }[] = []
 let suggestedTranslations: { skillName: string; language: string; name: string }[] = []
+let suggestedCategories: { skillName: string; categoryName: string }[] = []
 const requests: { query: string; variables?: Record<string, unknown> }[] = []
 registerEndpoint('/graphql', {
   method: 'POST',
@@ -40,7 +41,8 @@ registerEndpoint('/graphql', {
               status: 'SUCCEEDED',
               error: null,
               operations: suggested,
-              translations: suggestedTranslations
+              translations: suggestedTranslations,
+              categories: suggestedCategories
             },
             errors: null
           }
@@ -103,6 +105,7 @@ beforeEach(() => {
   skillsError = ''
   suggested = [{ skillIds: [1, 2], names: ['JavaScript'] }]
   suggestedTranslations = []
+  suggestedCategories = []
   requests.length = 0
 })
 afterEach(() => mounted.splice(0).forEach((w) => w.unmount()))
@@ -121,7 +124,8 @@ describe('SkillCleanupModal', () => {
     await vi.waitFor(() => expect(wrapper.emitted('changed')).toHaveLength(1))
     expect(applyRequests()[0]!.variables).toEqual({
       operations: [{ skillIds: [1, 2], names: ['JavaScript'] }],
-      translations: []
+      translations: [],
+      categories: []
     })
     expect(wrapper.emitted('update:open')?.at(-1)).toEqual([false])
   })
@@ -147,7 +151,31 @@ describe('SkillCleanupModal', () => {
     await vi.waitFor(() => expect(applyRequests()).toHaveLength(1))
     expect(applyRequests()[0]!.variables).toEqual({
       operations: [],
-      translations: [{ skillName: 'Testing', language: 'NORWEGIAN', name: 'Testing og QA' }]
+      translations: [{ skillName: 'Testing', language: 'NORWEGIAN', name: 'Testing og QA' }],
+      categories: []
+    })
+  })
+
+  it('sends only the category suggestions that stay ticked', async () => {
+    suggested = []
+    suggestedTranslations = []
+    suggestedCategories = [
+      { skillName: 'Vue', categoryName: 'Frameworks' },
+      { skillName: 'Docker', categoryName: 'Tools' }
+    ]
+    await suggest()
+    expect(queryAll('cleanup-category')[0]!.textContent).toContain('Vue → Frameworks')
+
+    const second = queryAll('cleanup-category-accept')[1] as HTMLElement
+    second.click()
+    await flushPromises()
+    await click('cleanup-apply')
+
+    await vi.waitFor(() => expect(applyRequests()).toHaveLength(1))
+    expect(applyRequests()[0]!.variables).toEqual({
+      operations: [],
+      translations: [],
+      categories: [{ skillName: 'Vue', categoryName: 'Frameworks' }]
     })
   })
 

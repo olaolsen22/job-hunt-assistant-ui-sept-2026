@@ -2,7 +2,11 @@
 import { PHONE_FULLSCREEN_MODAL } from '~/constants/ui'
 import { INVALID_DRAFT_JSON } from '~/utils/parseDraft'
 import { LANGUAGE_OPTIONS } from '~/constants/listing'
-import type { CleanupPlan, CleanupTranslation } from '~/composables/useSkillCleanup'
+import type {
+  CleanupCategory,
+  CleanupPlan,
+  CleanupTranslation
+} from '~/composables/useSkillCleanup'
 
 // Two ways to get a plan (built-in AI, or your own AI via copy/paste), then a review where each
 // operation can be edited or removed. Nothing changes until Apply, which is all-or-nothing.
@@ -27,6 +31,9 @@ const applyError = ref('')
 const skillNames = ref(new Map<number, string>())
 const rows = ref<Row[]>()
 const translationRows = ref<TranslationRow[]>([])
+// Unticked suggestions are left out when applying.
+type CategoryRow = CleanupCategory & { key: number; accepted: boolean }
+const categoryRows = ref<CategoryRow[]>([])
 let nextKey = 0
 
 const unknownIds = (row: Row) => row.skillIds.filter((id) => !skillNames.value.has(id))
@@ -47,8 +54,11 @@ const problems = computed(
     translationRows.value.filter((t) => !t.name.trim()).length
 )
 // Zero outside the review, so translations left from a previous plan don't count.
+const acceptedCategories = computed(() => categoryRows.value.filter((c) => c.accepted))
 const changeCount = computed(() =>
-  rows.value ? rows.value.length + translationRows.value.length : 0
+  rows.value
+    ? rows.value.length + translationRows.value.length + acceptedCategories.value.length
+    : 0
 )
 const canApply = computed(() => !!changeCount.value && !problems.value)
 
@@ -68,7 +78,7 @@ watch(error, (value) => {
   if (!value) errorCode.value = undefined
 })
 
-const startReview = async ({ operations, translations }: CleanupPlan) => {
+const startReview = async ({ operations, translations, categories }: CleanupPlan) => {
   // Names are only needed to label the plan, so a plan that can't be shown isn't opened.
   const names = await api.loadSkillNames()
   if (names.error !== undefined) {
@@ -78,6 +88,7 @@ const startReview = async ({ operations, translations }: CleanupPlan) => {
   skillNames.value = names.value
   rows.value = operations.map((op) => ({ key: nextKey++, ...op }))
   translationRows.value = translations.map((t) => ({ key: nextKey++, ...t }))
+  categoryRows.value = categories.map((c) => ({ key: nextKey++, accepted: true, ...c }))
   applyError.value = ''
 }
 const suggest = async () => {
@@ -123,6 +134,10 @@ const apply = async () => {
       skillName,
       language,
       name: name.trim()
+    })),
+    categories: acceptedCategories.value.map(({ skillName, categoryName }) => ({
+      skillName,
+      categoryName
     }))
   })
   if (result.error !== undefined) {
@@ -285,6 +300,23 @@ const modalOpen = computed({
                 </li>
               </ul>
             </section>
+            <section v-if="categoryRows.length" class="space-y-2">
+              <h3 class="text-sm font-medium">Categories</h3>
+              <ul class="space-y-2">
+                <li
+                  v-for="c in categoryRows"
+                  :key="c.key"
+                  class="rounded-md border border-default p-3"
+                  data-testid="cleanup-category"
+                >
+                  <UCheckbox
+                    v-model="c.accepted"
+                    :label="`${c.skillName} → ${c.categoryName}`"
+                    data-testid="cleanup-category-accept"
+                  />
+                </li>
+              </ul>
+            </section>
           </template>
 
           <template v-else>
@@ -300,8 +332,8 @@ const modalOpen = computed({
             <template v-if="tab === 'builtin'">
               <AppAiCostNotice :usage="usage" data-testid="cleanup-cost-notice" />
               <p class="text-sm text-muted">
-                The AI reads your skill names and proposes merges, renames and splits. You review
-                them before anything changes.
+                The AI reads your skill names and proposes merges, renames, splits and categories
+                for uncategorized skills. You review them before anything changes.
               </p>
             </template>
             <template v-else>

@@ -38,6 +38,10 @@ const SUGGEST = graphql(`
           language
           name
         }
+        categories {
+          skillName
+          categoryName
+        }
       }
       errors {
         __typename
@@ -56,8 +60,11 @@ export const CLEAN_UP_SKILLS = graphql(`
   mutation CleanUpSkills(
     $operations: [SkillCleanupOperationInput!]!
     $translations: [SkillCleanupTranslationInput!]
+    $categories: [SkillCleanupCategoryInput!]
   ) {
-    cleanUpSkills(input: { operations: $operations, translations: $translations }) {
+    cleanUpSkills(
+      input: { operations: $operations, translations: $translations, categories: $categories }
+    ) {
       skills {
         id
       }
@@ -80,7 +87,12 @@ const failure = (message: string, e: unknown) => {
 
 export type CleanupOperation = { skillIds: number[]; names: string[] }
 export type CleanupTranslation = { skillName: string; language: Language; name: string }
-export type CleanupPlan = { operations: CleanupOperation[]; translations: CleanupTranslation[] }
+export type CleanupCategory = { skillName: string; categoryName: string }
+export type CleanupPlan = {
+  operations: CleanupOperation[]
+  translations: CleanupTranslation[]
+  categories: CleanupCategory[]
+}
 type Outcome<T> = { value: T; error?: never; code?: never } | { error: string; code?: string }
 
 const isOperation = (value: unknown): value is CleanupOperation => {
@@ -93,6 +105,11 @@ const isOperation = (value: unknown): value is CleanupOperation => {
   )
 }
 
+const isCategory = (value: unknown): value is CleanupCategory => {
+  const c = value as CleanupCategory | null
+  return typeof c?.skillName === 'string' && typeof c.categoryName === 'string'
+}
+
 const isTranslation = (value: unknown): value is CleanupTranslation => {
   const t = value as CleanupTranslation | null
   return (
@@ -103,22 +120,26 @@ const isTranslation = (value: unknown): value is CleanupTranslation => {
 }
 
 // Pasted replies are not pre-filtered: the server validates the plan when it is applied.
-// Translations are optional in a reply.
+// Translations and categories are optional in a reply.
 export const parseCleanupReply = (reply: string): CleanupPlan | null => {
   const draft = parseDraft(reply)
   const operations = draft?.operations
   const translations = draft?.translations ?? []
+  const categories = draft?.categories ?? []
   return Array.isArray(operations) &&
     operations.every(isOperation) &&
     Array.isArray(translations) &&
-    translations.every(isTranslation)
+    translations.every(isTranslation) &&
+    Array.isArray(categories) &&
+    categories.every(isCategory)
     ? {
         operations: operations.map(({ skillIds, names }) => ({ skillIds, names })),
         translations: translations.map(({ skillName, language, name }) => ({
           skillName,
           language,
           name
-        }))
+        })),
+        categories: categories.map(({ skillName, categoryName }) => ({ skillName, categoryName }))
       }
     : null
 }
@@ -188,7 +209,8 @@ export const useSkillCleanup = () => {
               skillIds: [...skillIds],
               names: [...names]
             })),
-            translations: (payload.result.translations ?? []).map((t) => ({ ...t }))
+            translations: (payload.result.translations ?? []).map((t) => ({ ...t })),
+            categories: (payload.result.categories ?? []).map((c) => ({ ...c }))
           }
         }
       return { error: payload.result?.error ?? ERROR_MESSAGES.generic }
@@ -200,10 +222,10 @@ export const useSkillCleanup = () => {
   }
 
   // All-or-nothing on the server: any error means nothing changed.
-  const apply = async ({ operations, translations }: CleanupPlan): Promise<{ error?: string }> => {
+  const apply = async (plan: CleanupPlan): Promise<{ error?: string }> => {
     busy.value = true
     try {
-      const { cleanUpSkills: payload } = await gql(CLEAN_UP_SKILLS, { operations, translations })
+      const { cleanUpSkills: payload } = await gql(CLEAN_UP_SKILLS, plan)
       return payload.errors?.length ? { error: payload.errors[0]!.message } : {}
     } catch (e) {
       return { error: failure(ERROR_MESSAGES.generic, e) }
