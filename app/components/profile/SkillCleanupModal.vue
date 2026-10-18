@@ -30,7 +30,12 @@ const translationRows = ref<TranslationRow[]>([])
 // Unticked suggestions are left out when applying.
 type CategoryRow = CleanupCategory & { key: number; accepted: boolean }
 const categoryRows = ref<CategoryRow[]>([])
-const confirmOpen = ref(false)
+// Permanent, so every removal starts unticked and only ticked ones are sent.
+type RemovalRow = { key: number; skillId: number; reason: string; accepted: boolean }
+const removalRows = ref<RemovalRow[]>([])
+const skippedRemovals = ref(0)
+const discardOpen = ref(false)
+const removeConfirmOpen = ref(false)
 let nextKey = 0
 
 const unknownIds = (row: Row) => row.skillIds.filter((id) => !skillNames.value.has(id))
@@ -54,9 +59,23 @@ const problems = computed(
 const acceptedCategories = computed(() => categoryRows.value.filter((c) => c.accepted))
 const changeCount = computed(() =>
   rows.value
-    ? rows.value.length + translationRows.value.length + acceptedCategories.value.length
+    ? rows.value.length +
+      translationRows.value.length +
+      acceptedCategories.value.length +
+      acceptedRemovals.value.length
     : 0
 )
+const hasSuggestions = computed(
+  () =>
+    !!rows.value?.length ||
+    !!translationRows.value.length ||
+    !!categoryRows.value.length ||
+    !!removalRows.value.length
+)
+// The API rejects a removal that is also part of an operation.
+const operationIds = computed(() => new Set(rows.value?.flatMap((r) => r.skillIds)))
+const removalName = (row: RemovalRow) => skillNames.value.get(row.skillId)!
+const acceptedRemovals = computed(() => removalRows.value.filter((x) => x.accepted))
 const canApply = computed(() => !!changeCount.value && !problems.value)
 
 const { method, tab, error, errorCode } = useAiModalState(open, {
@@ -70,10 +89,11 @@ watch([reply, tab], () => (error.value = ''))
 const { dirty, mark, clear } = useReviewDirty(() => [
   rows.value?.map((r) => [r.skillIds, r.names]),
   translationRows.value.map((t) => t.name),
-  categoryRows.value.map((c) => c.accepted)
+  categoryRows.value.map((c) => c.accepted),
+  removalRows.value.map((x) => x.accepted)
 ])
 
-const startReview = async ({ operations, translations, categories }: CleanupPlan) => {
+const startReview = async ({ operations, translations, categories, removals }: CleanupPlan) => {
   // Names are only needed to label the plan, so a plan that can't be shown isn't opened.
   const names = await api.loadSkillNames()
   if (names.error !== undefined) {
@@ -84,6 +104,10 @@ const startReview = async ({ operations, translations, categories }: CleanupPlan
   rows.value = operations.map((op) => ({ key: nextKey++, ...op }))
   translationRows.value = translations.map((t) => ({ key: nextKey++, ...t }))
   categoryRows.value = categories.map((c) => ({ key: nextKey++, accepted: true, ...c }))
+  // A removal of a skill we can't find can't be shown or applied.
+  const known = removals.filter((x) => names.value.has(x.skillId))
+  skippedRemovals.value = removals.length - known.length
+  removalRows.value = known.map((x) => ({ key: nextKey++, accepted: false, ...x }))
   applyError.value = ''
   mark()
 }
@@ -120,8 +144,13 @@ const removeTranslation = (row: TranslationRow) =>
 const addName = (row: Row) => row.names.push('')
 const removeName = (row: Row, i: number) => row.names.splice(i, 1)
 
-const apply = async () => {
+const apply = () => {
   if (!canApply.value || busy.value) return
+  if (acceptedRemovals.value.length) removeConfirmOpen.value = true
+  else applyPlan()
+}
+const applyPlan = async () => {
+  removeConfirmOpen.value = false
   applyError.value = ''
   const result = await api.apply({
     operations: rows.value!.map((r) => ({
@@ -136,7 +165,8 @@ const apply = async () => {
     categories: acceptedCategories.value.map(({ skillName, categoryName }) => ({
       skillName,
       categoryName
-    }))
+    })),
+    removals: acceptedRemovals.value.map(({ skillId, reason }) => ({ skillId, reason }))
   })
   if (result.error !== undefined) {
     applyError.value = result.error
@@ -151,7 +181,7 @@ const apply = async () => {
 
 // Closing a review that was edited asks first; an untouched one just goes.
 const discard = () => {
-  confirmOpen.value = false
+  discardOpen.value = false
   rows.value = undefined
   reply.value = ''
   clear()
@@ -161,7 +191,7 @@ const back = () => {
   rows.value = undefined
   clear()
 }
-const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard())
+const requestClose = () => (dirty.value ? (discardOpen.value = true) : discard())
 </script>
 
 <template>
@@ -181,7 +211,7 @@ const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard()
     <fieldset :disabled="busy" class="min-w-0 space-y-4">
       <template v-if="rows">
         <AppAiReviewEmpty
-          v-if="!changeCount"
+          v-if="!hasSuggestions"
           icon="i-lucide-sparkles"
           text="Nothing to clean up"
           data-testid="cleanup-empty"
@@ -288,6 +318,42 @@ const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard()
             </li>
           </ul>
         </section>
+        <section v-if="removalRows.length || skippedRemovals" class="space-y-2">
+          <h3 class="flex items-center gap-1.5 text-sm font-medium text-error">
+            <UIcon name="i-lucide-trash-2" aria-hidden="true" />Skills to remove
+          </h3>
+          <p v-if="removalRows.length" class="text-sm text-muted">
+            Permanent. A removed skill also disappears from your profile, listings, and
+            experience/project tags.
+          </p>
+          <ul class="space-y-2">
+            <li
+              v-for="x in removalRows"
+              :key="x.key"
+              class="rounded-md border border-default p-3"
+              data-testid="cleanup-removal"
+            >
+              <UCheckbox
+                v-model="x.accepted"
+                color="error"
+                :label="removalName(x)"
+                :description="
+                  operationIds.has(x.skillId) ? `Part of a change above. ${x.reason}` : x.reason
+                "
+                :disabled="operationIds.has(x.skillId)"
+                data-testid="cleanup-removal-accept"
+              />
+            </li>
+          </ul>
+          <p
+            v-if="skippedRemovals"
+            class="text-sm text-muted"
+            data-testid="cleanup-removal-skipped"
+          >
+            {{ skippedRemovals }} {{ skippedRemovals === 1 ? 'suggestion' : 'suggestions' }} skipped
+            (skill not found).
+          </p>
+        </section>
       </template>
 
       <template v-else>
@@ -341,7 +407,10 @@ const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard()
         >Back</UButton
       >
     </template>
-    <template v-if="changeCount && problems" #footer-info>
+    <template v-if="rows && hasSuggestions && !changeCount" #footer-info>
+      <p class="text-sm text-muted" data-testid="cleanup-nothing-selected">Nothing selected.</p>
+    </template>
+    <template v-else-if="changeCount && problems" #footer-info>
       <p class="text-sm text-error" data-testid="cleanup-problems">
         {{ problems }} {{ problems === 1 ? 'change needs' : 'changes need' }} fixing or removing
         before you can apply.
@@ -351,12 +420,16 @@ const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard()
     <template #actions>
       <template v-if="rows">
         <UButton
-          v-if="changeCount"
+          v-if="hasSuggestions"
           :loading="busy"
           :disabled="!canApply"
           data-testid="cleanup-apply"
           @click="apply"
-          >{{ `Apply ${changeCount} ${changeCount === 1 ? 'change' : 'changes'}` }}</UButton
+          >{{
+            changeCount
+              ? `Apply ${changeCount} ${changeCount === 1 ? 'change' : 'changes'}`
+              : 'Apply'
+          }}</UButton
         >
         <UButton v-else data-testid="cleanup-close" @click="discard">Close</UButton>
       </template>
@@ -380,7 +453,22 @@ const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard()
     </template>
   </AppAiModal>
   <AppConfirmModal
-    v-model:open="confirmOpen"
+    v-model:open="removeConfirmOpen"
+    :title="`Remove ${acceptedRemovals.length} ${acceptedRemovals.length === 1 ? 'skill' : 'skills'} permanently?`"
+    description="They are also removed from your profile, listings, and experience/project tags. This can't be undone."
+    confirm-label="Remove and apply"
+    color="error"
+    @confirm="applyPlan"
+  >
+    <ul
+      class="max-h-48 list-inside list-disc overflow-y-auto text-sm"
+      data-testid="cleanup-remove-list"
+    >
+      <li v-for="x in acceptedRemovals" :key="x.key">{{ removalName(x) }}</li>
+    </ul>
+  </AppConfirmModal>
+  <AppConfirmModal
+    v-model:open="discardOpen"
     title="Discard these suggestions?"
     description="Your edits to the AI’s result will be lost."
     confirm-label="Discard"

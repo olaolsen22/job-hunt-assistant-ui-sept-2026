@@ -42,6 +42,10 @@ const SUGGEST = graphql(`
           skillName
           categoryName
         }
+        removals {
+          skillId
+          reason
+        }
       }
       errors {
         __typename
@@ -61,9 +65,15 @@ export const CLEAN_UP_SKILLS = graphql(`
     $operations: [SkillCleanupOperationInput!]!
     $translations: [SkillCleanupTranslationInput!]
     $categories: [SkillCleanupCategoryInput!]
+    $removeSkillIds: [Int!]
   ) {
     cleanUpSkills(
-      input: { operations: $operations, translations: $translations, categories: $categories }
+      input: {
+        operations: $operations
+        translations: $translations
+        categories: $categories
+        removeSkillIds: $removeSkillIds
+      }
     ) {
       skills {
         id
@@ -88,10 +98,12 @@ const failure = (message: string, e: unknown) => {
 export type CleanupOperation = { skillIds: number[]; names: string[] }
 export type CleanupTranslation = { skillName: string; language: Language; name: string }
 export type CleanupCategory = { skillName: string; categoryName: string }
+export type CleanupRemoval = { skillId: number; reason: string }
 export type CleanupPlan = {
   operations: CleanupOperation[]
   translations: CleanupTranslation[]
   categories: CleanupCategory[]
+  removals: CleanupRemoval[]
 }
 type Outcome<T> = { value: T; error?: never; code?: never } | { error: string; code?: string }
 
@@ -110,6 +122,11 @@ const isCategory = (value: unknown): value is CleanupCategory => {
   return typeof c?.skillName === 'string' && typeof c.categoryName === 'string'
 }
 
+const isRemoval = (value: unknown): value is CleanupRemoval => {
+  const r = value as CleanupRemoval | null
+  return typeof r?.skillId === 'number' && typeof r.reason === 'string'
+}
+
 const isTranslation = (value: unknown): value is CleanupTranslation => {
   const t = value as CleanupTranslation | null
   return (
@@ -120,18 +137,21 @@ const isTranslation = (value: unknown): value is CleanupTranslation => {
 }
 
 // Pasted replies are not pre-filtered: the server validates the plan when it is applied.
-// Translations and categories are optional in a reply.
+// Translations, categories and removals are optional in a reply.
 export const parseCleanupReply = (reply: string): CleanupPlan | null => {
   const draft = parseDraft(reply)
   const operations = draft?.operations
   const translations = draft?.translations ?? []
   const categories = draft?.categories ?? []
+  const removals = draft?.removals ?? []
   return Array.isArray(operations) &&
     operations.every(isOperation) &&
     Array.isArray(translations) &&
     translations.every(isTranslation) &&
     Array.isArray(categories) &&
-    categories.every(isCategory)
+    categories.every(isCategory) &&
+    Array.isArray(removals) &&
+    removals.every(isRemoval)
     ? {
         operations: operations.map(({ skillIds, names }) => ({ skillIds, names })),
         translations: translations.map(({ skillName, language, name }) => ({
@@ -139,7 +159,8 @@ export const parseCleanupReply = (reply: string): CleanupPlan | null => {
           language,
           name
         })),
-        categories: categories.map(({ skillName, categoryName }) => ({ skillName, categoryName }))
+        categories: categories.map(({ skillName, categoryName }) => ({ skillName, categoryName })),
+        removals: removals.map(({ skillId, reason }) => ({ skillId, reason }))
       }
     : null
 }
@@ -187,7 +208,8 @@ export const useSkillCleanup = () => {
               names: [...names]
             })),
             translations: (payload.result.translations ?? []).map((t) => ({ ...t })),
-            categories: (payload.result.categories ?? []).map((c) => ({ ...c }))
+            categories: (payload.result.categories ?? []).map((c) => ({ ...c })),
+            removals: (payload.result.removals ?? []).map((x) => ({ ...x }))
           }
         }
       return { error: payload.result?.error ?? ERROR_MESSAGES.generic }
@@ -198,11 +220,14 @@ export const useSkillCleanup = () => {
     }
   }
 
-  // All-or-nothing on the server: any error means nothing changed.
-  const apply = async (plan: CleanupPlan): Promise<{ error?: string }> => {
+  // All-or-nothing on the server: any error means nothing changed. `removals` are the ticked ones.
+  const apply = async ({ removals, ...plan }: CleanupPlan): Promise<{ error?: string }> => {
     busy.value = true
     try {
-      const { cleanUpSkills: payload } = await gql(CLEAN_UP_SKILLS, plan)
+      const { cleanUpSkills: payload } = await gql(CLEAN_UP_SKILLS, {
+        ...plan,
+        removeSkillIds: removals.length ? removals.map((x) => x.skillId) : undefined
+      })
       return payload.errors?.length ? { error: payload.errors[0]!.message } : {}
     } catch (e) {
       return { error: failure(ERROR_MESSAGES.generic, e) }

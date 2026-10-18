@@ -3,6 +3,7 @@ import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import SkillCleanupModal from '~/components/profile/SkillCleanupModal.vue'
+import { parseCleanupReply } from '~/composables/useSkillCleanup'
 import { llmModels } from '../fixtures/llmModels'
 
 let applyError = ''
@@ -10,6 +11,7 @@ let skillsError = ''
 let suggested: { skillIds: number[]; names: string[] }[] = []
 let suggestedTranslations: { skillName: string; language: string; name: string }[] = []
 let suggestedCategories: { skillName: string; categoryName: string }[] = []
+let suggestedRemovals: { skillId: number; reason: string }[] = []
 const requests: { query: string; variables?: Record<string, unknown> }[] = []
 registerEndpoint('/graphql', {
   method: 'POST',
@@ -42,7 +44,8 @@ registerEndpoint('/graphql', {
               error: null,
               operations: suggested,
               translations: suggestedTranslations,
-              categories: suggestedCategories
+              categories: suggestedCategories,
+              removals: suggestedRemovals
             },
             errors: null
           }
@@ -108,6 +111,7 @@ beforeEach(() => {
   suggested = [{ skillIds: [1, 2], names: ['JavaScript'] }]
   suggestedTranslations = []
   suggestedCategories = []
+  suggestedRemovals = []
   requests.length = 0
 })
 afterEach(() => mounted.splice(0).forEach((w) => w.unmount()))
@@ -178,6 +182,59 @@ describe('SkillCleanupModal', () => {
       operations: [],
       translations: [],
       categories: [{ skillName: 'Vue', categoryName: 'Frameworks' }]
+    })
+  })
+
+  describe('removals', () => {
+    it('start unticked, are confirmed as permanent, and send only the ticked ids', async () => {
+      suggested = []
+      suggestedRemovals = [
+        { skillId: 1, reason: 'A role area, not a skill' },
+        { skillId: 3, reason: 'A trait' }
+      ]
+      const wrapper = await suggest()
+      const boxes = queryAll('cleanup-removal-accept') as HTMLElement[]
+      expect(queryAll('cleanup-removal')[0]!.textContent).toContain('JS')
+      expect(queryAll('cleanup-removal')[0]!.textContent).toContain('A role area, not a skill')
+      expect(
+        boxes.map((b) => b.getAttribute('aria-checked') ?? b.getAttribute('data-state'))
+      ).not.toContain('checked')
+      expect((query('cleanup-apply') as HTMLButtonElement).disabled).toBe(true)
+      expect(query('cleanup-nothing-selected')).not.toBeNull()
+
+      boxes[1]!.click()
+      await flushPromises()
+      await click('cleanup-apply')
+      expect(applyRequests()).toHaveLength(0)
+      expect(query('cleanup-remove-list')!.textContent).toContain('Vue')
+      expect(document.body.textContent).toContain('permanently')
+
+      await click('confirm-modal-confirm')
+      await vi.waitFor(() => expect(wrapper.emitted('changed')).toHaveLength(1))
+      expect(applyRequests()[0]!.variables).toEqual({
+        operations: [],
+        translations: [],
+        categories: [],
+        removeSkillIds: [3]
+      })
+    })
+
+    it('disables a removal that is part of an operation and skips unknown skills', async () => {
+      suggestedRemovals = [
+        { skillId: 1, reason: 'Duplicate' },
+        { skillId: 99, reason: 'Gone' }
+      ]
+      await suggest()
+      expect(queryAll('cleanup-removal')).toHaveLength(1)
+      expect((query('cleanup-removal-accept') as HTMLButtonElement).disabled).toBe(true)
+      expect(query('cleanup-removal-skipped')!.textContent).toContain('1 suggestion skipped')
+    })
+
+    it('are read from a pasted reply', () => {
+      expect(
+        parseCleanupReply('{"operations":[],"removals":[{"skillId":2,"reason":"Trait"}]}')?.removals
+      ).toEqual([{ skillId: 2, reason: 'Trait' }])
+      expect(parseCleanupReply('{"operations":[],"removals":[{"skillId":"2"}]}')).toBeNull()
     })
   })
 
