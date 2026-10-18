@@ -497,31 +497,9 @@ export const useTailoredCvDraft = (
     }
   }
 
-  // Loaded before the copy button is usable: browsers can refuse a clipboard write after an await.
-  const instructions = ref('')
-  const promptError = ref('')
-  const promptLoading = ref(false)
-  const copied = ref(false)
-  const loadPrompt = async () => {
-    promptLoading.value = true
-    promptError.value = ''
-    try {
-      instructions.value = (await gql(PROMPT, { listingId })).tailoredCvExternalPrompt.instructions
-    } catch {
-      promptError.value = 'Could not load the prompt.'
-    } finally {
-      promptLoading.value = false
-    }
-  }
-  const copyPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(instructions.value)
-      copied.value = true
-      setTimeout(() => (copied.value = false), 1500)
-    } catch {
-      promptError.value = 'Could not copy the prompt. Copy it from the text below.'
-    }
-  }
+  const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
+    async () => (await gql(PROMPT, { listingId })).tailoredCvExternalPrompt.instructions
+  )
 
   // Returns the API's error to show next to the pasted JSON, or null when the reply was taken in.
   const previewing = ref(false)

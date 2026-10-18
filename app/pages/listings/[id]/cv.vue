@@ -73,7 +73,7 @@ watch(
   },
   { immediate: true }
 )
-// Loaded up front, so "Copy prompt to clipboard" is a direct write (browsers can refuse one after an await).
+// Loaded up front, so "Copy prompt" is a direct write (browsers can refuse one after an await).
 onMounted(() => state.loadPrompt())
 
 // A failed refresh after generating keeps the listing it already has, so it isn't a load error.

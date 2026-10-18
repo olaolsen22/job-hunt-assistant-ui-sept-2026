@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { ProfileData } from '~/composables/useProfile'
-import { PHONE_FULLSCREEN_MODAL } from '~/constants/ui'
 import {
   createCvDraft,
   reviewCvSelection,
@@ -19,11 +18,12 @@ const props = defineProps<{ profile: ProfileData; refreshProfile: () => Promise<
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ saved: [profile: ProfileData] }>()
 const api = useProfileCvImport()
-const { busy, instructions, promptLoading, promptError, copied, needsConfirm, safetyMessage } = api
+const { busy, needsConfirm, safetyMessage } = api
+const method = useAiMethod()
 const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
 const usage = computed(() => usageData.value?.llmUsageToday)
 const toast = useToast()
-const tab = ref('paste')
+const tab = ref<'paste' | 'own'>('paste')
 const cv = ref('')
 const json = ref('')
 const error = ref('')
@@ -94,16 +94,12 @@ const requestClose = () => {
     confirmOpen.value = true
   } else open.value = false
 }
-const modalOpen = computed({
-  get: () => open.value,
-  set: (value: boolean) => {
-    if (!value) requestClose()
-  }
-})
 watch(
   open,
   (isOpen) => {
     if (!isOpen) return
+    // Not mid-review: Back from the review returns to the tab that produced it.
+    if (!draft.value) tab.value = method.value === 'own' ? 'own' : 'paste'
     api.loadPrompt()
     refreshUsage()
     error.value = ''
@@ -126,6 +122,7 @@ const runParse = async () => {
     errorCode.value = result.code
     return
   }
+  method.value = tab.value === 'paste' ? 'builtin' : 'own'
   refreshing.value = true
   try {
     await props.refreshProfile()
@@ -220,215 +217,157 @@ const save = async () => {
 </script>
 
 <template>
-  <!-- Complete history forms need more width than a simple prompt modal, and the full screen on phones. -->
-  <UModal
-    v-model:open="modalOpen"
+  <!-- Complete history forms need more width than a simple prompt modal. -->
+  <AppAiModal
+    v-model:open="open"
     title="Import English CV"
     :description="
       reviewing ? 'Review and select what to save.' : 'Parse your CV, then review it before saving.'
     "
-    :dismissible="!locked"
-    :ui="{ content: `max-w-4xl ${PHONE_FULLSCREEN_MODAL}` }"
+    :busy="locked"
+    wide
+    :close="requestClose"
   >
-    <template #body>
-      <div class="space-y-4">
-        <AppAiRetryConfirm
-          v-if="needsConfirm && tab === 'paste' && !reviewing"
-          :message="safetyMessage"
-          :loading="busy"
-          @retry="retryConfirmed"
+    <AppAiErrorAlert v-if="error && reviewing" :title="error" data-testid="cv-error" />
+    <fieldset :disabled="locked" class="min-w-0 space-y-4">
+      <ProfileCvReview
+        v-if="reviewing && draft"
+        ref="reviewComponent"
+        v-model="draft"
+        :profile="profile"
+        :issues="issues"
+        :notes="feedback?.notes ?? []"
+      />
+      <template v-else>
+        <AppAiMethodTabs
+          v-model="tab"
+          :builtin="[{ label: 'Paste CV', value: 'paste', icon: 'i-lucide-clipboard-paste' }]"
+          :disabled="locked"
         />
-        <UAlert
-          v-else-if="error"
-          color="error"
-          variant="subtle"
-          :title="error"
-          data-testid="cv-error"
-        >
-          <template v-if="errorCode === 'daily-limit-reached'" #actions>
-            <AppAiLimitLink />
-          </template>
-        </UAlert>
-        <fieldset :disabled="locked" class="min-w-0 space-y-4">
-          <ProfileCvReview
-            v-if="reviewing && draft"
-            ref="reviewComponent"
-            v-model="draft"
-            :profile="profile"
-            :issues="issues"
-            :notes="feedback?.notes ?? []"
-          />
-          <template v-else>
-            <UTabs
-              v-model="tab"
-              :items="[
-                {
-                  label: 'Paste CV',
-                  value: 'paste',
-                  icon: 'i-lucide-clipboard-paste',
-                  disabled: locked
-                },
-                { label: 'Use your own AI', value: 'ai', icon: 'i-lucide-bot', disabled: locked }
-              ]"
-              :content="false"
+        <template v-if="tab === 'paste'">
+          <UFormField
+            label="Paste your English CV"
+            help="Plain text or Markdown, up to 100,000 characters. Nothing saves during parsing."
+            :error="inputError || undefined"
+          >
+            <UTextarea
+              v-model="cv"
+              :rows="8"
+              autoresize
+              :maxrows="16"
               class="w-full"
+              data-testid="cv-text"
             />
-            <template v-if="tab === 'paste'">
-              <AppAiCostNotice :usage="usage" data-testid="cv-cost-notice" />
-              <UFormField
-                label="Paste your English CV"
-                help="Plain text or Markdown, up to 100,000 characters. Nothing saves during parsing."
-                :error="inputError || undefined"
-              >
-                <UTextarea
-                  v-model="cv"
-                  :rows="8"
-                  autoresize
-                  :maxrows="16"
-                  class="w-full"
-                  data-testid="cv-text"
-                />
-              </UFormField>
-            </template>
-            <template v-else>
-              <p class="text-sm text-muted">
-                1. Copy the prompt and use it with your English CV in your chosen AI. Supply the CV
-                directly to that service in any format it accepts.
-              </p>
-              <UButton
-                :loading="promptLoading"
-                :disabled="!instructions"
-                :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-                :color="copied ? 'success' : 'primary'"
-                variant="subtle"
-                data-testid="cv-copy-prompt"
-                @click="api.copyPrompt()"
-                >{{ copied ? 'Copied' : 'Copy prompt' }}</UButton
-              >
-              <UAlert
-                v-if="promptError"
-                color="error"
-                variant="subtle"
-                :title="promptError"
-                data-testid="cv-prompt-error"
-              >
-                <template #actions
-                  ><UButton color="neutral" variant="soft" @click="api.loadPrompt()"
-                    >Retry loading prompt</UButton
-                  ></template
-                >
-              </UAlert>
-              <details v-if="instructions" class="text-sm">
-                <summary class="cursor-pointer text-muted">View prompt / copy manually</summary>
-                <pre class="mt-2 whitespace-pre-wrap break-words">{{ instructions }}</pre>
-              </details>
-              <UFormField
-                label="2. Paste the JSON reply"
-                help="The server checks it before review. Nothing saves yet."
-                :error="inputError || undefined"
-              >
-                <UTextarea
-                  v-model="json"
-                  :rows="8"
-                  :maxrows="16"
-                  autoresize
-                  class="w-full font-mono"
-                  data-testid="cv-json"
-                />
-              </UFormField>
-            </template>
-          </template>
-        </fieldset>
-      </div>
+          </UFormField>
+          <AppAiCostNotice :usage="usage" data-testid="cv-cost-notice" />
+          <AppAiRetryConfirm
+            v-if="needsConfirm"
+            :message="safetyMessage"
+            :loading="busy"
+            @retry="retryConfirmed"
+          />
+          <AppAiErrorAlert
+            v-else-if="error"
+            :title="error"
+            :code="errorCode"
+            data-testid="cv-error"
+          />
+        </template>
+        <AppAiOwnSteps
+          v-else
+          v-model:reply="json"
+          :ai="api"
+          note="Give that AI your English CV in any format it accepts."
+          reply-help="Nothing saves yet."
+          :reply-error="inputError || error"
+          testid-prefix="cv"
+        />
+      </template>
+    </fieldset>
+
+    <template #footer-top>
+      <!-- Capped, so opened error details can't push the buttons out of a phone-sized footer. -->
+      <AppAiErrorAlert
+        v-if="saveError"
+        :title="saveError"
+        class="max-h-40 overflow-y-auto"
+        data-testid="cv-save-error"
+      >
+        <template v-if="saveDetails" #description>
+          <details class="text-sm">
+            <summary class="cursor-pointer">Error details</summary>
+            <p class="mt-2 break-words whitespace-pre-wrap">{{ saveDetails }}</p>
+          </details>
+        </template>
+      </AppAiErrorAlert>
     </template>
-    <template #footer>
-      <div class="flex w-full flex-col gap-3">
-        <!-- Capped, so opened error details can't push the buttons out of a phone-sized footer. -->
-        <UAlert
-          v-if="saveError"
-          color="error"
-          variant="subtle"
-          :title="saveError"
-          class="max-h-40 overflow-y-auto"
-          data-testid="cv-save-error"
+
+    <template v-if="reviewing" #back>
+      <UButton
+        color="neutral"
+        variant="subtle"
+        :disabled="locked"
+        data-testid="cv-back"
+        @click="reviewing = false"
+        >Back</UButton
+      >
+    </template>
+    <template v-if="reviewing" #footer-info>
+      <div aria-live="polite" data-testid="cv-status">
+        <UButton
+          v-if="issues.length"
+          variant="link"
+          :color="issues.some((issue) => !issue.severity) ? 'error' : 'warning'"
+          icon="i-lucide-circle-alert"
+          :disabled="locked"
+          @click="focusCorrection(issues.map((issue) => issue.path))"
+          >{{ issues.length }}
+          {{ issues.length === 1 ? 'item needs' : 'items need' }} attention</UButton
         >
-          <template v-if="saveDetails" #description>
-            <details class="text-sm">
-              <summary class="cursor-pointer">Error details</summary>
-              <p class="mt-2 whitespace-pre-wrap break-words">{{ saveDetails }}</p>
-            </details>
-          </template>
-        </UAlert>
-        <div v-if="reviewing" aria-live="polite" data-testid="cv-status">
-          <UButton
-            v-if="issues.length"
-            variant="link"
-            :color="issues.some((issue) => !issue.severity) ? 'error' : 'warning'"
-            icon="i-lucide-circle-alert"
-            :disabled="locked"
-            @click="focusCorrection(issues.map((issue) => issue.path))"
-            >{{ issues.length }}
-            {{ issues.length === 1 ? 'item needs' : 'items need' }} attention</UButton
-          >
-          <p v-else class="text-sm text-muted">
-            {{
-              review?.count
-                ? `${review.count} ${review.count === 1 ? 'change' : 'changes'} to save`
-                : 'Nothing selected. Go back or include content to import.'
-            }}
-          </p>
-        </div>
-        <div class="flex flex-wrap justify-end gap-2">
-          <UButton
-            color="neutral"
-            variant="ghost"
-            :disabled="locked"
-            data-testid="cv-cancel"
-            @click="requestClose"
-            >Cancel</UButton
-          >
-          <template v-if="reviewing">
-            <UButton
-              color="neutral"
-              variant="subtle"
-              :disabled="locked"
-              data-testid="cv-back"
-              @click="reviewing = false"
-              >Back</UButton
-            >
-            <!-- Muted when nothing is selected: the default disabled primary looks almost enabled. -->
-            <UButton
-              :loading="busy"
-              :disabled="locked || !review?.count"
-              :color="review?.count ? 'primary' : 'neutral'"
-              :variant="review?.count ? 'solid' : 'subtle'"
-              data-testid="cv-save"
-              @click="save"
-              >Save import</UButton
-            >
-          </template>
-          <template v-else>
-            <UButton
-              v-if="draft"
-              color="neutral"
-              variant="subtle"
-              :disabled="locked"
-              data-testid="cv-resume"
-              @click="reviewing = true"
-              >Resume review</UButton
-            >
-            <UButton
-              :loading="locked"
-              :disabled="locked || !canParse"
-              data-testid="cv-parse"
-              @click="parse"
-              >{{ tab === 'paste' ? 'Parse CV' : 'Preview JSON' }}</UButton
-            >
-          </template>
-        </div>
+        <p v-else class="text-sm text-muted">
+          {{
+            review?.count
+              ? `${review.count} ${review.count === 1 ? 'change' : 'changes'} to save`
+              : 'Nothing selected. Go back or include content to import.'
+          }}
+        </p>
       </div>
     </template>
-  </UModal>
+
+    <template #actions>
+      <template v-if="reviewing">
+        <!-- Muted when nothing is selected: the default disabled primary looks almost enabled. -->
+        <UButton
+          :loading="busy"
+          :disabled="locked || !review?.count"
+          :color="review?.count ? 'primary' : 'neutral'"
+          :variant="review?.count ? 'solid' : 'subtle'"
+          data-testid="cv-save"
+          @click="save"
+          >Save import</UButton
+        >
+      </template>
+      <template v-else>
+        <UButton
+          v-if="draft"
+          color="neutral"
+          variant="subtle"
+          :disabled="locked"
+          data-testid="cv-resume"
+          @click="reviewing = true"
+          >Resume review</UButton
+        >
+        <UButton
+          :icon="tab === 'paste' ? 'i-lucide-sparkles' : undefined"
+          :loading="locked"
+          :disabled="locked || !canParse"
+          data-testid="cv-parse"
+          @click="parse"
+          >{{ tab === 'paste' ? 'Parse CV' : 'Preview changes' }}</UButton
+        >
+      </template>
+    </template>
+  </AppAiModal>
   <AppConfirmModal
     v-model:open="confirmOpen"
     :title="pending === 'close' ? 'Discard CV review?' : 'Replace CV review?'"

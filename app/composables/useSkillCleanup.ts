@@ -148,32 +148,9 @@ export const useSkillCleanup = () => {
   const { attempt, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
   const llm = useLlmModels()
   const busy = ref(false)
-  const instructions = ref('')
-  const promptLoading = ref(false)
-  const promptError = ref('')
-  const copied = ref(false)
-
-  const loadPrompt = async () => {
-    promptLoading.value = true
-    promptError.value = ''
-    try {
-      instructions.value = (await gql(PROMPT)).skillCleanupPrompt.instructions
-    } catch (e) {
-      promptError.value = failure(ERROR_MESSAGES.generic, e)
-    } finally {
-      promptLoading.value = false
-    }
-  }
-  const copyPrompt = async () => {
-    promptError.value = ''
-    try {
-      await navigator.clipboard.writeText(instructions.value)
-      copied.value = true
-      setTimeout(() => (copied.value = false), 1500)
-    } catch {
-      promptError.value = 'Could not copy the prompt. Try again or copy the instructions below.'
-    }
-  }
+  const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
+    async () => (await gql(PROMPT)).skillCleanupPrompt.instructions
+  )
 
   // Every skill id → name, so a plan can show what it would change. Paged until the end.
   const loadSkillNames = async (): Promise<Outcome<Map<number, string>>> => {

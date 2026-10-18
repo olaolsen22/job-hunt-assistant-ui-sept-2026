@@ -16,6 +16,12 @@ remove it when you delete one.
   own include/dismiss/remove controls. Used by `ListingsTailoredCvSuggestion`, `ProfileSkillWordingModal`,
   `ProfileSkillCleanupModal`, `ProfileCvReview` and `ProfileCvEntryReview`.
 - `<AppAiCostNotice :usage?>` — says who pays for built-in AI: the app's AI key (warning), or the owner's own provider key when the default model's `keySource` is `USER` (info, with what is left of that provider's daily limit via `useLlmCallLimits`, fetched only then). Shows today's `LlmUsage` (for the default model, named by label) when given, names the default model (via `useLlmModels`) and links to `/settings` to change it. Used by `ListingsParseModal`, `ProfileCvImportModal` and `ListingsTailoredCvAiModal`.
+- `<AppAiModal v-model:open title description? busy? wide? close?>` — the frame of every built-in/own-AI modal: phone fullscreen, not dismissible and Cancel disabled while `busy`, `wide` = `max-w-4xl` for in-modal reviews, `close` runs instead of closing (confirm discard). Slots: default body, `#footer-top` (apply/save errors), `#back` (far left, review Back), `#footer-info` (left, counts/problems), `#actions` (primary after Cancel; primary on top on phones). Body order in every modal: description, method tabs, inputs, cost notice, then retry confirm or error.
+- `<AppAiReviewRow v-model:include? testid-prefix label? badge? note? invalid? description? current? suggested? remove-label? disabled? @remove>` — one reviewed AI suggestion (`<li>`): include tick (when `include` is bound) or change badge + note, optional Remove, current next to suggested via `AppCompareBlock`; `#suggested` for editable fields. Test ids `${prefix}-row|-include|-remove`. Used by `ProfileSkillWordingModal` and `ProfileSkillCleanupModal`.
+- `<AppAiReviewEmpty icon text>` — centered muted icon above "Nothing to change". `<AppAiReviewSelectAll selected total @all @none>` — "N of M selected" with Select all / none (`review-select-all|none`).
+- `<AppAiMethodTabs v-model builtin? extra? disabled?>` — "Built-in AI" then "Your own AI" (`own`); `builtin` items replace the first tab (CV import: Paste CV); `extra` adds non-AI tabs after them (cover letter: Paste a letter).
+- `<AppAiOwnSteps :ai v-model:reply testid-prefix copy? copy-disabled? note? reply-help? reply-error? start-step?>` — the own-AI steps: copy prompt, prompt-load error with retry, "View prompt / copy manually", paste the reply. `#before` holds a feature's own first step (set `start-step` after it). Test ids `${prefix}-copy-prompt`, `-prompt-error`, `-json`.
+- `<AppAiErrorAlert :title code? detail?>` — AI failure alert with icon, small technical detail, and the Settings link for `daily-limit-reached`; default slot for a feature action, `#description` replaces the detail.
 - `<AppAiRetryConfirm :message loading? @retry>` — warning shown instead of the usual error after an AI call returned `operation-interrupted` or `result-unavailable`; its "Try again (may be charged)" button is the only way to send another attempt (`useAiRequest().needsConfirm`).
 - `<AppAiLimitLink>` — "Daily limits in Settings" button for a `daily-limit-reached` AI error, placed in the error alert's `actions` slot.
 - `<AppConfirmModal v-model:open title description? confirm-label? loading? disabled? color? @confirm>` — confirm
@@ -56,7 +62,7 @@ remove it when you delete one.
   and Cancel/submit buttons, shared by add and edit. `v-model` is `useListingForm().state`; the
   default slot renders above the buttons (error alert); `url-action` renders beside the Ad link
   input. The page owns mutation, confirm, errors.
-- `<ListingsCompareModal v-model:open v-model:matchId listing matches @keep @remove>` — compares a new listing with a possible
+- `<ListingsCompareModal v-model:open v-model:matchId listing matches loading @keep @remove>` — compares a new listing with a possible
   duplicate, one row per field (differing rows highlighted); "Compare with" select for 2+ matches; footer: Open existing,
   Keep both, Remove new one. Values side by side from `sm`, stacked with New/Existing badges below.
 - `<ListingsParseModal v-model:open listingId? url? @apply(draft, url?)>` — "Analyze ad" modal with tabs: From link (only with `listingId`;
@@ -141,7 +147,10 @@ remove it when you delete one.
   — the add page checks a filled form's names in one aliased query and provides the result;
   `NameCombobox` and `SkillsField` inject it to flag names the API doesn't know. No provider = nothing
   flagged. Also exports `NameLookup`.
-- `useParsePrompt(name)` → `{ instructions, copied, load, copy(posting), parsing, parse(posting), parsingUrl, parseFromUrl(listingId), parsingNewUrl, parseNewUrl(url) }` — fetches
+- `useAiPrompt(fetchInstructions, transform?)` → `{ instructions, promptLoading, promptError, copied, loadPrompt, copyText(text), copyPrompt() }` — the own-AI prompt every AI composable uses; `transform` appends what the query can't take (cover letter notes). `AiPromptState` is what `AppAiOwnSteps` takes.
+- `useAiModalState(open, { tabFor?, onOpen? })` → `{ method, tab, error, errorCode }` — the open/reset boilerplate of every AI modal: tab from the remembered method (`tabFor` maps it), error cleared on open, `errorCode` forgotten with its error; `onOpen(tab)` runs on each open (also when mounted open). `useReviewDirty(state)` → `{ dirty, mark, clear }` — whether a review changed since `mark()`, so closing asks to discard only after an edit.
+- `useAiMethod()` → cookie `ai-method` (`builtin | own | null`): AI modals open on it and write it after a successful run.
+- `useParsePrompt(name)` → `{ instructions, promptLoading, promptError, copied, load (toasts on failure), loadPrompt, copy(posting), parsing, parse(posting), parsingUrl, parseFromUrl(listingId), parsingNewUrl, parseNewUrl(url) }` — fetches
   `listingParsePrompt`, `listingQuickParsePrompt` or `companyParsePrompt` and copies it + `<posting>` text
   for an external AI. `parse()` runs the built-in parser (`parseListing`, FULL, QUICK or COMPANIES by `name`) and returns
   `{ result }` (the JSON reply) or `{ error }` for the caller to show; it doesn't toast. Call `load()` before the copy button is clickable (a clipboard write after an await can be refused).

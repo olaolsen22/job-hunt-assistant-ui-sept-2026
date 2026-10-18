@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import type { DropdownMenuItem } from '@nuxt/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LANGUAGE_OPTIONS } from '~/constants/listing'
-import type { CoverLetterSource } from '~/components/listings/CoverLetterModal.vue'
 
 definePageMeta({ title: 'Cover letter' })
 
@@ -61,20 +59,6 @@ watch(
 )
 
 const sourceOpen = ref(false)
-const source = ref<CoverLetterSource>('ai')
-const openSource = (value: CoverLetterSource) => {
-  source.value = value
-  sourceOpen.value = true
-}
-const sourceItems: DropdownMenuItem[] = [
-  { label: 'Generate with AI', icon: 'i-lucide-sparkles', onSelect: () => openSource('ai') },
-  { label: 'Use an external chat', icon: 'i-lucide-bot', onSelect: () => openSource('json') },
-  {
-    label: 'Paste my own letter',
-    icon: 'i-lucide-clipboard-paste',
-    onSelect: () => openSource('text')
-  }
-]
 
 const moveParagraph = (from: number, to: number) => {
   const paragraphs = letter.value!.paragraphs
@@ -234,16 +218,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
             <p class="text-sm text-muted">
               Write the body yourself, or get one from AI or your own earlier letter, then save.
             </p>
-            <UDropdownMenu :items="sourceItems" :content="{ align: 'end' }" :disabled="busy">
-              <UButton
-                icon="i-lucide-pen-line"
-                trailing-icon="i-lucide-chevron-down"
-                class="justify-center"
-                :loading="editor.generating.value || editor.previewing.value"
-                data-testid="cover-letter-source"
-                >Write the body</UButton
-              >
-            </UDropdownMenu>
+            <UButton
+              icon="i-lucide-pen-line"
+              class="justify-center"
+              :disabled="busy"
+              :loading="editor.generating.value || editor.previewing.value"
+              data-testid="cover-letter-source"
+              @click="sourceOpen = true"
+              >Write the body</UButton
+            >
           </div>
         </AppCard>
 
@@ -573,7 +556,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
       </template>
     </div>
 
-    <ListingsCoverLetterModal v-model:open="sourceOpen" :editor="editor" :source="source" />
+    <ListingsCoverLetterModal v-model:open="sourceOpen" :editor="editor" />
 
     <LazyListingsTailoredCvPdfModal
       v-if="pdf"

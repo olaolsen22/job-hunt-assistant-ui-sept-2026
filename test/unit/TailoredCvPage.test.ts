@@ -148,7 +148,7 @@ beforeEach(() => {
     company: { id: 3, name: 'Acme' },
     documents: []
   }
-  document.cookie = 'tailored-cv-ai=; Max-Age=0; path=/'
+  document.cookie = 'ai-method=; Max-Age=0; path=/'
   let nextId = 70
   generateReply = () => ({
     document: { id: nextId++, fileName: 'cv.pdf', createdAt: new Date().toISOString() },
@@ -336,7 +336,7 @@ describe('Tailored CV page', () => {
     expect(el('tailored-cv-suggestions')).toBeNull()
   })
 
-  it('remembers the AI choice and shows it as one line with Change', async () => {
+  it('reopens on the AI used last, with both choices still offered', async () => {
     savedDraft = savedSummary()
     releaseAnalysis()
     await mountPage()
@@ -347,13 +347,11 @@ describe('Tailored CV page', () => {
     await vi.waitFor(() => expect(el('tailored-cv-suggestion')).not.toBeNull())
 
     await click('tailored-cv-optimize')
-    await vi.waitFor(() => expect(el('tailored-cv-ai-choice')).not.toBeNull())
-    expect(el('tailored-cv-ai-choice')!.textContent).toContain('Built-in AI · 3 requests')
-    expect(document.body.querySelector('button[role="tab"]')).toBeNull()
-    expect(el('tailored-cv-ai-usage')).not.toBeNull()
-
-    await click('tailored-cv-ai-change')
-    expect(document.body.querySelectorAll('button[role="tab"]')).toHaveLength(2)
+    await vi.waitFor(() => expect(el('tailored-cv-ai-usage')).not.toBeNull())
+    const tabs = [...document.body.querySelectorAll('button[role="tab"]')]
+    expect(tabs.map((t) => t.textContent?.trim())).toEqual(['Built-in AI', 'Your own AI'])
+    expect(tabs[0]!.getAttribute('aria-selected')).toBe('true')
+    expect(el('tailored-cv-ai-requests')!.textContent).toContain('Makes 3 AI requests')
   })
 
   it('opens a saved draft and saves the complete edited candidate', async () => {
@@ -417,7 +415,7 @@ describe('Tailored CV page', () => {
     await click('tailored-cv-optimize')
 
     const external = [...document.body.querySelectorAll<HTMLElement>('button[role="tab"]')].find(
-      (b) => b.textContent?.includes('External AI')
+      (b) => b.textContent?.includes('Your own AI')
     )!
     external.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     await flushPromises()

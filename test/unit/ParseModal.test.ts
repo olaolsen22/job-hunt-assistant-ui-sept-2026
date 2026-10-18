@@ -24,6 +24,8 @@ let builtInFails = false
 // A GraphQL-level error for the link parse, which the gql helper throws.
 let urlGraphqlError = ''
 let modelLoads = 0
+// The prompt query fails until it is switched back.
+let promptFails = false
 registerEndpoint('/graphql', {
   method: 'POST',
   handler: async (event) => {
@@ -38,6 +40,8 @@ registerEndpoint('/graphql', {
     if (builtInFails && query.includes('mutation ParseListing'))
       throw createError({ statusCode: 502 })
     if (query.includes('query LlmModels')) modelLoads++
+    if (promptFails && query.includes('query ListingParsePrompt'))
+      return { errors: [{ message: 'Prompt unavailable' }] }
     return {
       data: {
         // Same response for both link parses.
@@ -76,8 +80,8 @@ describe('ParseModal', () => {
       props: { open: true },
       attachTo: document.body
     })
-    // The copy button lives on the Use your own AI tab.
-    wrapper.vm.tab = 'ai'
+    // The copy button lives on the Your own AI tab.
+    wrapper.vm.tab = 'own'
     await flushPromises()
 
     const copy = document.body.querySelector('[data-testid="parse-copy-prompt"]')
@@ -89,7 +93,7 @@ describe('ParseModal', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
     const wrapper = await mountOpen({ url: 'https://example.com/job' })
-    wrapper.vm.tab = 'ai'
+    wrapper.vm.tab = 'own'
     wrapper.vm.aiSource = 'link'
     await flushPromises()
 
@@ -99,6 +103,43 @@ describe('ParseModal', () => {
     expect(document.body.querySelector('[data-testid="parse-ad"]')).toBeNull()
     wrapper.unmount()
     vi.unstubAllGlobals()
+  })
+
+  it('shows a failed prompt load on Your own AI and loads it again on retry', async () => {
+    promptFails = true
+    const wrapper = await mountOpen({})
+    wrapper.vm.tab = 'own'
+    await flushPromises()
+    const error = () => document.body.querySelector('[data-testid="parse-prompt-error"]')
+    await vi.waitFor(() => expect(error()?.textContent).toContain('Prompt unavailable'))
+    expect(
+      document.body.querySelector<HTMLButtonElement>('[data-testid="parse-copy-prompt"]')!.disabled
+    ).toBe(true)
+
+    promptFails = false
+    error()!.querySelector('button')!.click()
+    await vi.waitFor(() => expect(error()).toBeNull())
+    expect(document.body.textContent).toContain('View prompt / copy manually')
+    wrapper.unmount()
+  })
+
+  it('fills the form from your own AI and opens on it next time', async () => {
+    const wrapper = await mountOpen({ listingId: 1 })
+    wrapper.vm.tab = 'own'
+    await flushPromises()
+    const json = document.body.querySelector<HTMLTextAreaElement>('[data-testid="parse-json"]')!
+    json.value = '{"title":"Developer"}'
+    json.dispatchEvent(new Event('input'))
+    await flushPromises()
+    await click('parse-apply')
+    expect(wrapper.emitted('apply')?.[0]).toEqual([{ title: 'Developer' }])
+    wrapper.unmount()
+
+    const again = await mountOpen({ listingId: 1 })
+    await flushPromises()
+    expect(again.vm.tab).toBe('own')
+    again.unmount()
+    document.cookie = 'ai-method=; Max-Age=0; path=/'
   })
 
   it('emits the parsed draft from the saved listing and closes', async () => {
@@ -177,7 +218,7 @@ describe('ParseModal', () => {
       errors: [{ __typename: 'InvalidParseRequestError', message: 'Ad too short' }]
     })
     const wrapper = await mountOpen({})
-    wrapper.vm.tab = 'paste'
+    wrapper.vm.source = 'text'
     await flushPromises()
     const ad = document.body.querySelector<HTMLTextAreaElement>('[data-testid="parse-ad"]')!
     ad.value = 'Some ad'
@@ -190,7 +231,7 @@ describe('ParseModal', () => {
         document.body.querySelector('[data-testid="parse-builtin-error"]')?.textContent
       ).toContain('Ad too short')
     )
-    expect(wrapper.vm.tab).toBe('paste')
+    expect(wrapper.vm.source).toBe('text')
     expect(
       document.body.querySelector<HTMLTextAreaElement>('[data-testid="parse-ad"]')!.value
     ).toBe('Some ad')
@@ -204,7 +245,7 @@ describe('ParseModal', () => {
     })
     sentModels = []
     const wrapper = await mountOpen({})
-    wrapper.vm.tab = 'paste'
+    wrapper.vm.source = 'text'
     await typeAd('Some ad')
     await click('parse-builtin-run')
 
@@ -216,7 +257,7 @@ describe('ParseModal', () => {
   it('shows an unknown default model and refetches the models', async () => {
     respondToBuiltInParse({ parseJob: null, errors: [unknownModelError] })
     const wrapper = await mountOpen({})
-    wrapper.vm.tab = 'paste'
+    wrapper.vm.source = 'text'
     await vi.waitFor(() => expect(modelLoads).toBeGreaterThan(0))
     const loads = modelLoads
     await typeAd('Some ad')
@@ -234,7 +275,7 @@ describe('ParseModal', () => {
     wrapper.unmount()
   })
 
-  it('warns about AI cost on From link and Paste ad, not on Use your own AI', async () => {
+  it('warns about AI cost on From link and Paste ad, not on Your own AI', async () => {
     const wrapper = await mountOpen({ listingId: 7 })
     const notice = () => document.body.querySelector('[data-testid="parse-cost-notice"]')
 
@@ -247,10 +288,10 @@ describe('ParseModal', () => {
     expect(
       document.body.querySelector('[data-testid="parse-cost-notice"] a')?.getAttribute('href')
     ).toBe('/settings')
-    wrapper.vm.tab = 'paste'
+    wrapper.vm.source = 'text'
     await flushPromises()
     expect(notice()).not.toBeNull()
-    wrapper.vm.tab = 'ai'
+    wrapper.vm.tab = 'own'
     await flushPromises()
     expect(notice()).toBeNull()
     wrapper.unmount()
@@ -263,7 +304,7 @@ describe('ParseModal', () => {
 
     const error = () => document.body.querySelector('[data-testid="parse-url-error"]')
     await vi.waitFor(() => expect(error()?.textContent).toContain('Something went wrong'))
-    expect(error()?.querySelector('[data-testid="parse-error-detail"]')?.textContent).toContain(
+    expect(error()?.querySelector('[data-testid="ai-error-detail"]')?.textContent).toContain(
       'The field `requestId` does not exist'
     )
     urlGraphqlError = ''
@@ -277,7 +318,7 @@ describe('ParseModal', () => {
     })
     const openPaste = async () => {
       const wrapper = await mountOpen({})
-      wrapper.vm.tab = 'paste'
+      wrapper.vm.source = 'text'
       await typeAd('Some ad')
       return wrapper
     }

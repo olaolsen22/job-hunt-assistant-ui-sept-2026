@@ -59,7 +59,7 @@ describe('AiCostNotice', () => {
     models = { models: [...llmModels().models, ownKeyModel], defaultModel: ownKeyModel.id }
     const wrapper = await billing()
 
-    expect(wrapper.text()).toContain('Uses your own AI key')
+    expect(wrapper.text()).toContain('Billed to your API key')
     await vi.waitFor(() =>
       expect(wrapper.get('[data-testid="ai-notice-billing"]').text()).toContain(
         '12 requests left today.'

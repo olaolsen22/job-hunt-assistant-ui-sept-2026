@@ -309,41 +309,15 @@ export const useCoverLetterDraft = (listingId: number) => {
     }
   }
 
-  // Loaded before the copy button is usable: browsers can refuse a clipboard write after an await.
-  const apiInstructions = ref('')
   // The prompt query takes no notes, so the owner's current notes (even unsaved) are appended here.
-  const instructions = computed(() => {
-    const notes = letter.value?.brief.trim()
-    if (!apiInstructions.value || !notes || apiInstructions.value.includes(notes)) {
-      return apiInstructions.value
+  const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
+    async () => (await gql(PROMPT, { listingId })).coverLetterExternalPrompt.instructions,
+    (prompt) => {
+      const notes = letter.value?.brief.trim()
+      if (!notes || prompt.includes(notes)) return prompt
+      return `${prompt}\n\nNotes from the applicant (follow these):\n${notes}`
     }
-    return `${apiInstructions.value}\n\nNotes from the applicant (follow these):\n${notes}`
-  })
-  const promptError = ref('')
-  const promptLoading = ref(false)
-  const copied = ref(false)
-  const loadPrompt = async () => {
-    promptLoading.value = true
-    promptError.value = ''
-    try {
-      apiInstructions.value = (
-        await gql(PROMPT, { listingId })
-      ).coverLetterExternalPrompt.instructions
-    } catch {
-      promptError.value = 'Could not load the prompt.'
-    } finally {
-      promptLoading.value = false
-    }
-  }
-  const copyPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(instructions.value)
-      copied.value = true
-      setTimeout(() => (copied.value = false), 1500)
-    } catch {
-      promptError.value = 'Could not copy the prompt. Copy it from the text below.'
-    }
-  }
+  )
 
   // An external chat's JSON reply or the owner's own letter, checked and split by the API.
   // Returns the API's error to show next to the pasted text, or null once loaded.

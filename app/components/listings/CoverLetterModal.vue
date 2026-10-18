@@ -1,45 +1,49 @@
 <script setup lang="ts">
 import type { useCoverLetterDraft } from '~/composables/useCoverLetterDraft'
 
-// The three ways to get a letter body. Each loads a whole unsaved letter into the editor, so a
-// failure keeps this open with its error and the editor stays as it was.
-export type CoverLetterSource = 'ai' | 'json' | 'text'
-
-const { editor, source } = defineProps<{
-  editor: ReturnType<typeof useCoverLetterDraft>
-  source: CoverLetterSource
-}>()
+// The three ways to get a letter body, as tabs: built-in AI, your own AI, or a letter you paste
+// (no AI). Each loads a whole unsaved letter into the editor, so a failure keeps this open with
+// its error and the editor stays as it was.
+const { editor } = defineProps<{ editor: ReturnType<typeof useCoverLetterDraft> }>()
 const open = defineModel<boolean>('open', { required: true })
 
 const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
 const pasted = ref('')
-const error = ref('')
-
-watch(open, (isOpen) => {
-  if (!isOpen) return
-  pasted.value = error.value = ''
-  if (source === 'ai') refreshUsage()
-  if (source === 'json' && !editor.instructions.value) editor.loadPrompt()
+const { method, tab, error } = useAiModalState<'builtin' | 'own' | 'letter'>(open, {
+  onOpen: (openTab) => {
+    pasted.value = ''
+    if (openTab.value === 'builtin') refreshUsage()
+  }
 })
+// The prompt is loaded before the copy button can be used: a clipboard write after an await can fail.
+watch(
+  [open, tab],
+  ([isOpen, current]) => {
+    if (isOpen && current === 'own' && !editor.instructions.value) editor.loadPrompt()
+  },
+  { immediate: true }
+)
+watch([pasted, tab], () => (error.value = ''))
 
-const TITLES: Record<CoverLetterSource, string> = {
-  ai: 'Generate with AI',
-  json: 'Use an external chat',
-  text: 'Paste your own letter'
-}
+const extraTabs = [{ label: 'Paste a letter', value: 'letter', icon: 'i-lucide-clipboard-paste' }]
 
-// AI saves unsaved edits before it runs, so only a pasted letter can replace work that isn't saved.
+// Built-in saves unsaved edits before it runs, so only a loaded letter can replace unsaved work.
 const replacesEdits = computed(
-  () => source !== 'ai' && editor.dirty.value && !editor.pristine.value
+  () => tab.value !== 'builtin' && editor.dirty.value && !editor.pristine.value
 )
 const busy = computed(() => editor.generating.value || editor.previewing.value)
 const paragraphCount = computed(() => pasted.value.split(/\n\s*\n/).filter((p) => p.trim()).length)
 
 const submit = async () => {
+  const builtin = tab.value === 'builtin'
   error.value =
-    (source === 'ai' ? await editor.generate() : await editor.preview(source, pasted.value)) ?? ''
-  if (source === 'ai') refreshUsage()
-  if (!error.value) open.value = false
+    (builtin
+      ? await editor.generate()
+      : await editor.preview(tab.value === 'own' ? 'json' : 'text', pasted.value)) ?? ''
+  if (builtin) refreshUsage()
+  if (error.value) return
+  if (tab.value !== 'letter') method.value = tab.value
+  open.value = false
 }
 const retry = () => {
   editor.confirmRetry()
@@ -48,125 +52,81 @@ const retry = () => {
 </script>
 
 <template>
-  <UModal
+  <AppAiModal
     v-model:open="open"
-    :title="TITLES[source]"
+    title="Write the body"
     description="The letter loads into the editor. Nothing is saved until you save it."
-    :dismissible="!busy"
+    :busy="busy"
   >
-    <template #body>
-      <div class="space-y-4">
-        <template v-if="source === 'ai'">
-          <AppAiCostNotice :usage="usageData?.llmUsageToday" />
-          <p class="text-sm text-muted">
-            Uses the listing, your profile, your story, your writing samples and your notes for the
-            AI.
-            <template v-if="editor.dirty.value">Your edits are saved first.</template>
-          </p>
-          <AppAiRetryConfirm
-            v-if="editor.needsConfirm.value"
-            :message="editor.safetyMessage.value"
-            :loading="editor.generating.value"
-            @retry="retry"
-          />
-        </template>
+    <AppAiMethodTabs v-model="tab" :extra="extraTabs" :disabled="busy" />
 
-        <template v-else-if="source === 'json'">
-          <p class="text-sm text-muted">
-            1. Copy the prompt and run it in your chosen AI. It holds the listing, your profile and
-            your notes.
-          </p>
-          <UButton
-            :loading="editor.promptLoading.value"
-            :disabled="!editor.instructions.value"
-            :icon="editor.copied.value ? 'i-lucide-check' : 'i-lucide-clipboard-copy'"
-            :color="editor.copied.value ? 'success' : 'primary'"
-            variant="subtle"
-            data-testid="cover-letter-copy-prompt"
-            @click="editor.copyPrompt()"
-            >{{ editor.copied.value ? 'Copied' : 'Copy prompt to clipboard' }}</UButton
-          >
-          <UAlert
-            v-if="editor.promptError.value"
-            color="error"
-            variant="subtle"
-            :title="editor.promptError.value"
-            :actions="[
-              {
-                label: 'Retry loading prompt',
-                color: 'neutral',
-                variant: 'soft',
-                onClick: () => editor.loadPrompt()
-              }
-            ]"
-          />
-          <details v-if="editor.instructions.value" class="text-sm">
-            <summary class="cursor-pointer text-muted">View prompt / copy manually</summary>
-            <pre class="mt-2 whitespace-pre-wrap break-words">{{ editor.instructions.value }}</pre>
-          </details>
-        </template>
-
-        <UFormField
-          v-if="source !== 'ai'"
-          :label="source === 'json' ? '2. Paste the JSON reply' : 'Your letter'"
-          :help="
-            source === 'json'
-              ? 'The server checks it first.'
-              : `Paste the whole letter; separate paragraphs with a blank line. ${paragraphCount} ${paragraphCount === 1 ? 'paragraph' : 'paragraphs'}.`
-          "
-        >
-          <UTextarea
-            v-model="pasted"
-            :rows="6"
-            :maxrows="14"
-            autoresize
-            class="w-full"
-            :class="{ 'font-mono': source === 'json' }"
-            data-testid="cover-letter-paste"
-          />
-        </UFormField>
-
-        <UAlert
-          v-if="error && !editor.needsConfirm.value"
-          color="error"
-          variant="subtle"
-          icon="i-lucide-circle-alert"
-          :title="error"
-          data-testid="cover-letter-source-error"
-        >
-          <template v-if="editor.safetyCode.value === 'daily-limit-reached'" #actions>
-            <AppAiLimitLink />
-          </template>
-        </UAlert>
-        <p v-if="replacesEdits" class="text-sm text-warning" data-testid="cover-letter-replaces">
-          This replaces your unsaved edits. Discard brings them back until you save.
-        </p>
-      </div>
+    <template v-if="tab === 'builtin'">
+      <p class="text-sm text-muted">
+        Uses the listing, your profile, your story, your writing samples and your notes for the AI.
+        <template v-if="editor.dirty.value">Your edits are saved first.</template>
+      </p>
+      <AppAiCostNotice :usage="usageData?.llmUsageToday" />
+      <AppAiRetryConfirm
+        v-if="editor.needsConfirm.value"
+        :message="editor.safetyMessage.value"
+        :loading="editor.generating.value"
+        @retry="retry"
+      />
+      <AppAiErrorAlert
+        v-else-if="error"
+        :title="error"
+        :code="editor.safetyCode.value"
+        data-testid="cover-letter-source-error"
+      />
     </template>
 
-    <template #footer>
-      <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <UButton color="neutral" variant="ghost" :disabled="busy" @click="open = false"
-          >Cancel</UButton
-        >
-        <UButton
-          :icon="source === 'ai' ? 'i-lucide-sparkles' : 'i-lucide-file-input'"
-          :color="replacesEdits ? 'warning' : 'primary'"
-          :loading="busy"
-          :disabled="(source !== 'ai' && !pasted.trim()) || editor.needsConfirm.value"
-          data-testid="cover-letter-source-run"
-          @click="submit"
-          >{{
-            source === 'ai'
-              ? editor.dirty.value
-                ? 'Save and generate'
-                : 'Generate letter'
-              : replacesEdits
-                ? 'Replace my edits'
-                : 'Load letter'
-          }}</UButton
-        >
-      </div>
+    <AppAiOwnSteps
+      v-else-if="tab === 'own'"
+      v-model:reply="pasted"
+      :ai="editor"
+      note="It holds the listing, your profile and your notes."
+      :reply-error="error"
+      testid-prefix="cover-letter"
+    />
+
+    <UFormField
+      v-else
+      label="Your letter"
+      :help="`Paste the whole letter; separate paragraphs with a blank line. ${paragraphCount} ${paragraphCount === 1 ? 'paragraph' : 'paragraphs'}.`"
+      :error="error || undefined"
+    >
+      <UTextarea
+        v-model="pasted"
+        :rows="6"
+        :maxrows="14"
+        autoresize
+        class="w-full"
+        data-testid="cover-letter-paste"
+      />
+    </UFormField>
+
+    <p v-if="replacesEdits" class="text-sm text-warning" data-testid="cover-letter-replaces">
+      This replaces your unsaved edits. Discard brings them back until you save.
+    </p>
+
+    <template #actions>
+      <UButton
+        :icon="tab === 'builtin' ? 'i-lucide-sparkles' : 'i-lucide-file-input'"
+        :color="replacesEdits ? 'warning' : 'primary'"
+        :loading="busy"
+        :disabled="(tab !== 'builtin' && !pasted.trim()) || editor.needsConfirm.value"
+        data-testid="cover-letter-source-run"
+        @click="submit"
+        >{{
+          tab === 'builtin'
+            ? editor.dirty.value
+              ? 'Save and generate'
+              : 'Generate letter'
+            : replacesEdits
+              ? 'Replace my edits'
+              : 'Load letter'
+        }}</UButton
+      >
     </template>
-  </UModal>
+  </AppAiModal>
 </template>

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { PHONE_FULLSCREEN_MODAL } from '~/constants/ui'
 import { INVALID_DRAFT_JSON } from '~/utils/parseDraft'
 import type { ProfileData } from '~/composables/useProfile'
 import type { SkillWording } from '~/composables/useSkillWording'
@@ -12,7 +11,7 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
 
 const api = useSkillWording()
-const { busy, instructions, promptLoading, promptError, copied, needsConfirm, safetyMessage } = api
+const { busy, needsConfirm, safetyMessage } = api
 const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
 const usage = computed(() => usageData.value?.llmUsageToday)
 const toast = useToast()
@@ -27,12 +26,10 @@ type Row = {
   include: boolean
 }
 
-const tab = ref('builtin')
 const reply = ref('')
-const error = ref('')
-const errorCode = ref<string>()
 const applyError = ref('')
 const rows = ref<Row[]>()
+const confirmOpen = ref(false)
 
 const currentBullets = computed(
   () =>
@@ -52,20 +49,16 @@ const included = computed(() => rows.value?.filter((r) => r.include) ?? [])
 const blank = computed(() => included.value.filter((r) => !r.text.trim()).length)
 const canApply = computed(() => !!included.value.length && !blank.value)
 
-watch(
-  open,
-  (isOpen) => {
-    if (!isOpen) return
+const { method, tab, error, errorCode } = useAiModalState(open, {
+  onOpen: () => {
     api.loadPrompt()
     refreshUsage()
-    error.value = ''
-  },
-  { immediate: true }
-)
-watch([reply, tab], () => (error.value = ''))
-watch(error, (value) => {
-  if (!value) errorCode.value = undefined
+  }
 })
+watch([reply, tab], () => (error.value = ''))
+const { dirty, mark, clear } = useReviewDirty(() => rows.value?.map((r) => [r.include, r.text]))
+const setAll = (include: boolean) =>
+  rows.value?.forEach((r) => r.before != null && (r.include = include))
 
 const startReview = ({ bullets, headline, summary }: SkillWording) => {
   rows.value = [
@@ -107,6 +100,7 @@ const startReview = ({ bullets, headline, summary }: SkillWording) => {
     })
   ]
   applyError.value = ''
+  mark()
 }
 const suggest = async () => {
   error.value = ''
@@ -117,6 +111,7 @@ const suggest = async () => {
     errorCode.value = result.code
     return
   }
+  method.value = 'builtin'
   startReview(result.value)
 }
 const retryConfirmed = () => {
@@ -129,6 +124,7 @@ const preview = () => {
     error.value = `${INVALID_DRAFT_JSON} Expect a "bullets" list.`
     return
   }
+  method.value = 'own'
   startReview(wording)
 }
 
@@ -152,201 +148,163 @@ const apply = async () => {
   }
   emit('changed')
   toast.add({ title: 'Skill wording updated', color: 'success' })
-  rows.value = undefined
-  reply.value = ''
-  open.value = false
+  discard()
 }
 
-const close = () => {
-  if (busy.value) return
+// Closing a review that was edited asks first; an untouched one just goes.
+const discard = () => {
+  confirmOpen.value = false
+  rows.value = undefined
+  reply.value = ''
+  clear()
   open.value = false
 }
-const modalOpen = computed({
-  get: () => open.value,
-  set: (value: boolean) => {
-    if (!value) close()
-  }
-})
+const back = () => {
+  rows.value = undefined
+  clear()
+}
+const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard())
 </script>
 
 <template>
-  <UModal
-    v-model:open="modalOpen"
+  <AppAiModal
+    v-model:open="open"
     title="Fix skill wording"
     :description="
       rows
         ? 'Review each change. Nothing changes until you apply it.'
         : 'Update skill names in your bullets, headline and summary.'
     "
-    :dismissible="!busy"
-    :ui="{ content: `max-w-4xl ${PHONE_FULLSCREEN_MODAL}` }"
+    :busy="busy"
+    :close="requestClose"
+    wide
   >
-    <template #body>
-      <div class="space-y-4">
-        <AppAiRetryConfirm
-          v-if="needsConfirm && tab === 'builtin' && !rows"
-          :message="safetyMessage"
-          :loading="busy"
-          @retry="retryConfirmed"
+    <fieldset :disabled="busy" class="min-w-0 space-y-4">
+      <template v-if="rows">
+        <AppAiErrorAlert v-if="error" :title="error" data-testid="wording-error" />
+        <AppAiReviewEmpty
+          v-if="!rows.length"
+          icon="i-lucide-spell-check"
+          text="Nothing to change"
+          data-testid="wording-empty"
         />
-        <UAlert
-          v-else-if="error && (tab === 'builtin' || rows)"
-          color="error"
-          variant="subtle"
-          :title="error"
-          data-testid="wording-error"
-        >
-          <template v-if="errorCode === 'daily-limit-reached'" #actions>
-            <AppAiLimitLink />
-          </template>
-        </UAlert>
-
-        <fieldset :disabled="busy" class="min-w-0 space-y-4">
-          <template v-if="rows">
-            <div
-              v-if="!rows.length"
-              class="flex flex-col items-center gap-2 py-8 text-center text-muted"
-              data-testid="wording-empty"
+        <template v-else>
+          <AppAiReviewSelectAll
+            :selected="included.length"
+            :total="rows.filter((r) => r.before != null).length"
+            @all="setAll(true)"
+            @none="setAll(false)"
+          />
+          <ul class="space-y-3">
+            <AppAiReviewRow
+              v-for="row in rows"
+              :key="row.key"
+              v-model:include="row.include"
+              :label="row.label"
+              :disabled="row.before == null"
+              :description="
+                row.before == null ? 'Not on your profile, so it can’t be applied.' : undefined
+              "
+              :current="row.before"
+              testid-prefix="wording"
             >
-              <UIcon name="i-lucide-spell-check" class="size-8" />
-              <p>Nothing to change</p>
-            </div>
-            <ul v-else class="space-y-3">
-              <li
-                v-for="row in rows"
-                :key="row.key"
-                class="space-y-2 rounded-md border border-default p-3"
-                data-testid="wording-row"
-              >
-                <UCheckbox
-                  v-model="row.include"
-                  :label="row.label"
-                  :disabled="row.before == null"
-                  :description="
-                    row.before == null ? 'Not on your profile, so it can’t be applied.' : undefined
-                  "
-                  data-testid="wording-include"
-                />
-                <AppCompareBlock :current="row.before">
-                  <template #suggested>
-                    <UTextarea
-                      v-model="row.text"
-                      :disabled="!row.include"
-                      :rows="2"
-                      autoresize
-                      class="w-full"
-                      :aria-label="`New ${row.label.toLowerCase()} text`"
-                      :color="row.include && !row.text.trim() ? 'error' : undefined"
-                      data-testid="wording-text"
-                    />
-                  </template>
-                </AppCompareBlock>
-              </li>
-            </ul>
-          </template>
-
-          <template v-else>
-            <UTabs
-              v-model="tab"
-              :items="[
-                { label: 'Use built-in AI', value: 'builtin', icon: 'i-lucide-sparkles' },
-                { label: 'Use your own AI', value: 'ai', icon: 'i-lucide-bot' }
-              ]"
-              :content="false"
-              class="w-full"
-            />
-            <template v-if="tab === 'builtin'">
-              <AppAiCostNotice :usage="usage" data-testid="wording-cost-notice" />
-              <p class="text-sm text-muted">
-                The AI reads your profile text and proposes wording that matches your skill names.
-                You review each change before anything is saved.
-              </p>
-            </template>
-            <template v-else>
-              <p class="text-sm text-muted">1. Copy the prompt and send it to your chosen AI.</p>
-              <UButton
-                :loading="promptLoading"
-                :disabled="!instructions"
-                :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-                :color="copied ? 'success' : 'primary'"
-                variant="subtle"
-                data-testid="wording-copy-prompt"
-                @click="api.copyPrompt()"
-                >{{ copied ? 'Copied' : 'Copy prompt' }}</UButton
-              >
-              <UAlert v-if="promptError" color="error" variant="subtle" :title="promptError">
-                <template #actions
-                  ><UButton color="neutral" variant="soft" @click="api.loadPrompt()"
-                    >Retry loading prompt</UButton
-                  ></template
-                >
-              </UAlert>
-              <details v-if="instructions" class="text-sm">
-                <summary class="cursor-pointer text-muted">View prompt / copy manually</summary>
-                <pre class="mt-2 whitespace-pre-wrap break-words">{{ instructions }}</pre>
-              </details>
-              <UFormField
-                label="2. Paste the JSON reply"
-                help="You review each change before anything is saved."
-                :error="error || undefined"
-              >
+              <template #suggested>
                 <UTextarea
-                  v-model="reply"
-                  :rows="8"
-                  :maxrows="16"
+                  v-model="row.text"
+                  :disabled="!row.include"
+                  :rows="2"
                   autoresize
-                  class="w-full font-mono"
-                  data-testid="wording-json"
+                  class="w-full"
+                  :aria-label="`New ${row.label.toLowerCase()} text`"
+                  :color="row.include && !row.text.trim() ? 'error' : undefined"
+                  data-testid="wording-text"
                 />
-              </UFormField>
-            </template>
-          </template>
-        </fieldset>
-      </div>
-    </template>
-    <template #footer>
-      <div class="flex w-full flex-col gap-3">
-        <UAlert
-          v-if="applyError"
-          color="error"
-          variant="subtle"
-          :title="applyError"
-          class="max-h-40 overflow-y-auto"
-          data-testid="wording-apply-error"
-        />
-        <p v-if="blank" class="text-sm text-error">
-          {{ blank }} {{ blank === 1 ? 'change is' : 'changes are' }} empty. Fill in or untick.
-        </p>
-        <div class="flex flex-wrap justify-end gap-2">
-          <UButton color="neutral" variant="ghost" :disabled="busy" @click="close">Cancel</UButton>
-          <template v-if="rows">
-            <UButton color="neutral" variant="subtle" :disabled="busy" @click="rows = undefined"
-              >Back</UButton
-            >
-            <UButton
-              v-if="rows.length"
-              :loading="busy"
-              :disabled="!canApply"
-              data-testid="wording-apply"
-              @click="apply"
-              >{{
-                `Apply ${included.length} ${included.length === 1 ? 'change' : 'changes'}`
-              }}</UButton
-            >
-          </template>
-          <UButton
-            v-else-if="tab === 'builtin'"
+              </template>
+            </AppAiReviewRow>
+          </ul>
+        </template>
+      </template>
+
+      <template v-else>
+        <AppAiMethodTabs v-model="tab" :disabled="busy" />
+        <template v-if="tab === 'builtin'">
+          <p class="text-sm text-muted">
+            The AI reads your profile text and proposes wording that matches your skill names. You
+            review each change before anything is saved.
+          </p>
+          <AppAiCostNotice :usage="usage" data-testid="wording-cost-notice" />
+          <AppAiRetryConfirm
+            v-if="needsConfirm"
+            :message="safetyMessage"
             :loading="busy"
-            :disabled="busy || needsConfirm"
-            data-testid="wording-suggest"
-            @click="suggest"
-            >Suggest wording</UButton
-          >
-          <UButton v-else :disabled="!reply.trim()" data-testid="wording-preview" @click="preview"
-            >Preview changes</UButton
-          >
-        </div>
-      </div>
+            @retry="retryConfirmed"
+          />
+          <AppAiErrorAlert
+            v-else-if="error"
+            :title="error"
+            :code="errorCode"
+            data-testid="wording-error"
+          />
+        </template>
+        <AppAiOwnSteps
+          v-else
+          v-model:reply="reply"
+          :ai="api"
+          :reply-error="error"
+          testid-prefix="wording"
+        />
+      </template>
+    </fieldset>
+
+    <template #footer-top>
+      <AppAiErrorAlert
+        v-if="applyError"
+        :title="applyError"
+        class="max-h-40 overflow-y-auto"
+        data-testid="wording-apply-error"
+      />
     </template>
-  </UModal>
+
+    <template v-if="rows" #back>
+      <UButton color="neutral" variant="subtle" :disabled="busy" @click="back">Back</UButton>
+    </template>
+    <template v-if="blank" #footer-info>
+      <p class="text-sm text-error">
+        {{ blank }} {{ blank === 1 ? 'change is' : 'changes are' }} empty. Fill in or untick.
+      </p>
+    </template>
+
+    <template #actions>
+      <template v-if="rows">
+        <UButton
+          v-if="rows.length"
+          :loading="busy"
+          :disabled="!canApply"
+          data-testid="wording-apply"
+          @click="apply"
+          >{{ `Apply ${included.length} ${included.length === 1 ? 'change' : 'changes'}` }}</UButton
+        >
+        <UButton v-else data-testid="wording-close" @click="discard">Close</UButton>
+      </template>
+      <UButton
+        v-else-if="tab === 'builtin'"
+        icon="i-lucide-sparkles"
+        :loading="busy"
+        :disabled="busy || needsConfirm"
+        data-testid="wording-suggest"
+        @click="suggest"
+        >Suggest wording</UButton
+      >
+      <UButton v-else :disabled="!reply.trim()" data-testid="wording-preview" @click="preview"
+        >Preview changes</UButton
+      >
+    </template>
+  </AppAiModal>
+  <AppConfirmModal
+    v-model:open="confirmOpen"
+    title="Discard these suggestions?"
+    description="Your edits to the AI’s result will be lost."
+    confirm-label="Discard"
+    @confirm="discard"
+  />
 </template>

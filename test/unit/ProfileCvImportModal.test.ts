@@ -139,6 +139,8 @@ const openReview = async () => {
   return mounted
 }
 beforeEach(() => {
+  // The last AI used is remembered in a cookie; every test starts on the default tab.
+  document.cookie = 'ai-method=; Max-Age=0; path=/'
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
     configurable: true,
     value: vi.fn()
@@ -174,7 +176,7 @@ describe('CV import modal', () => {
     const writeText = vi.fn(async () => {})
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
     const { wrapper } = await mountOpen()
-    wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'ai')
+    wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'own')
     await flushPromises()
     expect(document.body.querySelector('[data-testid="cv-cost-notice"]')).toBeNull()
     await click('cv-copy-prompt')
@@ -198,7 +200,7 @@ describe('CV import modal', () => {
     await setText('cv-text', 'Keep this CV')
     await click('cv-parse')
     await vi.waitFor(() => expect(query('cv-error').textContent).toContain('Provider failed'))
-    wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'ai')
+    wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'own')
     await flushPromises()
     wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'paste')
     await flushPromises()
@@ -261,11 +263,12 @@ describe('CV import modal', () => {
   it('keeps invalid external JSON and shows the API error', async () => {
     previewError = 'Unsupported version'
     const { wrapper } = await mountOpen()
-    wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'ai')
+    wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'own')
     await flushPromises()
     await setText('cv-json', 'invalid json')
     await click('cv-parse')
-    await vi.waitFor(() => expect(query('cv-error').textContent).toContain('Unsupported version'))
+    // A reply error shows on the reply field itself.
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Unsupported version'))
     expect((query('cv-json') as HTMLTextAreaElement).value).toBe('invalid json')
     wrapper.unmount()
   })
@@ -275,7 +278,7 @@ describe('CV import modal', () => {
     expect((query('cv-parse') as HTMLButtonElement).disabled).toBe(true)
     await setText('cv-text', 'a'.repeat(100001))
     expect((query('cv-parse') as HTMLButtonElement).disabled).toBe(true)
-    wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'ai')
+    wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'own')
     await flushPromises()
     await setText('cv-json', 'a'.repeat(200001))
     expect((query('cv-parse') as HTMLButtonElement).disabled).toBe(true)
@@ -286,7 +289,7 @@ describe('CV import modal', () => {
   it('supports prompt load retry and manual copy fallback after clipboard failure', async () => {
     promptFails = true
     const { wrapper } = await mountOpen()
-    wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'ai')
+    wrapper.getComponent(UTabs).vm.$emit('update:modelValue', 'own')
     await flushPromises()
     await vi.waitFor(() =>
       expect(document.body.querySelector('[data-testid="cv-prompt-error"]')).not.toBeNull()
@@ -376,7 +379,7 @@ describe('CV import modal', () => {
     await click('cv-back')
     await click('cv-resume')
     expect((query('cv-headline') as HTMLInputElement).value).toBe('Keep review')
-    await click('cv-cancel')
+    await click('ai-modal-cancel')
     expect(wrapper.emitted('update:open')).toBeUndefined()
     const cancelDiscard = wrapper
       .findAllComponents(UButton)
@@ -385,7 +388,7 @@ describe('CV import modal', () => {
     cancelDiscard.vm.$emit('click')
     await flushPromises()
     expect((query('cv-headline') as HTMLInputElement).value).toBe('Keep review')
-    await click('cv-cancel')
+    await click('ai-modal-cancel')
     await click('confirm-modal-confirm')
     expect(wrapper.emitted('update:open')?.at(-1)).toEqual([false])
     expect(requests.some((r) => r.query.includes('mutation ImportProfileCv'))).toBe(false)
@@ -438,7 +441,7 @@ describe('CV import modal', () => {
     const { wrapper } = await openReview()
     await click('cv-save')
     await click('cv-save')
-    await click('cv-cancel')
+    await click('ai-modal-cancel')
     expect(saveRequests()).toHaveLength(1)
     expect(saveButton(wrapper).props()).toMatchObject({
       color: 'primary',

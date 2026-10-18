@@ -87,6 +87,8 @@ const applyRequests = () =>
   requests.filter((r) => r.query.includes('mutation ApplyProfileSkillWording'))
 
 beforeEach(() => {
+  // The last AI used is remembered in a cookie; every test starts on the default tab.
+  document.cookie = 'ai-method=; Max-Age=0; path=/'
   applyError = ''
   wording = {
     bullets: [
@@ -139,5 +141,34 @@ describe('SkillWordingModal', () => {
     await vi.waitFor(() => expect(query('wording-apply-error')).not.toBeNull())
     expect(query('wording-apply-error')!.textContent).toContain('Bullet not found.')
     expect(wrapper.emitted('changed')).toBeUndefined()
+  })
+
+  it('closes an untouched review without asking, but asks after an edit', async () => {
+    const wrapper = await suggest()
+    await click(query('ai-modal-cancel')!)
+    expect(query('confirm-modal-confirm')).toBeNull()
+    expect(wrapper.emitted('update:open')).toEqual([[false]])
+  })
+
+  it('asks before discarding an edited review', async () => {
+    const wrapper = await suggest()
+    const text = queryAll('wording-text')[0] as HTMLTextAreaElement
+    text.value = 'Something else'
+    text.dispatchEvent(new Event('input'))
+    await flushPromises()
+    await click(query('ai-modal-cancel')!)
+    expect(wrapper.emitted('update:open')).toBeUndefined()
+    await click(query('confirm-modal-confirm')!)
+    expect(wrapper.emitted('update:open')).toEqual([[false]])
+  })
+
+  it('selects none and all of the changes that can be applied', async () => {
+    await suggest()
+    expect(query('review-selected')!.textContent).toContain('3 of 3 selected')
+    await click(query('review-select-none')!)
+    expect(query('review-selected')!.textContent).toContain('0 of 3 selected')
+    expect((query('wording-apply') as HTMLButtonElement).disabled).toBe(true)
+    await click(query('review-select-all')!)
+    expect((query('wording-apply') as HTMLButtonElement).disabled).toBe(false)
   })
 })

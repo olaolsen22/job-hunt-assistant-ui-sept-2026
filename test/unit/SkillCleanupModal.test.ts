@@ -101,6 +101,8 @@ const suggest = async () => {
 }
 
 beforeEach(() => {
+  // The last AI used is remembered in a cookie; every test starts on the default tab.
+  document.cookie = 'ai-method=; Max-Age=0; path=/'
   applyError = ''
   skillsError = ''
   suggested = [{ skillIds: [1, 2], names: ['JavaScript'] }]
@@ -233,5 +235,19 @@ describe('SkillCleanupModal', () => {
     await click('cleanup-suggest')
     await vi.waitFor(() => expect(query('cleanup-error')).not.toBeNull())
     expect(query('cleanup-error')!.textContent).toContain('Page size too large')
+  })
+
+  it('closes an untouched plan without asking, and asks once a change was removed', async () => {
+    const wrapper = await suggest()
+    await click('ai-modal-cancel')
+    expect(query('confirm-modal-confirm')).toBeNull()
+    expect(wrapper.emitted('update:open')).toEqual([[false]])
+
+    const edited = await suggest()
+    await click('cleanup-remove')
+    await click('ai-modal-cancel')
+    expect(edited.emitted('update:open')).toBeUndefined()
+    await click('confirm-modal-confirm')
+    expect(edited.emitted('update:open')).toEqual([[false]])
   })
 })

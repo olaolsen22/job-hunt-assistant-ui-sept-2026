@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { PHONE_FULLSCREEN_MODAL } from '~/constants/ui'
 import { INVALID_DRAFT_JSON } from '~/utils/parseDraft'
 import { LANGUAGE_OPTIONS } from '~/constants/listing'
 import type {
@@ -14,7 +13,7 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
 
 const api = useSkillCleanup()
-const { busy, instructions, promptLoading, promptError, copied, needsConfirm, safetyMessage } = api
+const { busy, needsConfirm, safetyMessage } = api
 const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
 const usage = computed(() => usageData.value?.llmUsageToday)
 const toast = useToast()
@@ -23,10 +22,7 @@ const MAX_NAMES = 10
 type Row = { key: number; skillIds: number[]; names: string[] }
 type TranslationRow = CleanupTranslation & { key: number }
 
-const tab = ref('builtin')
 const reply = ref('')
-const error = ref('')
-const errorCode = ref<string>()
 const applyError = ref('')
 const skillNames = ref(new Map<number, string>())
 const rows = ref<Row[]>()
@@ -34,6 +30,7 @@ const translationRows = ref<TranslationRow[]>([])
 // Unticked suggestions are left out when applying.
 type CategoryRow = CleanupCategory & { key: number; accepted: boolean }
 const categoryRows = ref<CategoryRow[]>([])
+const confirmOpen = ref(false)
 let nextKey = 0
 
 const unknownIds = (row: Row) => row.skillIds.filter((id) => !skillNames.value.has(id))
@@ -62,21 +59,19 @@ const changeCount = computed(() =>
 )
 const canApply = computed(() => !!changeCount.value && !problems.value)
 
-watch(
-  open,
-  (isOpen) => {
-    if (!isOpen) return
+const { method, tab, error, errorCode } = useAiModalState(open, {
+  onOpen: () => {
     // Loaded on open: a clipboard write that follows an await can be refused.
     api.loadPrompt()
     refreshUsage()
-    error.value = ''
-  },
-  { immediate: true }
-)
-watch([reply, tab], () => (error.value = ''))
-watch(error, (value) => {
-  if (!value) errorCode.value = undefined
+  }
 })
+watch([reply, tab], () => (error.value = ''))
+const { dirty, mark, clear } = useReviewDirty(() => [
+  rows.value?.map((r) => [r.skillIds, r.names]),
+  translationRows.value.map((t) => t.name),
+  categoryRows.value.map((c) => c.accepted)
+])
 
 const startReview = async ({ operations, translations, categories }: CleanupPlan) => {
   // Names are only needed to label the plan, so a plan that can't be shown isn't opened.
@@ -90,6 +85,7 @@ const startReview = async ({ operations, translations, categories }: CleanupPlan
   translationRows.value = translations.map((t) => ({ key: nextKey++, ...t }))
   categoryRows.value = categories.map((c) => ({ key: nextKey++, accepted: true, ...c }))
   applyError.value = ''
+  mark()
 }
 const suggest = async () => {
   error.value = ''
@@ -100,6 +96,7 @@ const suggest = async () => {
     errorCode.value = result.code
     return
   }
+  method.value = 'builtin'
   await startReview(result.value)
 }
 const retryConfirmed = () => {
@@ -113,6 +110,7 @@ const preview = async () => {
     error.value = `${INVALID_DRAFT_JSON} Expect an "operations" list.`
     return
   }
+  method.value = 'own'
   await startReview(plan)
 }
 
@@ -148,290 +146,244 @@ const apply = async () => {
   clearNuxtData((key) => key.startsWith('listing-') || key.startsWith('tailored-cv-draft-'))
   emit('changed')
   toast.add({ title: 'Skills cleaned up', color: 'success' })
-  rows.value = undefined
-  reply.value = ''
-  open.value = false
+  discard()
 }
 
-const close = () => {
-  if (busy.value) return
+// Closing a review that was edited asks first; an untouched one just goes.
+const discard = () => {
+  confirmOpen.value = false
+  rows.value = undefined
+  reply.value = ''
+  clear()
   open.value = false
 }
-const modalOpen = computed({
-  get: () => open.value,
-  set: (value: boolean) => {
-    if (!value) close()
-  }
-})
+const back = () => {
+  rows.value = undefined
+  clear()
+}
+const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard())
 </script>
 
 <template>
-  <UModal
-    v-model:open="modalOpen"
+  <AppAiModal
+    v-model:open="open"
     title="Clean up skills"
     :description="
       rows
         ? 'Review the plan. Nothing changes until you apply it.'
         : 'Merge duplicates, fix spelling and split combined skills.'
     "
-    :dismissible="!busy"
-    :ui="{ content: `max-w-4xl ${PHONE_FULLSCREEN_MODAL}` }"
+    :busy="busy"
+    :close="requestClose"
+    wide
   >
-    <template #body>
-      <div class="space-y-4">
-        <AppAiRetryConfirm
-          v-if="needsConfirm && tab === 'builtin' && !rows"
-          :message="safetyMessage"
-          :loading="busy"
-          @retry="retryConfirmed"
+    <AppAiErrorAlert v-if="rows && error" :title="error" data-testid="cleanup-error" />
+    <fieldset :disabled="busy" class="min-w-0 space-y-4">
+      <template v-if="rows">
+        <AppAiReviewEmpty
+          v-if="!changeCount"
+          icon="i-lucide-sparkles"
+          text="Nothing to clean up"
+          data-testid="cleanup-empty"
         />
-        <UAlert
-          v-else-if="error && (tab === 'builtin' || rows)"
-          color="error"
-          variant="subtle"
-          :title="error"
-          data-testid="cleanup-error"
-        >
-          <template v-if="errorCode === 'daily-limit-reached'" #actions>
-            <AppAiLimitLink />
-          </template>
-        </UAlert>
-
-        <fieldset :disabled="busy" class="min-w-0 space-y-4">
-          <template v-if="rows">
-            <div
-              v-if="!changeCount"
-              class="flex flex-col items-center gap-2 py-8 text-center text-muted"
-              data-testid="cleanup-empty"
-            >
-              <UIcon name="i-lucide-sparkles" class="size-8" />
-              <p>Nothing to clean up</p>
-            </div>
-            <ul v-if="rows.length" class="space-y-3">
-              <li
-                v-for="row in rows"
-                :key="row.key"
-                class="space-y-3 rounded-md border border-default p-3"
-                data-testid="cleanup-row"
-              >
-                <div class="flex items-center gap-2">
-                  <UBadge
-                    :color="isInvalid(row) ? 'error' : 'neutral'"
-                    :variant="isInvalid(row) ? 'subtle' : 'outline'"
-                    >{{ isInvalid(row) ? 'Invalid' : kind(row) }}</UBadge
-                  >
-                  <span class="min-w-0 flex-1 text-sm text-muted">{{
-                    isInvalid(row) ? 'Unknown skill, so this can’t be applied.' : ''
-                  }}</span>
+        <ul v-if="rows.length" class="space-y-3">
+          <AppAiReviewRow
+            v-for="row in rows"
+            :key="row.key"
+            :badge="isInvalid(row) ? 'Invalid' : kind(row)"
+            :invalid="isInvalid(row)"
+            :note="isInvalid(row) ? 'Unknown skill, so this can’t be applied.' : ''"
+            :current="currentNames(row)"
+            :suggested="row.names.join(', ')"
+            remove-label="Remove this change"
+            testid-prefix="cleanup"
+            @remove="removeRow(row)"
+          >
+            <template v-if="!isInvalid(row)" #suggested>
+              <div class="space-y-2">
+                <div v-for="(_, i) in row.names" :key="i" class="flex items-center gap-2">
+                  <UInput
+                    v-model="row.names[i]"
+                    class="min-w-0 flex-1"
+                    :aria-label="`New skill name ${i + 1}`"
+                    :color="row.names[i]?.trim() ? undefined : 'error'"
+                    data-testid="cleanup-name"
+                  />
                   <UButton
-                    icon="i-lucide-trash-2"
+                    icon="i-lucide-x"
                     color="neutral"
                     variant="ghost"
-                    aria-label="Remove this change"
-                    data-testid="cleanup-remove"
-                    @click="removeRow(row)"
+                    aria-label="Remove name"
+                    :disabled="row.names.length <= 1"
+                    @click="removeName(row, i)"
                   />
                 </div>
-                <AppCompareBlock :current="currentNames(row)" :suggested="row.names.join(', ')">
-                  <template v-if="!isInvalid(row)" #suggested>
-                    <div class="space-y-2">
-                      <div v-for="(_, i) in row.names" :key="i" class="flex items-center gap-2">
-                        <UInput
-                          v-model="row.names[i]"
-                          class="min-w-0 flex-1"
-                          :aria-label="`New skill name ${i + 1}`"
-                          :color="row.names[i]?.trim() ? undefined : 'error'"
-                          data-testid="cleanup-name"
-                        />
-                        <UButton
-                          icon="i-lucide-x"
-                          color="neutral"
-                          variant="ghost"
-                          aria-label="Remove name"
-                          :disabled="row.names.length <= 1"
-                          @click="removeName(row, i)"
-                        />
-                      </div>
-                      <UButton
-                        icon="i-lucide-plus"
-                        color="neutral"
-                        variant="link"
-                        size="sm"
-                        :disabled="row.names.length >= MAX_NAMES"
-                        data-testid="cleanup-add-name"
-                        @click="addName(row)"
-                        >Add name</UButton
-                      >
-                    </div>
-                  </template>
-                </AppCompareBlock>
-              </li>
-            </ul>
-            <!-- Names refer to the skills after the operations above, so they can't be tied to a row. -->
-            <section v-if="translationRows.length" class="space-y-2">
-              <h3 class="text-sm font-medium">Translated names</h3>
-              <ul class="space-y-3">
-                <li v-for="t in translationRows" :key="t.key" data-testid="cleanup-translation">
-                  <AppCompareBlock
-                    :current="t.skillName"
-                    current-label="Skill"
-                    :suggested-label="`${languageLabel(t)} name`"
-                  >
-                    <template #suggested>
-                      <div class="flex items-center gap-2">
-                        <UInput
-                          v-model="t.name"
-                          class="min-w-0 flex-1"
-                          :aria-label="`${languageLabel(t)} name for ${t.skillName}`"
-                          :color="t.name.trim() ? undefined : 'error'"
-                          data-testid="cleanup-translation-name"
-                        />
-                        <UButton
-                          icon="i-lucide-trash-2"
-                          color="neutral"
-                          variant="ghost"
-                          :aria-label="`Remove translation for ${t.skillName}`"
-                          data-testid="cleanup-translation-remove"
-                          @click="removeTranslation(t)"
-                        />
-                      </div>
-                    </template>
-                  </AppCompareBlock>
-                </li>
-              </ul>
-            </section>
-            <section v-if="categoryRows.length" class="space-y-2">
-              <h3 class="text-sm font-medium">Categories</h3>
-              <ul class="space-y-2">
-                <li
-                  v-for="c in categoryRows"
-                  :key="c.key"
-                  class="rounded-md border border-default p-3"
-                  data-testid="cleanup-category"
+                <UButton
+                  icon="i-lucide-plus"
+                  color="neutral"
+                  variant="link"
+                  size="sm"
+                  :disabled="row.names.length >= MAX_NAMES"
+                  data-testid="cleanup-add-name"
+                  @click="addName(row)"
+                  >Add name</UButton
                 >
-                  <UCheckbox
-                    v-model="c.accepted"
-                    :label="`${c.skillName} → ${c.categoryName}`"
-                    data-testid="cleanup-category-accept"
-                  />
-                </li>
-              </ul>
-            </section>
-          </template>
+              </div>
+            </template>
+          </AppAiReviewRow>
+        </ul>
+        <!-- Names refer to the skills after the operations above, so they can't be tied to a row. -->
+        <section v-if="translationRows.length" class="space-y-2">
+          <h3 class="text-sm font-medium">Translated names</h3>
+          <ul class="space-y-3">
+            <li v-for="t in translationRows" :key="t.key" data-testid="cleanup-translation">
+              <AppCompareBlock
+                :current="t.skillName"
+                current-label="Skill"
+                :suggested-label="`${languageLabel(t)} name`"
+              >
+                <template #suggested>
+                  <div class="flex items-center gap-2">
+                    <UInput
+                      v-model="t.name"
+                      class="min-w-0 flex-1"
+                      :aria-label="`${languageLabel(t)} name for ${t.skillName}`"
+                      :color="t.name.trim() ? undefined : 'error'"
+                      data-testid="cleanup-translation-name"
+                    />
+                    <UButton
+                      icon="i-lucide-trash-2"
+                      color="neutral"
+                      variant="ghost"
+                      :aria-label="`Remove translation for ${t.skillName}`"
+                      data-testid="cleanup-translation-remove"
+                      @click="removeTranslation(t)"
+                    />
+                  </div>
+                </template>
+              </AppCompareBlock>
+            </li>
+          </ul>
+        </section>
+        <section v-if="categoryRows.length" class="space-y-2">
+          <h3 class="text-sm font-medium">Categories</h3>
+          <AppAiReviewSelectAll
+            :selected="acceptedCategories.length"
+            :total="categoryRows.length"
+            @all="categoryRows.forEach((c) => (c.accepted = true))"
+            @none="categoryRows.forEach((c) => (c.accepted = false))"
+          />
+          <ul class="space-y-2">
+            <li
+              v-for="c in categoryRows"
+              :key="c.key"
+              class="rounded-md border border-default p-3"
+              data-testid="cleanup-category"
+            >
+              <UCheckbox
+                v-model="c.accepted"
+                :label="`${c.skillName} → ${c.categoryName}`"
+                data-testid="cleanup-category-accept"
+              />
+            </li>
+          </ul>
+        </section>
+      </template>
 
-          <template v-else>
-            <UTabs
-              v-model="tab"
-              :items="[
-                { label: 'Use built-in AI', value: 'builtin', icon: 'i-lucide-sparkles' },
-                { label: 'Use your own AI', value: 'ai', icon: 'i-lucide-bot' }
-              ]"
-              :content="false"
-              class="w-full"
-            />
-            <template v-if="tab === 'builtin'">
-              <AppAiCostNotice :usage="usage" data-testid="cleanup-cost-notice" />
-              <p class="text-sm text-muted">
-                The AI reads your skill names and proposes merges, renames, splits and categories
-                for uncategorized skills. You review them before anything changes.
-              </p>
-            </template>
-            <template v-else>
-              <p class="text-sm text-muted">
-                1. Copy the prompt (it lists your skills) and send it to your chosen AI.
-              </p>
-              <UButton
-                :loading="promptLoading"
-                :disabled="!instructions"
-                :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-                :color="copied ? 'success' : 'primary'"
-                variant="subtle"
-                data-testid="cleanup-copy-prompt"
-                @click="api.copyPrompt()"
-                >{{ copied ? 'Copied' : 'Copy prompt' }}</UButton
-              >
-              <UAlert v-if="promptError" color="error" variant="subtle" :title="promptError">
-                <template #actions
-                  ><UButton color="neutral" variant="soft" @click="api.loadPrompt()"
-                    >Retry loading prompt</UButton
-                  ></template
-                >
-              </UAlert>
-              <details v-if="instructions" class="text-sm">
-                <summary class="cursor-pointer text-muted">View prompt / copy manually</summary>
-                <pre class="mt-2 whitespace-pre-wrap break-words">{{ instructions }}</pre>
-              </details>
-              <UFormField
-                label="2. Paste the JSON reply"
-                help="You review the plan before anything changes."
-                :error="error || undefined"
-              >
-                <UTextarea
-                  v-model="reply"
-                  :rows="8"
-                  :maxrows="16"
-                  autoresize
-                  class="w-full font-mono"
-                  data-testid="cleanup-json"
-                />
-              </UFormField>
-            </template>
-          </template>
-        </fieldset>
-      </div>
-    </template>
-    <template #footer>
-      <div class="flex w-full flex-col gap-3">
-        <UAlert
-          v-if="applyError"
-          color="error"
-          variant="subtle"
-          :title="applyError"
-          class="max-h-40 overflow-y-auto"
-          data-testid="cleanup-apply-error"
+      <template v-else>
+        <AppAiMethodTabs v-model="tab" :disabled="busy" />
+        <template v-if="tab === 'builtin'">
+          <p class="text-sm text-muted">
+            The AI reads your skill names and proposes merges, renames, splits and categories for
+            uncategorized skills. You review them before anything changes.
+          </p>
+          <AppAiCostNotice :usage="usage" data-testid="cleanup-cost-notice" />
+          <AppAiRetryConfirm
+            v-if="needsConfirm"
+            :message="safetyMessage"
+            :loading="busy"
+            @retry="retryConfirmed"
+          />
+          <AppAiErrorAlert
+            v-else-if="error"
+            :title="error"
+            :code="errorCode"
+            data-testid="cleanup-error"
+          />
+        </template>
+        <AppAiOwnSteps
+          v-else
+          v-model:reply="reply"
+          :ai="api"
+          note="The prompt lists your skills."
+          :reply-error="error"
+          testid-prefix="cleanup"
         />
-        <p v-if="changeCount && problems" class="text-sm text-error" data-testid="cleanup-problems">
-          {{ problems }} {{ problems === 1 ? 'change needs' : 'changes need' }} fixing or removing
-          before you can apply.
-        </p>
-        <div class="flex flex-wrap justify-end gap-2">
-          <UButton color="neutral" variant="ghost" :disabled="busy" @click="close">Cancel</UButton>
-          <template v-if="rows">
-            <UButton
-              color="neutral"
-              variant="subtle"
-              :disabled="busy"
-              data-testid="cleanup-back"
-              @click="rows = undefined"
-              >Back</UButton
-            >
-            <UButton
-              v-if="changeCount"
-              :loading="busy"
-              :disabled="!canApply"
-              data-testid="cleanup-apply"
-              @click="apply"
-              >{{ `Apply ${changeCount} ${changeCount === 1 ? 'change' : 'changes'}` }}</UButton
-            >
-          </template>
-          <UButton
-            v-else-if="tab === 'builtin'"
-            :loading="busy"
-            :disabled="busy || needsConfirm"
-            data-testid="cleanup-suggest"
-            @click="suggest"
-            >Suggest cleanup</UButton
-          >
-          <UButton
-            v-else
-            :loading="busy"
-            :disabled="busy || !reply.trim()"
-            data-testid="cleanup-preview"
-            @click="preview"
-            >Preview plan</UButton
-          >
-        </div>
-      </div>
+      </template>
+    </fieldset>
+
+    <template #footer-top>
+      <AppAiErrorAlert
+        v-if="applyError"
+        :title="applyError"
+        class="max-h-40 overflow-y-auto"
+        data-testid="cleanup-apply-error"
+      />
     </template>
-  </UModal>
+
+    <template v-if="rows" #back>
+      <UButton
+        color="neutral"
+        variant="subtle"
+        :disabled="busy"
+        data-testid="cleanup-back"
+        @click="back"
+        >Back</UButton
+      >
+    </template>
+    <template v-if="changeCount && problems" #footer-info>
+      <p class="text-sm text-error" data-testid="cleanup-problems">
+        {{ problems }} {{ problems === 1 ? 'change needs' : 'changes need' }} fixing or removing
+        before you can apply.
+      </p>
+    </template>
+
+    <template #actions>
+      <template v-if="rows">
+        <UButton
+          v-if="changeCount"
+          :loading="busy"
+          :disabled="!canApply"
+          data-testid="cleanup-apply"
+          @click="apply"
+          >{{ `Apply ${changeCount} ${changeCount === 1 ? 'change' : 'changes'}` }}</UButton
+        >
+        <UButton v-else data-testid="cleanup-close" @click="discard">Close</UButton>
+      </template>
+      <UButton
+        v-else-if="tab === 'builtin'"
+        icon="i-lucide-sparkles"
+        :loading="busy"
+        :disabled="busy || needsConfirm"
+        data-testid="cleanup-suggest"
+        @click="suggest"
+        >Suggest cleanup</UButton
+      >
+      <UButton
+        v-else
+        :loading="busy"
+        :disabled="busy || !reply.trim()"
+        data-testid="cleanup-preview"
+        @click="preview"
+        >Preview changes</UButton
+      >
+    </template>
+  </AppAiModal>
+  <AppConfirmModal
+    v-model:open="confirmOpen"
+    title="Discard these suggestions?"
+    description="Your edits to the AI’s result will be lost."
+    confirm-label="Discard"
+    @confirm="discard"
+  />
 </template>

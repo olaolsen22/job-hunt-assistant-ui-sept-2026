@@ -128,14 +128,19 @@ const type = async (selector: string, value: string) => {
   await flushPromises()
 }
 
-// Reka opens the menu on keydown/pointerdown, not click.
+// One button opens the modal; the way to get the body is a tab in it.
+const TABS: Record<string, string> = {
+  'Generate with AI': 'Built-in AI',
+  'Use your own AI': 'Your own AI',
+  'Paste my own letter': 'Paste a letter'
+}
 const chooseSource = async (label: string) => {
-  el('cover-letter-source')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
-  await flushPromises()
-  const item = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-    (i) => i.textContent?.trim() === label
+  await click('cover-letter-source')
+  const tab = [...document.body.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+    (t) => t.textContent?.trim() === TABS[label]
   )!
-  item.click()
+  tab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  tab.click()
   await flushPromises()
 }
 
@@ -170,7 +175,7 @@ describe('Cover letter page', () => {
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
     await mountPage()
     await type('[data-testid="cover-letter-brief"]', 'Mention the meetup')
-    await chooseSource('Use an external chat')
+    await chooseSource('Use your own AI')
     await vi.waitFor(() =>
       expect(el('cover-letter-copy-prompt')!.hasAttribute('disabled')).toBe(false)
     )

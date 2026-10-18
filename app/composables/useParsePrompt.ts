@@ -107,28 +107,22 @@ type ParsePayload =
 // detail: the technical reason behind a generic message, for the owner to see what went wrong.
 export type ParseOutcome = { result: string } | { error: string; code?: string; detail?: string }
 
-// Call load() before the user can click copy: browsers can refuse a clipboard write that follows
-// an await, so the instructions must already be here.
+// Call load() (or loadPrompt() where promptError is shown) before the user can click copy:
+// browsers can refuse a clipboard write that follows an await.
 export const useParsePrompt = (name: PromptName) => {
   const toast = useToast()
   const llm = useLlmModels()
   const { attempt, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
-  const instructions = ref('')
-  const copied = ref(false)
+  const { instructions, promptLoading, promptError, copied, loadPrompt, copyText } = useAiPrompt(
+    async () => (await gql(QUERIES[name])).prompt.instructions
+  )
 
+  // For pages without an error spot of their own; the modal shows promptError instead.
   const load = async () => {
-    try {
-      const { prompt } = await gql(QUERIES[name])
-      instructions.value = prompt.instructions
-    } catch {
+    await loadPrompt()
+    if (promptError.value) {
       toast.add({ title: ERROR_MESSAGES.generic, color: 'error', icon: 'i-lucide-circle-alert' })
     }
-  }
-
-  const copyText = async (text: string) => {
-    await navigator.clipboard.writeText(text)
-    copied.value = true
-    setTimeout(() => (copied.value = false), 1500)
   }
 
   const copy = (posting: string) =>
@@ -219,8 +213,11 @@ export const useParsePrompt = (name: PromptName) => {
 
   return {
     instructions,
+    promptLoading,
+    promptError,
     copied,
     load,
+    loadPrompt,
     copy,
     copyLink,
     parsing,

@@ -32,7 +32,7 @@ const remaining = computed(() => {
     :color="ownKey ? 'info' : 'warning'"
     variant="subtle"
     :icon="ownKey ? 'i-lucide-key-round' : 'i-lucide-coins'"
-    :title="ownKey ? 'Uses your own AI key' : 'Uses the app’s paid AI key'"
+    :title="ownKey ? 'Billed to your API key' : 'Uses the app’s paid AI key'"
   >
     <template #description>
       <p data-testid="ai-notice-billing">

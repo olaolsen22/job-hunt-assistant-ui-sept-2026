@@ -174,31 +174,9 @@ export const useProfileCvImport = () => {
   const llm = useLlmModels()
   const { attempt, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
   const busy = ref(false)
-  const instructions = ref('')
-  const promptLoading = ref(false)
-  const promptError = ref('')
-  const copied = ref(false)
-  const loadPrompt = async () => {
-    promptLoading.value = true
-    promptError.value = ''
-    try {
-      instructions.value = (await gql(PROMPT)).profileCvParsePrompt.instructions
-    } catch {
-      promptError.value = ERROR_MESSAGES.generic
-    } finally {
-      promptLoading.value = false
-    }
-  }
-  const copyPrompt = async () => {
-    promptError.value = ''
-    try {
-      await navigator.clipboard.writeText(instructions.value)
-      copied.value = true
-      setTimeout(() => (copied.value = false), 1500)
-    } catch {
-      promptError.value = 'Could not copy the prompt. Try again or copy the instructions below.'
-    }
-  }
+  const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
+    async () => (await gql(PROMPT)).profileCvParsePrompt.instructions
+  )
   const parse = async (text: string): Promise<Outcome<CvCandidate>> => {
     busy.value = true
     try {
