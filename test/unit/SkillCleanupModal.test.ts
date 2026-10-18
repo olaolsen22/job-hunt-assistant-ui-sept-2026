@@ -238,18 +238,59 @@ describe('SkillCleanupModal', () => {
     })
   })
 
-  it('shows an unknown id as invalid and blocks Apply until it is removed', async () => {
+  it('shows an unknown id as invalid and blocks Apply until it is dropped', async () => {
     suggested = [
       { skillIds: [1, 99], names: ['X'] },
       { skillIds: [3], names: ['Vue.js'] }
     ]
     await suggest()
-    expect(document.body.textContent).toContain('Unknown skill')
+    expect(document.body.textContent).toContain('Skill not found')
     expect((query('cleanup-apply') as HTMLButtonElement).disabled).toBe(true)
+    expect(query('cleanup-problems')!.textContent).toContain('Fix 1 item first')
 
     await click('cleanup-remove')
-    expect(queryAll('cleanup-row')).toHaveLength(1)
     expect((query('cleanup-apply') as HTMLButtonElement).disabled).toBe(false)
+    expect(query('cleanup-apply')!.textContent).toContain('Apply 1 change')
+  })
+
+  it('keeps a dropped change in the list, leaves it out of Apply, and restores it', async () => {
+    suggested = [
+      { skillIds: [1, 2], names: ['JavaScript'] },
+      { skillIds: [3], names: ['Vue.js'] }
+    ]
+    await suggest()
+    await click('cleanup-remove')
+    expect(queryAll('cleanup-row')).toHaveLength(2)
+    expect(query('cleanup-apply')!.textContent).toContain('Apply 1 change')
+
+    await click('cleanup-restore')
+    expect(query('cleanup-apply')!.textContent).toContain('Apply 2 changes')
+
+    await click('cleanup-remove')
+    await click('cleanup-apply')
+    await vi.waitFor(() => expect(applyRequests()).toHaveLength(1))
+    expect(applyRequests()[0]!.variables!.operations).toEqual([
+      { skillIds: [3], names: ['Vue.js'] }
+    ])
+  })
+
+  it('frees a removal when the change using that skill is dropped', async () => {
+    suggestedRemovals = [{ skillId: 1, reason: 'Duplicate' }]
+    await suggest()
+    expect((query('cleanup-removal-accept') as HTMLButtonElement).disabled).toBe(true)
+    await click('cleanup-remove')
+    expect((query('cleanup-removal-accept') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('counts ticked removals as permanent in the Apply button', async () => {
+    suggested = [{ skillIds: [2], names: ['Javascript'] }]
+    suggestedRemovals = [{ skillId: 3, reason: 'A trait' }]
+    await suggest()
+    expect(query('cleanup-apply')!.textContent).toContain('Apply 1 change')
+    expect(query('cleanup-apply')!.textContent).not.toContain('permanent')
+
+    await click('cleanup-removal-accept')
+    expect(query('cleanup-apply')!.textContent).toContain('Apply 2 changes (1 permanent)')
   })
 
   it('says there is nothing to clean up for an empty plan', async () => {
