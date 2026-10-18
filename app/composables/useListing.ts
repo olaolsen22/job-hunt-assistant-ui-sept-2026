@@ -28,6 +28,7 @@ const LISTING = graphql(
         postingLanguage
         favoritedAt
         analyzedAt
+        reanalyzedAt
         archivedAt
         status
         statusHistory(order: { id: ASC }) {

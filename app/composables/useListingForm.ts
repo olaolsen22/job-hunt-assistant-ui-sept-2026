@@ -152,8 +152,11 @@ export const useListingForm = () => {
     languages: [] as ListingLanguage[],
     skills: [] as ListingSkill[],
     contacts: [] as ListingContact[],
-    isAnalyzed: false
+    isAnalyzed: false,
+    reanalyzed: false
   })
+  // Whether the loaded listing was analyzed already, which makes a merged parse a re-analysis.
+  let analyzedBefore = false
 
   const validate = (s: typeof state): FormError[] => {
     const errors: FormError[] = []
@@ -200,6 +203,8 @@ export const useListingForm = () => {
     })),
     // updateListing replaces the whole listing, so leaving this out would clear the marker.
     isAnalyzed: state.isAnalyzed,
+    // Makes the API stamp reanalyzedAt; a first analysis keeps it null.
+    reanalyzed: state.reanalyzed,
     // Always sent, so a removed row unlinks that contact. Blank rows are dropped.
     contacts: state.contacts
       .filter((c) => c.name.trim())
@@ -213,8 +218,9 @@ export const useListingForm = () => {
   })
 
   // Inverse of toInput: the API's nulls become the form's empty values.
-  const fill = (listing: ListingDetail) =>
-    Object.assign(state, {
+  const fill = (listing: ListingDetail) => {
+    analyzedBefore = listing.analyzedAt != null
+    return Object.assign(state, {
       title: listing.title,
       companyName: listing.company.name,
       jobRoleName: listing.jobRole.name,
@@ -243,6 +249,7 @@ export const useListingForm = () => {
         url
       }))
     })
+  }
 
   // A parsed ad has its details filled in, which is what "analyzed" means.
   const fillDraft = (d: Record<string, unknown>) => {
@@ -262,7 +269,8 @@ export const useListingForm = () => {
     const known = new Set(state.contacts.map((c) => c.name.trim().toLowerCase()))
     Object.assign(state, Object.fromEntries(found), {
       contacts: [...state.contacts, ...contacts.filter((c) => !known.has(c.name.toLowerCase()))],
-      isAnalyzed: true
+      isAnalyzed: true,
+      reanalyzed: analyzedBefore
     })
   }
 

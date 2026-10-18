@@ -23,7 +23,8 @@ const listing = {
   dueOn: '2026-10-31',
   postingLanguage: null,
   favoritedAt: null,
-  analyzedAt: null,
+  analyzedAt: null as string | null,
+  reanalyzedAt: null as string | null,
   archivedAt: null,
   status: 'SAVED',
   statusHistory: [],
@@ -72,6 +73,23 @@ describe('Listing page', () => {
     expect(header.get('[data-testid="listing-analyzed"]').text()).toBe('To analyze')
     expect(header.find('[data-testid="company-avoided"]').exists()).toBe(false)
     expect(header.get('[data-testid="listing-company"]').attributes('href')).toBe('/companies/3')
+    wrapper.unmount()
+  })
+
+  it('shows the analysis date on the badge once the listing is analyzed', async () => {
+    const wrapper = await mountPage({ analyzedAt: '2026-10-12T12:00:00Z' })
+
+    expect(wrapper.get('[data-testid="listing-analyzed"]').text()).toMatch(/^Analyzed · .*2026/)
+    wrapper.unmount()
+  })
+
+  it('shows the latest re-analysis date instead of the first analysis', async () => {
+    const wrapper = await mountPage({
+      analyzedAt: '2026-09-01T12:00:00Z',
+      reanalyzedAt: '2026-10-12T12:00:00Z'
+    })
+
+    expect(wrapper.get('[data-testid="listing-analyzed"]').text()).toMatch(/^Re-analyzed · .*2026/)
     wrapper.unmount()
   })
 

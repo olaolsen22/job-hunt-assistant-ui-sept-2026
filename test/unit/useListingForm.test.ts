@@ -140,6 +140,39 @@ describe('useListingForm', () => {
     ])
   })
 
+  it('flags a merged parse as a re-analysis only when the listing was analyzed before', () => {
+    const base = {
+      id: 1,
+      title: 'Developer',
+      company: { name: 'Acme' },
+      jobRole: { name: 'Developer' },
+      seniority: null,
+      employmentType: null,
+      schedule: null,
+      workMode: null,
+      description: null,
+      url: 'https://example.com/job',
+      postedOn: '2026-09-01',
+      deadlineType: 'UNSPECIFIED' as const,
+      deadlineOn: null,
+      postingLanguage: null,
+      favoritedAt: null,
+      locations: [],
+      languages: [],
+      skills: [],
+      contacts: []
+    }
+    const first = useListingForm()
+    first.fill({ ...base, analyzedAt: null } as never)
+    first.mergeDraft({ title: 'Developer' })
+    expect(first.toInput().reanalyzed).toBe(false)
+
+    const again = useListingForm()
+    again.fill({ ...base, analyzedAt: '2026-09-20T10:00:00Z' } as never)
+    again.mergeDraft({ title: 'Developer' })
+    expect(again.toInput().reanalyzed).toBe(true)
+  })
+
   it('merges a parsed draft into a saved listing, keeping what the parse lacks', () => {
     const { state, mergeDraft } = useListingForm()
     Object.assign(state, {

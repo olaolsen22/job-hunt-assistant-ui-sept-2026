@@ -238,7 +238,11 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
 
           <div class="flex flex-wrap gap-2">
             <ListingsStatusBadge :status="listing.status" prominent />
-            <ListingsAnalyzedBadge :analyzed-at="listing.analyzedAt" size="lg" />
+            <ListingsAnalyzedBadge
+              :analyzed-at="listing.analyzedAt"
+              :reanalyzed-at="listing.reanalyzedAt"
+              size="lg"
+            />
             <UBadge
               v-if="listing.archivedAt"
               color="neutral"
