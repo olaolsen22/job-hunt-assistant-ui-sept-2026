@@ -45,8 +45,10 @@ describe('ListingsCompareModal', () => {
     // The modal is teleported to <body>, outside the wrapper.
     const rows = differing()
     expect(rows).toHaveLength(2)
-    expect(rows[0]).toContain('Senior frontend developer')
-    expect(rows[1]).toContain('https://jobs.example/2')
+    // URL identifies a duplicate best, so it leads the differing fields.
+    expect(rows[0]).toContain('https://jobs.example/2')
+    expect(rows[1]).toContain('Senior frontend developer')
+    expect(body().textContent).toContain('2 of 8 fields differ')
     expect(body().querySelector('[data-testid="compare-select"]')).toBeNull()
   })
 
@@ -59,12 +61,31 @@ describe('ListingsCompareModal', () => {
     expect(differing()).toHaveLength(0)
   })
 
-  it('emits keep and remove from the footer', async () => {
+  it('keeps identical fields behind a toggle', async () => {
+    await mount([otherUrl])
+    expect(body().querySelector('[data-testid="compare-row-same"]')).toBeNull()
+
+    body().querySelector<HTMLElement>('[data-testid="compare-same-toggle"]')!.click()
+    await flushPromises()
+    expect(body().querySelectorAll('[data-testid="compare-row-same"]')).toHaveLength(6)
+  })
+
+  it('emits keep, and only emits remove after confirming in the footer', async () => {
     const w = await mount([sameUrl])
     body().querySelector<HTMLElement>('[data-testid="compare-keep"]')!.click()
-    body().querySelector<HTMLElement>('[data-testid="compare-remove"]')!.click()
-
     expect(w.emitted('keep')).toHaveLength(1)
+
+    body().querySelector<HTMLElement>('[data-testid="compare-remove"]')!.click()
+    await flushPromises()
+    expect(w.emitted('remove')).toBeUndefined()
+
+    body().querySelector<HTMLElement>('[data-testid="compare-confirm-cancel"]')!.click()
+    await flushPromises()
+    expect(body().querySelector('[data-testid="compare-keep"]')).not.toBeNull()
+
+    body().querySelector<HTMLElement>('[data-testid="compare-remove"]')!.click()
+    await flushPromises()
+    body().querySelector<HTMLElement>('[data-testid="compare-confirm-remove"]')!.click()
     expect(w.emitted('remove')).toHaveLength(1)
   })
 })

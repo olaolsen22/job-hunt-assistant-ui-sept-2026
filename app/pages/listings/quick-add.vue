@@ -480,12 +480,13 @@ const openCompare = (row: Row, id: number) => {
 const onCompareKeep = () => {
   compareOpen.value = false
   compareRow.value!.duplicates = undefined
+  toast.add({ title: 'Kept both listings', color: 'success', icon: 'i-lucide-check' })
 }
 
-// Closed first so the remove confirmation doesn't stack on top of it.
+// The compare modal confirms in its own footer; it unmounts when the row is removed.
 const onCompareRemove = () => {
-  compareOpen.value = false
-  askRemove(compareRow.value!)
+  toRemove.value = compareRow.value
+  return onConfirmRemove()
 }
 
 const onConfirmRemove = async () => {
@@ -1208,6 +1209,7 @@ const onConfirmRemove = async () => {
       v-model:match-id="compareId"
       :listing="compareRow.saved"
       :matches="compareRow.duplicates"
+      :loading="deleting"
       @keep="onCompareKeep"
       @remove="onCompareRemove"
     />

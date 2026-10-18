@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { ComparedListing } from '~/composables/listingCompareFields'
 import { DEADLINE_TYPE_OPTIONS } from '~/constants/listing'
+import { PHONE_FULLSCREEN_MODAL } from '~/constants/ui'
 
 const { listing, matches } = defineProps<{
   listing: ComparedListing
   matches: ComparedListing[]
+  loading?: boolean
 }>()
 const open = defineModel<boolean>('open', { required: true })
 const matchId = defineModel<number>('matchId', { required: true })
@@ -14,6 +16,11 @@ const match = computed(() => matches.find((m) => m.id === matchId.value) ?? matc
 const matchItems = computed(() =>
   matches.map((m) => ({ label: `${m.title} · ${m.company.name}`, value: m.id }))
 )
+const matchNumber = computed(() => matches.findIndex((m) => m.id === match.value.id) + 1)
+
+// Remove is confirmed in the footer so cancelling keeps the comparison on screen.
+const confirming = ref(false)
+watch(open, () => (confirming.value = false))
 
 const SIDES = [
   { label: 'New', color: 'neutral' },
@@ -38,6 +45,9 @@ const fields = (l: ComparedListing) => ({
   Status: l.status
 })
 
+// The fields that identify a duplicate come first among the differing ones.
+const PRIORITY = ['URL', 'Title', 'Company']
+
 const rows = computed(() => {
   const left = fields(listing)
   const right = fields(match.value)
@@ -47,13 +57,36 @@ const rows = computed(() => {
     same: left[label] === right[label]
   }))
 })
+const priority = (label: string) => {
+  const i = PRIORITY.indexOf(label)
+  return i === -1 ? PRIORITY.length : i
+}
+const differing = computed(() =>
+  rows.value.filter((r) => !r.same).sort((a, b) => priority(a.label) - priority(b.label))
+)
+const same = computed(() => rows.value.filter((r) => r.same))
+const summary = computed(() =>
+  differing.value.length
+    ? `${differing.value.length} of ${rows.value.length} fields differ`
+    : 'All fields match — this looks like the same listing.'
+)
 </script>
 
 <template>
   <!-- The default sm:max-w-lg is too narrow for a label column plus two value columns. -->
-  <UModal v-model:open="open" title="Compare listings" :ui="{ content: 'sm:max-w-3xl' }">
+  <UModal
+    v-model:open="open"
+    title="Compare listings"
+    :description="summary"
+    :dismissible="!loading"
+    :ui="{ content: `sm:max-w-3xl ${PHONE_FULLSCREEN_MODAL}` }"
+  >
     <template #body>
-      <UFormField v-if="matches.length > 1" label="Compare with" class="mb-4">
+      <UFormField
+        v-if="matches.length > 1"
+        :label="`Match ${matchNumber} of ${matches.length}`"
+        class="mb-4"
+      >
         <USelect
           v-model="matchId"
           :items="matchItems"
@@ -69,48 +102,54 @@ const rows = computed(() => {
           <span />
           <span v-for="side in SIDES" :key="side.label">{{ side.label }}</span>
         </div>
-        <!-- One row per field; below sm the two values stack under the label, each tagged. -->
-        <div
-          v-for="row in rows"
-          :key="row.label"
-          :class="[
-            'grid gap-1 border-b border-default p-2 sm:grid-cols-[8rem_1fr_1fr] sm:gap-x-4',
-            { 'bg-elevated': !row.same }
-          ]"
-          :data-testid="row.same ? 'compare-row-same' : 'compare-row-differs'"
-        >
-          <dt class="text-xs text-muted sm:text-sm">{{ row.label }}</dt>
-          <dd
-            v-for="(value, i) in row.values"
-            :key="SIDES[i]!.label"
-            class="flex min-w-0 items-center gap-2"
-          >
-            <UBadge :color="SIDES[i]!.color" variant="subtle" size="sm" class="sm:hidden">{{
-              SIDES[i]!.label
-            }}</UBadge>
-            <ListingsStatusBadge
-              v-if="row.label === 'Status'"
-              :status="i ? match.status : listing.status"
-            />
-            <span v-else-if="!value" class="text-dimmed">—</span>
-            <span
-              v-else
-              :title="value"
-              :class="['truncate', { 'font-medium text-highlighted': !row.same }]"
-              >{{ value }}</span
-            >
-            <UIcon
-              v-if="row.same && value"
-              name="i-lucide-check"
-              class="size-4 shrink-0 text-muted"
-            />
-          </dd>
-        </div>
+        <ListingsCompareRows :rows="differing" :listing="listing" :match="match" />
       </dl>
+
+      <UCollapsible v-if="same.length" class="mt-3">
+        <UButton
+          color="neutral"
+          variant="link"
+          size="sm"
+          trailing-icon="i-lucide-chevron-down"
+          data-testid="compare-same-toggle"
+          >Same in both ({{ same.length }})</UButton
+        >
+        <template #content>
+          <dl class="text-sm">
+            <ListingsCompareRows :rows="same" :listing="listing" :match="match" />
+          </dl>
+        </template>
+      </UCollapsible>
     </template>
 
     <template #footer>
-      <div class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <div
+        v-if="confirming"
+        class="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end"
+        data-testid="compare-confirm"
+      >
+        <p class="text-sm text-highlighted sm:mr-auto">Remove “{{ listing.title }}”?</p>
+        <div class="flex flex-col-reverse gap-2 sm:flex-row">
+          <UButton
+            color="neutral"
+            variant="ghost"
+            class="justify-center"
+            :disabled="loading"
+            data-testid="compare-confirm-cancel"
+            @click="confirming = false"
+            >Cancel</UButton
+          >
+          <UButton
+            color="error"
+            class="justify-center"
+            :loading="loading"
+            data-testid="compare-confirm-remove"
+            @click="emit('remove')"
+            >Remove</UButton
+          >
+        </div>
+      </div>
+      <div v-else class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <UButton
           :to="`/listings/${match.id}`"
           target="_blank"
@@ -133,7 +172,7 @@ const rows = computed(() => {
           variant="soft"
           class="justify-center"
           data-testid="compare-remove"
-          @click="emit('remove')"
+          @click="confirming = true"
           >Remove new one</UButton
         >
       </div>
