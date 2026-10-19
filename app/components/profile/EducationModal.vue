@@ -85,7 +85,10 @@ const validate = () =>
 
 const { run, loading } = useMutation(() => emit('changed'))
 
+const bullets = useTemplateRef('bullets')
+
 const submit = async () => {
+  if (!(await bullets.value!.flush())) return
   const fields = {
     school: school.value.trim(),
     degree: degree.value.trim() || null,
@@ -147,6 +150,7 @@ const submit = async () => {
 
     <template #after>
       <ProfileEntryBullets
+        ref="bullets"
         kind="EDUCATION"
         :entry="education"
         class="mt-6 border-t border-default pt-4"

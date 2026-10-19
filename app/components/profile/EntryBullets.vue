@@ -8,12 +8,17 @@ defineProps<{
   entry: { id: number; bullets: readonly ProfileBullet[] } | null
 }>()
 const emit = defineEmits<{ changed: [] }>()
+
+const bullets = useTemplateRef('bullets')
+// For the entry form's Save: commits typed bullet text. True when there was nothing to save.
+defineExpose({ flush: async () => (await bullets.value?.flush()) ?? true })
 </script>
 
 <template>
   <div>
     <ProfileBullets
       v-if="entry"
+      ref="bullets"
       editable
       :kind="kind"
       :entry-id="entry.id"

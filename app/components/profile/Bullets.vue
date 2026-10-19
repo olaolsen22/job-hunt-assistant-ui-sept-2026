@@ -107,16 +107,17 @@ const { run: runMove, loading: moving } = useMutation(() => emit('changed'))
 const busy = computed(() => adding.value || saving.value || removing.value || moving.value)
 
 const add = async () => {
-  if (!newText.value.trim() || items.value.length >= MAX_BULLETS) return
+  if (!newText.value.trim() || items.value.length >= MAX_BULLETS || adding.value) return true
   const ok = await runAdd(async () => {
     const { addProfileBullet } = await gql(ADD_BULLET, {
       input: { kind: props.kind, entryId: props.entryId, text: newText.value.trim() }
     })
     return addProfileBullet.errors
   })
-  if (!ok) return
+  if (!ok) return false
   newText.value = ''
   emit('changed')
+  return true
 }
 
 const startEdit = (bullet: ProfileBullet) => {
@@ -125,17 +126,26 @@ const startEdit = (bullet: ProfileBullet) => {
 }
 
 const saveEdit = async () => {
-  if (!editText.value.trim()) return
+  if (!editText.value.trim() || saving.value) return true
   const ok = await runSave(async () => {
     const { updateProfileBullet } = await gql(UPDATE_BULLET, {
       input: { id: editingId.value!, text: editText.value.trim() }
     })
     return updateProfileBullet.errors
   })
-  if (!ok) return
+  if (!ok) return false
   editingId.value = undefined
   emit('changed')
+  return true
 }
+
+// The entry form's Save calls this first, so typed text isn't lost when the modal closes.
+// False when a bullet failed to save; the form then stays open with the text still there.
+const flush = async () => {
+  if (editingId.value !== undefined && !(await saveEdit())) return false
+  return add()
+}
+defineExpose({ flush })
 
 const remove = async () => {
   const id = deleting.value!.id
@@ -171,7 +181,7 @@ const move = async ({ oldIndex, newIndex }: { oldIndex?: number; newIndex?: numb
   <div v-if="editable" class="space-y-2" data-testid="profile-bullets">
     <div class="flex items-baseline justify-between gap-2">
       <h3 class="text-sm font-medium text-highlighted">Bullets</h3>
-      <span class="text-xs text-muted">Bullets save as you edit</span>
+      <span class="text-xs text-muted">Bullets save as you edit, or with Save</span>
     </div>
     <VueDraggable
       v-model="items"
@@ -251,6 +261,7 @@ const move = async ({ oldIndex, newIndex }: { oldIndex?: number; newIndex?: numb
         data-testid="profile-bullet-new"
         @keydown.enter.prevent="add"
       />
+      <!-- Label hidden on phones so the input keeps its width; aria-label covers it there. -->
       <UButton
         icon="i-lucide-plus"
         color="neutral"
@@ -260,7 +271,8 @@ const move = async ({ oldIndex, newIndex }: { oldIndex?: number; newIndex?: numb
         aria-label="Add bullet"
         data-testid="profile-bullet-add"
         @click="add"
-      />
+        ><span class="hidden sm:inline">Add bullet</span></UButton
+      >
     </div>
 
     <AppConfirmModal

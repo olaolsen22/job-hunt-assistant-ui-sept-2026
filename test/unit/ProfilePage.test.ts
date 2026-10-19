@@ -751,6 +751,58 @@ describe('ProfilePage bullets', () => {
     wrapper.unmount()
   })
 
+  it('adds a typed but not yet added bullet when the form is saved', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
+      if (body.query.includes('addProfileBullet(')) {
+        profile.experiences[0]!.bullets.push(bullet(101, body.variables.input.text, 1))
+        return { addProfileBullet: { profileBullet: { id: 101 }, errors: null } }
+      }
+      if (body.query.includes('updateProfileExperience('))
+        return { updateProfileExperience: { profileExperience: { id: 10 }, errors: null } }
+      return undefined
+    })
+
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    setInput('profile-bullet-new', 'Shipped the app')
+    await flushPromises()
+    clickSave()
+
+    await vi.waitFor(() =>
+      expect(requests.some((r) => r.query.includes('updateProfileExperience('))).toBe(true)
+    )
+    expect(
+      requests.find((r) => r.query.includes('addProfileBullet('))!.variables.input
+    ).toMatchObject({ entryId: 10, text: 'Shipped the app' })
+    await vi.waitFor(() => expect(cardBullets(wrapper)).toEqual(['Led a team', 'Shipped the app']))
+    wrapper.unmount()
+  })
+
+  it('keeps the form open and skips the entry save when the typed bullet fails', async () => {
+    const { wrapper, requests } = await mountPage(filledProfile, (body) =>
+      body.query.includes('addProfileBullet(')
+        ? {
+            addProfileBullet: {
+              profileBullet: null,
+              errors: [{ __typename: 'ValidationError', message: 'Too long' }]
+            }
+          }
+        : undefined
+    )
+
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    setInput('profile-bullet-new', 'Way too long')
+    await flushPromises()
+    clickSave()
+
+    await vi.waitFor(() =>
+      expect(requests.some((r) => r.query.includes('addProfileBullet('))).toBe(true)
+    )
+    await flushPromises()
+    expect(requests.some((r) => r.query.includes('updateProfileExperience('))).toBe(false)
+    expect(inModal('profile-bullet-new')).toHaveProperty('value', 'Way too long')
+    wrapper.unmount()
+  })
+
   it('disables Add bullet at 20 bullets', async () => {
     const { wrapper } = await mountPage(withBullets(Array.from({ length: 20 }, (_, i) => `b${i}`)))
     await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
