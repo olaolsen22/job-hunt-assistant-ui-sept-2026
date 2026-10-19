@@ -9,6 +9,8 @@ import { APPLICATION_STATUS_OPTIONS, LANGUAGE_OPTIONS } from '~/constants/listin
 const facets = defineModel<ListingsFacets>('facets', { required: true })
 const sort = defineModel<ListingsSort>('sort', { required: true })
 const search = defineModel<string>('search', { required: true })
+// The company filter holds an id; the page knows the name from the listings it shows.
+const { companyName = '' } = defineProps<{ companyName?: string }>()
 
 const SORT_OPTIONS = [
   { label: 'Due date', value: 'due' },
@@ -22,11 +24,12 @@ const DUE_ITEMS = [
   ...DUE_WITHIN_OPTIONS.map((days) => ({ label: `Due within ${days} days`, value: days }))
 ]
 
-// These are toggles outside the sheet, so the Filters badge counts only what is inside it, and the
+// These are set outside the sheet (toggles, or the company from a dashboard link), so the Filters badge counts only what is inside it, and the
 // sheet's own Clear leaves them alone. Clear all still resets every facet.
 const outsideToggles = () => {
-  const { favorites, preferredLocations, itRoles, englishPosting, englishMentioned } = facets.value
-  return { favorites, preferredLocations, itRoles, englishPosting, englishMentioned }
+  const { favorites, preferredLocations, itRoles, englishPosting, englishMentioned, companyId } =
+    facets.value
+  return { favorites, preferredLocations, itRoles, englishPosting, englishMentioned, companyId }
 }
 const sheetCount = computed(() =>
   countActiveFacets({
@@ -35,7 +38,8 @@ const sheetCount = computed(() =>
     preferredLocations: false,
     itRoles: false,
     englishPosting: false,
-    englishMentioned: false
+    englishMentioned: false,
+    companyId: null
   })
 )
 const anyActive = computed(() => countActiveFacets(facets.value) > 0)
@@ -43,12 +47,17 @@ const anyActive = computed(() => countActiveFacets(facets.value) > 0)
 const labels = (options: readonly { label: string; value: string }[], values: string[]) =>
   values.map((v) => options.find((o) => o.value === v)?.label ?? v).join(', ')
 
-// One removable chip per facet in the sheet, so a deep link or a forgotten filter stays visible.
+// One removable chip per facet in the sheet, plus the company, so a deep link or a forgotten filter stays visible.
 // Locations are ids whose labels only the lookup knows, so that chip shows a count.
 const chips = computed(() => {
   const f = facets.value
   const range = [f.postedFrom && formatDate(f.postedFrom), f.postedTo && formatDate(f.postedTo)]
   return [
+    f.companyId && {
+      key: 'company',
+      label: companyName ? `Company: ${companyName}` : 'Company',
+      clear: () => (f.companyId = null)
+    },
     f.statuses.length && {
       key: 'status',
       label: `Status: ${labels(APPLICATION_STATUS_OPTIONS, f.statuses)}`,

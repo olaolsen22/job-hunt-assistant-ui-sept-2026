@@ -1,32 +1,34 @@
 <script setup lang="ts">
-const { data, error, status, refresh } = useFetch<string>('/api/health', { responseType: 'text' })
+// The page owns the check, because an unhealthy API also changes what it shows below the header.
+defineProps<{ state: 'checking' | 'healthy' | 'databaseDown' | 'unreachable' }>()
+defineEmits<{ recheck: [] }>()
 
-const state = computed(() => {
-  if (status.value === 'idle' || status.value === 'pending') {
-    return { label: 'Checking…', color: 'neutral' as const }
-  }
-  if (data.value === 'Healthy') return { label: 'Healthy', color: 'success' as const }
-  // 503 = API up, database down. Anything else means the API itself is unreachable.
-  if (error.value?.statusCode === 503) return { label: 'Unhealthy', color: 'error' as const }
-  return { label: 'Unreachable', color: 'warning' as const }
-})
+const BADGES = {
+  checking: { label: 'Checking API…', color: 'neutral', icon: 'i-lucide-clock' },
+  healthy: { label: 'API healthy', color: 'success', icon: 'i-lucide-circle-check' },
+  databaseDown: { label: 'Database down', color: 'warning', icon: 'i-lucide-database' },
+  unreachable: { label: 'API unreachable', color: 'error', icon: 'i-lucide-unplug' }
+} as const
 </script>
 
 <template>
-  <AppCard title="API status">
-    <div class="flex items-center justify-between gap-4">
-      <UBadge :color="state.color" variant="subtle" size="lg" data-testid="api-health">
-        {{ state.label }}
-      </UBadge>
-      <UButton
-        icon="i-lucide-refresh-cw"
-        color="neutral"
-        variant="ghost"
-        :loading="status === 'pending'"
-        @click="() => refresh()"
-      >
-        Recheck
-      </UButton>
-    </div>
-  </AppCard>
+  <div class="flex items-center gap-1">
+    <UBadge
+      :color="BADGES[state].color"
+      :icon="BADGES[state].icon"
+      variant="subtle"
+      data-testid="api-health"
+      >{{ BADGES[state].label }}</UBadge
+    >
+    <UButton
+      icon="i-lucide-refresh-cw"
+      color="neutral"
+      variant="ghost"
+      size="sm"
+      aria-label="Recheck API status"
+      :disabled="state === 'checking'"
+      data-testid="api-health-recheck"
+      @click="$emit('recheck')"
+    />
+  </div>
 </template>

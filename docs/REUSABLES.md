@@ -37,15 +37,15 @@ remove it when you delete one.
 - `<AppMarkdownContent source>` — renders Markdown with `marked`, sanitized by DOMPurify, in
   `prose` (Tailwind typography). Use it as `<LazyAppMarkdownContent>` so both libs load only when a
   note is shown.
-- `<DashboardApiHealth>` — API health indicator on the dashboard.
+- `<DashboardApiHealth state @recheck>` — API health badge (`checking | healthy | databaseDown | unreachable`) + recheck button; the dashboard page owns the `/api/health` fetch.
 - `<DashboardWidget title icon icon-class? to? loading error empty empty-text total? @retry>` — dashboard card shell:
-  header with title, count badge and "View all" link; skeleton, error alert with Retry, or empty text, else the default slot.
+  header with title, count badge and "View all" link; skeleton, "<title> couldn't load." with Retry, or empty text, else the default slot.
 - `<DashboardRow id title subtitle>` — one-link listing row (dashboard widgets, company positions); the default slot is the right-hand detail.
 - Dashboard widgets (`<DashboardClosingSoon>`, `Interviews`, `Offers`, `Stale`, `Pipeline`, `AppliedThisWeek`, `ToAnalyze`,
   `FavoriteListings`, `FavoriteCompanies`, `LlmUsage`) — each runs its own literal query through `useAsyncData` (client-only).
-- `<DashboardEditor :layout @saved @cancel>` — edit mode for the dashboard: copy of the saved layout with up/down and show/hide
-  per widget, "Reset to default" (draft only), Save sends the whole list (`saveDashboardLayout`), shows the API message and keeps the edits on failure.
-- `DASHBOARD_WIDGETS` (`constants/dashboard.ts`) — per `DashboardWidgetKind`: label, icon, component, `wide`. A `Record`, so a new
+- `<DashboardEditor v-model:open :layout @saved>` — `USlideover` editor: copy of the saved layout (reset on each open) with drag,
+  up/down buttons and show/hide per widget, Save off until changed, "Reset to default" (draft only), Save sends the whole list (`saveDashboardLayout`), shows the API message and keeps the edits on failure.
+- `DASHBOARD_WIDGETS` (`constants/dashboard.ts`) — per `DashboardWidgetKind`: label, icon, component, `span?: 'full' | 2`. A `Record`, so a new
   kind from the API fails typecheck. `useDashboardLayout()` — `{ layout, loading, error, refresh }` for `dashboardLayout`.
 - `<CompaniesFavoriteButton id favoritedAt size?>` — star toggle for a company; same optimistic behavior as the listing one.
 - `<CompaniesAvoidedBadge label?>` — warning badge for an avoided company; "Avoided" on company surfaces, `label="Avoided company"` on listing ones.
@@ -73,7 +73,7 @@ remove it when you delete one.
   active option clears it. Generic over the option value type. Rule in the form: 3 or fewer options use this, more use a
   clearable `USelectMenu` (`USelect` can't go back to empty).
 - `<ListingsFilterPanel :facets v-model:sort v-model:search>` — the `/listings` toolbar (search, sort, "Filters (n)",
-  Favorites toggle), a removable chip per active facet + Clear all, and the facet sheet (`USlideover`, right from `md`,
+  Favorites toggle), a removable chip per active facet (plus `companyId`, labelled by the optional `company-name` prop) + Clear all, and the facet sheet (`USlideover`, right from `md`,
   bottom on phones); edits `facets` in place.
 - `<ListingsFilterCombobox v-model lookup="skills" | "locations" placeholder?>` — multi-select search over
   existing skills (by name) or locations (by id, labelled `City, Country`); no create option.

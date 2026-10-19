@@ -24,6 +24,14 @@ describe('buildListingsQuery', () => {
     expect(variables.statuses).toEqual(['APPLIED'])
   })
 
+  it('narrows to one company by id, keeping the expiry clause', () => {
+    const { text, variables } = build({ companyId: 12 })
+    expect(text).toContain('{companyId: {eq: $companyId}}')
+    expect(text).toContain('$companyId: Int!')
+    expect(text).toContain('$today')
+    expect(variables.companyId).toBe(12)
+  })
+
   it('joins two facets under and', () => {
     const { text } = build({ favorites: true, skills: ['Vue'] })
     expect(text).toContain(

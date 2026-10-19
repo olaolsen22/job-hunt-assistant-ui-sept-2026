@@ -34,7 +34,8 @@ describe('listings URL query', () => {
         languages: ['ENGLISH'],
         postedFrom: '2026-10-01',
         postedTo: '2026-10-07',
-        dueWithinDays: 14
+        dueWithinDays: 14,
+        companyId: 9
       },
       page: 2
     })
@@ -51,6 +52,7 @@ describe('listings URL query', () => {
     expect(parseListingsQuery({ favorites: '1' }).facets.favorites).toBe(true)
     expect(parseListingsQuery({ preferred: '1' }).facets.preferredLocations).toBe(true)
     expect(parseListingsQuery({ it: '1' }).facets.itRoles).toBe(true)
+    expect(parseListingsQuery({ company: '12' }).facets.companyId).toBe(12)
   })
 
   it('ignores unknown values', () => {
@@ -64,6 +66,7 @@ describe('listings URL query', () => {
         favorites: 'yes',
         postedFrom: 'yesterday',
         due: '5',
+        company: 'bekk',
         page: '-2'
       })
     ).toEqual(view({ facets: { ...emptyFacets(), statuses: ['SAVED'], locationIds: [4] } }))

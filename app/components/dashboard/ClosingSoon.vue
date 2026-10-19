@@ -25,8 +25,12 @@ const { data, status, error, refresh } = useAsyncData(
 const items = computed(() => data.value?.listings?.items ?? [])
 const total = computed(() => data.value?.listings?.totalCount ?? 0)
 
-// Due today or tomorrow is the part worth a color; the rest is just a date.
-const color = (dueOn: string) => (daysFromToday(dueOn) <= 2 ? 'warning' : 'neutral')
+// The next two days are the part worth a color and words; the rest is just a date.
+const due = (dueOn: string) => {
+  const days = daysFromToday(dueOn)
+  if (days > 2) return { label: formatDate(dueOn), urgent: false }
+  return { label: days <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : 'In 2 days', urgent: true }
+}
 </script>
 
 <template>
@@ -45,7 +49,16 @@ const color = (dueOn: string) => (daysFromToday(dueOn) <= 2 ? 'warning' : 'neutr
     <ul class="divide-y divide-default">
       <li v-for="l in items" :key="l.id">
         <DashboardRow :id="l.id" :title="l.title" :subtitle="l.company.name">
-          <UBadge :color="color(l.dueOn)" variant="subtle">{{ formatDate(l.dueOn) }}</UBadge>
+          <UBadge
+            :color="due(l.dueOn).urgent ? 'error' : 'neutral'"
+            :icon="due(l.dueOn).urgent ? 'i-lucide-clock' : undefined"
+            variant="subtle"
+            data-testid="dashboard-due"
+          >
+            <time :datetime="l.dueOn" :title="`Due ${formatDate(l.dueOn)}`">{{
+              due(l.dueOn).label
+            }}</time>
+          </UBadge>
         </DashboardRow>
       </li>
     </ul>

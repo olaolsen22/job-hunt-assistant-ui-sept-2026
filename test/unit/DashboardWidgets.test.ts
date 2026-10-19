@@ -4,6 +4,7 @@ import { readBody } from 'h3'
 import Stale from '~/components/dashboard/Stale.vue'
 import Interviews from '~/components/dashboard/Interviews.vue'
 import FavoriteCompanies from '~/components/dashboard/FavoriteCompanies.vue'
+import ClosingSoon from '~/components/dashboard/ClosingSoon.vue'
 
 // useAsyncData caches by key across mounts in the same app, so each test starts from a clean cache.
 beforeEach(() => clearNuxtData())
@@ -145,5 +146,61 @@ describe('Favorited companies widget', () => {
     expect(bekk!.text()).toContain('2 open')
     expect(vipps!.text()).toContain('No open listings')
     expect(queries).toHaveLength(2)
+  })
+})
+
+describe('Closing soon widget', () => {
+  it('says how soon the next two days are and shows later deadlines as dates', async () => {
+    const listing = (id: number, inDays: number) => ({
+      id,
+      title: `Job ${id}`,
+      dueOn: daysAgo(-inDays),
+      company: { name: 'Bekk' }
+    })
+    respond(() => ({
+      data: {
+        listings: {
+          items: [listing(1, 0), listing(2, 1), listing(3, 2), listing(4, 5)],
+          totalCount: 4
+        }
+      }
+    }))
+
+    const wrapper = await mountSuspended(ClosingSoon)
+    await vi.waitFor(() => expect(wrapper.findAll('[data-testid="dashboard-due"]')).toHaveLength(4))
+
+    const labels = wrapper.findAll('[data-testid="dashboard-due"]').map((b) => b.text())
+    expect(labels.slice(0, 3)).toEqual(['Today', 'Tomorrow', 'In 2 days'])
+    expect(labels[3]).toBe(formatDate(daysAgo(-5)))
+  })
+})
+
+describe('Favorited companies links', () => {
+  it('links the company and the listings beyond the first three to that company', async () => {
+    respond((query) =>
+      query.includes('companies(')
+        ? { data: { companies: { nodes: [{ id: 7, name: 'Bekk' }], totalCount: 1 } } }
+        : {
+            data: {
+              listings: {
+                items: [1, 2, 3, 4, 5].map((id) => ({
+                  id,
+                  title: `Job ${id}`,
+                  companyId: 7,
+                  dueOn: daysAgo(-3)
+                }))
+              }
+            }
+          }
+    )
+
+    const wrapper = await mountSuspended(FavoriteCompanies)
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="dashboard-company-more"]').exists()).toBe(true)
+    )
+    const more = wrapper.get('[data-testid="dashboard-company-more"]')
+    expect(more.text()).toBe('+2 more')
+    expect(more.attributes('href')).toBe('/listings?company=7')
+    expect(wrapper.get('a[href="/companies/7"]').text()).toBe('Bekk')
   })
 })

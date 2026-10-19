@@ -45,6 +45,18 @@ describe('FilterPanel', () => {
     expect(wrapper.find('[data-testid="listings-active"]').exists()).toBe(false)
   })
 
+  it('shows the company from a dashboard link as a chip, outside the sheet count', async () => {
+    const facets = reactive<ListingsFacets>({ ...emptyFacets(), companyId: 12 })
+    const wrapper = await mountSuspended(FilterPanel, {
+      props: { facets, sort: 'due', search: '', companyName: 'Bekk' }
+    })
+    expect(wrapper.get('[data-testid="listings-chip-company"]').text()).toBe('Company: Bekk')
+    expect(wrapper.get('[data-testid="listings-filters-toggle"]').text()).not.toContain('1')
+
+    await wrapper.get('[data-testid="listings-chip-company"]').trigger('click')
+    expect(facets.companyId).toBeNull()
+  })
+
   it('toggles favorites from the toolbar', async () => {
     const facets = reactive(emptyFacets())
     const wrapper = await mountSuspended(FilterPanel, {

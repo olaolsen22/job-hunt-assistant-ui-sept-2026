@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import { readBody } from 'h3'
+import { createError, readBody } from 'h3'
 import IndexPage from '~/pages/index.vue'
 import { VueDraggable } from 'vue-draggable-plus'
 import Editor from '~/components/dashboard/Editor.vue'
@@ -72,40 +72,95 @@ describe('Dashboard page', () => {
       expect(wrapper.find('[data-testid="dashboard-layout-error"]').exists()).toBe(true)
     )
     expect(wrapper.find('[data-testid="dashboard-widget"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="dashboard-edit"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('shows a healthy API as a badge, without a warning', async () => {
+    registerEndpoint('/api/health', () => 'Healthy')
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: () => ({ data: { dashboardLayout: [] } })
+    })
+
+    const wrapper = await mountSuspended(IndexPage)
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="api-health"]').text()).toBe('API healthy')
+    )
+    expect(wrapper.find('[data-testid="api-health-alert"]').exists()).toBe(false)
+  })
+
+  it('warns above the widgets when the API is up but its database is down', async () => {
+    registerEndpoint('/api/health', () => {
+      throw createError({ statusCode: 503 })
+    })
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: () => ({ data: { dashboardLayout: [] } })
+    })
+
+    const wrapper = await mountSuspended(IndexPage)
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="api-health"]').text()).toBe('Database down')
+    )
+    expect(wrapper.get('[data-testid="api-health-alert"]').text()).toContain('database')
   })
 })
 
 describe('Dashboard editor', () => {
   const layout = layoutOf(['CLOSING_SOON', true], ['STALE_LISTINGS', true], ['PIPELINE', true])
 
-  // jsdom can't do a real pointer drag, so emit what SortableJS would: the list in its new order.
-  const moveFirstDown = async (wrapper: Awaited<ReturnType<typeof mountSuspended>>) => {
-    const list = wrapper.getComponent(VueDraggable)
-    const [first, ...rest] = list.props('modelValue') as DashboardLayout
-    list.vm.$emit('update:modelValue', [rest[0], first, ...rest.slice(1)])
+  // The editor is a slideover, teleported out of the wrapper, so its DOM is read from the body.
+  let wrapper: Awaited<ReturnType<typeof mountSuspended>> | undefined
+  afterEach(() => wrapper?.unmount())
+  const mountEditor = async () => {
+    wrapper = await mountSuspended(Editor, {
+      props: { layout, open: true },
+      attachTo: document.body
+    })
+    await vi.waitFor(() => expect(all('dashboard-editor-row')).toHaveLength(3))
+    return wrapper
+  }
+  const all = (testid: string) => [
+    ...document.body.querySelectorAll<HTMLElement>(`[data-testid="${testid}"]`)
+  ]
+  const one = (testid: string) => all(testid)[0]!
+  const click = async (el: HTMLElement) => {
+    el.click()
     await nextTick()
   }
+  const rowNames = () => all('dashboard-editor-row').map((r) => r.textContent!.trim())
 
-  it('saves the whole list in the edited order with the edited visibility', async () => {
+  const recordSaves = () => {
     const inputs: unknown[] = []
     registerEndpoint('/graphql', {
       method: 'POST',
       handler: async (event) => {
         const { variables } = await readBody(event)
         inputs.push(variables.input)
-        return {
-          data: { saveDashboardLayout: { layout: variables.input.widgets, errors: null } }
-        }
+        return { data: { saveDashboardLayout: { layout: variables.input.widgets, errors: null } } }
       }
     })
-    const wrapper = await mountSuspended(Editor, { props: { layout } })
+    return inputs
+  }
+
+  // jsdom can't do a real pointer drag, so emit what SortableJS would: the list in its new order.
+  const dragFirstDown = async () => {
+    const list = wrapper!.getComponent(VueDraggable)
+    const [first, ...rest] = list.props('modelValue') as DashboardLayout
+    list.vm.$emit('update:modelValue', [rest[0], first, ...rest.slice(1)])
+    await nextTick()
+  }
+
+  it('saves the whole list in the edited order with the edited visibility', async () => {
+    const inputs = recordSaves()
+    await mountEditor()
 
     // Drag Closing soon below Stale listings, then hide Pipeline.
-    await moveFirstDown(wrapper)
-    await wrapper.findAll('[data-testid="dashboard-editor-shown"]')[2]!.trigger('click')
-    await wrapper.get('[data-testid="dashboard-editor-save"]').trigger('click')
+    await dragFirstDown()
+    await click(all('dashboard-editor-shown')[2]!)
+    await click(one('dashboard-editor-save'))
 
-    await vi.waitFor(() => expect(wrapper.emitted('saved')).toHaveLength(1))
+    await vi.waitFor(() => expect(wrapper!.emitted('saved')).toHaveLength(1))
     expect(inputs).toEqual([
       {
         widgets: [
@@ -117,24 +172,35 @@ describe('Dashboard editor', () => {
     ])
   })
 
-  it('resets to the default order with everything shown, but only saves on Save', async () => {
-    const inputs: unknown[] = []
-    registerEndpoint('/graphql', {
-      method: 'POST',
-      handler: async (event) => {
-        const { variables } = await readBody(event)
-        inputs.push(variables.input)
-        return { data: { saveDashboardLayout: { layout: variables.input.widgets, errors: null } } }
-      }
-    })
-    const wrapper = await mountSuspended(Editor, { props: { layout } })
+  it('reorders with the arrow buttons, which stop at the ends', async () => {
+    await mountEditor()
+    expect(all('dashboard-editor-up')[0]!.hasAttribute('disabled')).toBe(true)
+    expect(all('dashboard-editor-down')[2]!.hasAttribute('disabled')).toBe(true)
 
-    await wrapper.findAll('[data-testid="dashboard-editor-shown"]')[0]!.trigger('click')
-    await wrapper.get('[data-testid="dashboard-editor-reset"]').trigger('click')
+    await click(all('dashboard-editor-down')[0]!)
+    expect(rowNames()).toEqual(['Stale listings', 'Closing soon', 'Pipeline'])
+    await click(all('dashboard-editor-up')[2]!)
+    expect(rowNames()).toEqual(['Stale listings', 'Pipeline', 'Closing soon'])
+  })
+
+  it('keeps Save off until something changes', async () => {
+    await mountEditor()
+    expect(one('dashboard-editor-save').hasAttribute('disabled')).toBe(true)
+
+    await click(all('dashboard-editor-shown')[0]!)
+    expect(one('dashboard-editor-save').hasAttribute('disabled')).toBe(false)
+  })
+
+  it('resets to the default order with everything shown, but only saves on Save', async () => {
+    const inputs = recordSaves()
+    await mountEditor()
+
+    await click(all('dashboard-editor-shown')[0]!)
+    await click(one('dashboard-editor-reset'))
     expect(inputs).toEqual([])
 
-    await wrapper.get('[data-testid="dashboard-editor-save"]').trigger('click')
-    await vi.waitFor(() => expect(wrapper.emitted('saved')).toHaveLength(1))
+    await click(one('dashboard-editor-save'))
+    await vi.waitFor(() => expect(wrapper!.emitted('saved')).toHaveLength(1))
 
     const saved = (inputs[0] as { widgets: { widget: string; isShown: boolean }[] }).widgets
     expect(saved.map((w) => w.widget)).toEqual([
@@ -152,24 +218,22 @@ describe('Dashboard editor', () => {
     expect(saved.every((w) => w.isShown)).toBe(true)
   })
 
-  it('saves nothing when reset is followed by Cancel', async () => {
-    const wrapper = await mountSuspended(Editor, { props: { layout } })
-    await wrapper.get('[data-testid="dashboard-editor-reset"]').trigger('click')
-    await wrapper.get('[data-testid="dashboard-editor-cancel"]').trigger('click')
+  it('closes without saving and starts from the saved layout when reopened', async () => {
+    const inputs = recordSaves()
+    await mountEditor()
+    await dragFirstDown()
+    await click(one('dashboard-editor-cancel'))
 
-    expect(wrapper.emitted('cancel')).toHaveLength(1)
-    expect(wrapper.emitted('saved')).toBeUndefined()
-  })
-
-  it('discards the edits on cancel', async () => {
-    const wrapper = await mountSuspended(Editor, { props: { layout } })
-    await moveFirstDown(wrapper)
-    await wrapper.get('[data-testid="dashboard-editor-cancel"]').trigger('click')
-
-    expect(wrapper.emitted('cancel')).toHaveLength(1)
-    expect(wrapper.emitted('saved')).toBeUndefined()
+    expect(wrapper!.emitted('update:open')).toEqual([[false]])
+    expect(inputs).toEqual([])
     // The prop, which the page keeps, is untouched.
     expect(layout.map((w) => w.widget)).toEqual(['CLOSING_SOON', 'STALE_LISTINGS', 'PIPELINE'])
+
+    await wrapper!.setProps({ open: false })
+    await wrapper!.setProps({ open: true })
+    await vi.waitFor(() =>
+      expect(rowNames()).toEqual(['Closing soon', 'Stale listings', 'Pipeline'])
+    )
   })
 
   it('shows the API message and keeps the edits when the save is rejected', async () => {
@@ -184,17 +248,14 @@ describe('Dashboard editor', () => {
         }
       })
     })
-    const wrapper = await mountSuspended(Editor, { props: { layout } })
-    await moveFirstDown(wrapper)
-    await wrapper.get('[data-testid="dashboard-editor-save"]').trigger('click')
+    await mountEditor()
+    await dragFirstDown()
+    await click(one('dashboard-editor-save'))
 
     await vi.waitFor(() =>
-      expect(wrapper.get('[data-testid="dashboard-editor-error"]').text()).toContain(
-        'Widget missing'
-      )
+      expect(one('dashboard-editor-error')?.textContent).toContain('Widget missing')
     )
-    expect(wrapper.emitted('saved')).toBeUndefined()
-    const rows = wrapper.findAll('[data-testid="dashboard-editor-row"]').map((r) => r.text())
-    expect(rows[0]).toContain('Stale listings')
+    expect(wrapper!.emitted('saved')).toBeUndefined()
+    expect(rowNames()[0]).toBe('Stale listings')
   })
 })

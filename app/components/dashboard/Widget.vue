@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { RouteLocationRaw } from 'vue-router'
-import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 defineProps<{
   title: string
@@ -54,16 +53,16 @@ defineEmits<{ retry: [] }>()
     <div v-if="loading" class="space-y-2">
       <USkeleton v-for="i in 3" :key="i" class="h-10 w-full" />
     </div>
-    <UAlert
+    <!-- Laid out like the empty state, but it names the widget: several can fail at once. -->
+    <div
       v-else-if="error"
-      color="error"
-      variant="subtle"
-      :description="ERROR_MESSAGES.generic"
-      :actions="[
-        { label: 'Retry', color: 'neutral', variant: 'subtle', onClick: () => $emit('retry') }
-      ]"
+      class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center"
       data-testid="dashboard-widget-error"
-    />
+    >
+      <UIcon name="i-lucide-triangle-alert" class="size-8 text-error" />
+      <p class="text-sm text-muted">{{ title }} couldn't load.</p>
+      <UButton color="neutral" variant="subtle" size="sm" @click="$emit('retry')">Retry</UButton>
+    </div>
     <!-- Same centered icon + text as the empty states on /listings and /companies. -->
     <div
       v-else-if="empty"

@@ -1,11 +1,11 @@
 # Status
 
-Updated: 2026-10-16 · Last logged commit: 2b0864d (+ uncommitted changes)
+Updated: 2026-10-19 · Last logged commit: af8e0b9 (+ uncommitted changes)
 
 ## Pages
 
-- `/` dashboard: ten widgets (closing soon, upcoming interviews, offers, stale, pipeline, applied this week, to analyze, favorited listings, favorited companies with open listings, LLM usage today for the default model, labelled) in the user's saved order, hidden ones not mounted; "Edit dashboard" (drag by grip handle, show/hide, Reset to default, Save/Cancel); `ApiHealth`; one query per widget · `/login` (auth layout, guest login)
-- `/listings` — whole view (search, sort, preset, facets, page) in the URL query via `router.replace`, so back/refresh restore it; dashboard links use `?filter=`, `?status=`, `?favorites=1`; dense triage list: one row per listing from `lg` (star, title + company · role, location +N, seniority, posted, due chip, status/to-analyze, View ad), two lines from `md`, due-led cards on phones; toolbar (debounced search, sort, Favorites toggle, Filters (n)) + removable chip per active facet + Clear all; facets in a sheet (right from `md`, bottom on phones: status, skill,
+- `/` dashboard: ten widgets (closing soon, upcoming interviews, offers, stale, pipeline, applied this week, to analyze, favorited listings, favorited companies with open listings, LLM usage today for the default model, labelled) in the user's saved order, hidden ones not mounted; 1/2/3-column grid (`sm`/`xl`), Pipeline full row, favorited companies 2 columns; header: API health badge + recheck, "Edit dashboard"; warning banner when DB down/unreachable; editor in a slideover (drag or up/down buttons, show/hide, Reset to default, Save off until changed, saved toast); widget error names the widget; one query per widget · `/login` (auth layout, guest login)
+- `/listings` — whole view (search, sort, preset, facets, page) in the URL query via `router.replace`, so back/refresh restore it; dashboard links use `?filter=`, `?status=`, `?favorites=1`, `?company=<id>` (chip "Company: <name>"); dense triage list: one row per listing from `lg` (star, title + company · role, location +N, seniority, posted, due chip, status/to-analyze, View ad), two lines from `md`, due-led cards on phones; toolbar (debounced search, sort, Favorites toggle, Filters (n)) + removable chip per active facet + Clear all; facets in a sheet (right from `md`, bottom on phones: status, skill,
   location, due within, posted from/to, posting/required language); presets with counts (All, closing soon, to analyze,
   archived) + quick toggles with counts (preferred locations, IT = job role category named "IT", English OK = no required Norwegian); Add listing / Quick add (one + menu on phones); offset pagination, page size = rows fitting the viewport (phones 5)
 - `/listings/add` (full form incl. Contacts, "Analyze ad" parser modal opening on From link with its own link input (`parseUrl`), paste fallback on errors, dismissible filled-from-ad notice)
@@ -119,7 +119,8 @@ Updated: 2026-10-16 · Last logged commit: 2b0864d (+ uncommitted changes)
 - 2026-10-08 — Profile: one page and query, edits in modals; Basics/Preferences swap in the returned profile, everything else refetches. Months use a custom select + year field (native month input is a text box in desktop Firefox/Safari).
 - 2026-10-07 — Listing page: Edit is the only solid primary action; Analyze ad is neutral subtle, rarely used actions sit in a More menu. Optional selects use clearable `USelectMenu`; the edit save keeps its confirm.
 - 2026-10-06 — Analyzing an existing listing merges into the edit form (parsed values win, saved ones kept where the parse is empty, URL kept); saved only on "Save changes".
-- 2026-10-06 — Dashboard groups removed: with a user-chosen order they can't hold, so it is one 2-column grid (Pipeline full row). An odd gap beside Pipeline is the user's choice, not handled.
+- 2026-10-06 — Dashboard groups removed: with a user-chosen order they can't hold, so it is one grid. Gaps beside spanning widgets are the user's choice, not handled.
+- 2026-10-19 — Dashboard redesign: default widget order stays the server's (enum order); 1/2/3 columns, cards still stretch; company listings via a `company` URL facet.
 - 2026-10-06 — Dashboard: stale = Saved, no dated deadline, posted 14-45 days ago (no expiry clause); interviews = Interviewing only; stale links to `?status=SAVED` (no age facet).
 - 2026-10-06 — Dashboard widgets use literal documents with scalar variables (no runtime builder); only a whole `ListingFilterInput` variable fails the cost check.
 - 2026-10-05 — Listings query built at runtime from fixed clauses: a `ListingFilterInput` variable fails the API cost check (HC0047).

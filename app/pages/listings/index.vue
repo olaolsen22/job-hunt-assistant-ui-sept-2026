@@ -124,12 +124,17 @@ const ADD_ITEMS = [
     <!-- Kept while a filter is on, so an empty filtered page can still clear it.
          `:facets`, not v-model: the panel edits the composable's reactive object in place. -->
     <template v-if="loading || listings.length || narrowed">
-      <ListingsFilterPanel v-model:search="search" v-model:sort="sort" :facets="facets" />
+      <ListingsFilterPanel
+        v-model:search="search"
+        v-model:sort="sort"
+        :facets="facets"
+        :company-name="facets.companyId ? listings[0]?.company.name : undefined"
+      />
 
       <!-- Phones stack two labelled groups so nothing hides off-screen; sm+ flattens them back into one
            wrapping row (`sm:contents`) and the labels become screen-reader only. -->
       <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-        <div role="group" aria-label="Show" class="flex flex-col gap-1 sm:contents">
+        <div role="radiogroup" aria-label="Show" class="flex flex-col gap-1 sm:contents">
           <span class="text-xs text-muted sm:sr-only" aria-hidden="true">Show</span>
           <div class="flex flex-wrap items-center gap-2 sm:contents">
             <template v-for="p in PRESETS" :key="p.value ?? 'all'">
@@ -139,8 +144,10 @@ const ADD_ITEMS = [
                 :variant="filter === p.value ? 'solid' : 'subtle'"
                 size="sm"
                 class="max-sm:py-2"
+                :class="{ 'cursor-default': filter === p.value }"
                 :icon="p.icon"
-                :aria-pressed="filter === p.value"
+                role="radio"
+                :aria-checked="filter === p.value"
                 :data-testid="`listings-filter-${p.value ?? 'all'}`"
                 @click="filter = p.value"
                 >{{ p.label }}
@@ -151,6 +158,9 @@ const ADD_ITEMS = [
             </template>
           </div>
         </div>
+        <!-- Presets are one exclusive set, quick toggles independent ones; on sm+ the groups flatten
+             into one row, so a divider keeps them apart. -->
+        <USeparator v-if="quickVisible" orientation="vertical" class="hidden h-5 sm:block" />
         <div
           v-if="quickVisible"
           role="group"

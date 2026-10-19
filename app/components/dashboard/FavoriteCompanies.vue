@@ -73,10 +73,14 @@ const total = computed(() => data.value?.total ?? 0)
     :total="total > companies.length ? total : undefined"
     @retry="refresh()"
   >
-    <ul class="space-y-3">
+    <ul class="grid gap-x-6 gap-y-3 sm:grid-cols-2">
       <li v-for="c in companies" :key="c.id" data-testid="dashboard-company">
         <div class="flex items-center justify-between gap-2">
-          <p class="truncate font-medium text-highlighted">{{ c.name }}</p>
+          <NuxtLink
+            :to="`/companies/${c.id}`"
+            class="truncate font-medium text-highlighted hover:underline"
+            >{{ c.name }}</NuxtLink
+          >
           <UBadge color="neutral" variant="subtle">{{ c.open.length }} open</UBadge>
         </div>
         <p v-if="!c.open.length" class="text-sm text-muted">No open listings</p>
@@ -86,8 +90,14 @@ const total = computed(() => data.value?.total ?? 0)
               {{ formatDate(l.dueOn) }}
             </DashboardRow>
           </li>
-          <li v-if="c.open.length > MAX_PER_COMPANY" class="py-2 text-sm text-muted">
-            +{{ c.open.length - MAX_PER_COMPANY }} more
+          <li v-if="c.open.length > MAX_PER_COMPANY" class="py-2 text-sm">
+            <!-- The company's active listings; that list also shows the ones already applied for. -->
+            <ULink
+              :to="{ path: '/listings', query: { company: c.id } }"
+              class="text-muted hover:text-default"
+              data-testid="dashboard-company-more"
+              >+{{ c.open.length - MAX_PER_COMPANY }} more</ULink
+            >
           </li>
         </ul>
       </li>

@@ -14,10 +14,11 @@ import ToAnalyze from '~/components/dashboard/ToAnalyze.vue'
 // One entry per kind the API knows. Typed as a Record so a kind the backend adds fails typecheck here
 // instead of silently not rendering. Components are imported, not looked up by name: Nuxt's auto-imports
 // only resolve literal names in templates, and a name from the API is a runtime string.
-// `wide` widgets take the full row on `lg` screens, where the grid has two columns.
+// The grid has one column on phones, two from `sm` and three from `xl`. `span` widgets get more room:
+// `full` takes the whole row, `2` two columns (the whole row below `xl`).
 export const DASHBOARD_WIDGETS: Record<
   DashboardWidgetKind,
-  { label: string; icon: string; component: Component; wide?: boolean }
+  { label: string; icon: string; component: Component; span?: 'full' | 2 }
 > = {
   CLOSING_SOON: { label: 'Closing soon', icon: 'i-lucide-alarm-clock', component: ClosingSoon },
   UPCOMING_INTERVIEWS: {
@@ -27,7 +28,7 @@ export const DASHBOARD_WIDGETS: Record<
   },
   OFFERS_TO_ANSWER: { label: 'Offers to answer', icon: 'i-lucide-handshake', component: Offers },
   STALE_LISTINGS: { label: 'Stale listings', icon: 'i-lucide-hourglass', component: Stale },
-  PIPELINE: { label: 'Pipeline', icon: 'i-lucide-kanban', component: Pipeline, wide: true },
+  PIPELINE: { label: 'Pipeline', icon: 'i-lucide-kanban', component: Pipeline, span: 'full' },
   APPLIED_THIS_WEEK: {
     label: 'Applied this week',
     icon: 'i-lucide-send',
@@ -42,7 +43,8 @@ export const DASHBOARD_WIDGETS: Record<
   FAVORITED_COMPANIES: {
     label: 'Favorited companies',
     icon: 'i-lucide-building-2',
-    component: FavoriteCompanies
+    component: FavoriteCompanies,
+    span: 2
   },
   LLM_USAGE: { label: 'LLM usage', icon: 'i-lucide-sparkles', component: LlmUsage }
 }

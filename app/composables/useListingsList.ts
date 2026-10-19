@@ -88,6 +88,8 @@ export interface ListingsFacets {
   postedFrom: string
   postedTo: string
   dueWithinDays: number | null
+  // One company's listings, set by the dashboard's favorite companies. No control in the sheet.
+  companyId: number | null
 }
 
 export const DUE_WITHIN_OPTIONS = [3, 7, 14, 30] as const
@@ -106,7 +108,8 @@ export const emptyFacets = (): ListingsFacets => ({
   languages: [],
   postedFrom: '',
   postedTo: '',
-  dueWithinDays: null
+  dueWithinDays: null,
+  companyId: null
 })
 
 // Facets with something selected, not the number of selected values. The posted range is one facet.
@@ -131,13 +134,18 @@ const known = <T extends string>(values: readonly T[], value: unknown) =>
 
 const isoDate = (value: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(value)) ? String(value) : '')
 
+const positiveInt = (value: unknown) => {
+  const n = Number(value)
+  return Number.isInteger(n) && n > 0 ? n : null
+}
+
 export const pageFromQuery = (value: unknown) => {
   const page = Number(value)
   return Number.isInteger(page) && page > 1 ? page : 1
 }
 
 // The whole view lives in the URL, so back, refresh and links restore it. The dashboard links here
-// with ?filter=<preset>, ?status=A,B and ?favorites=1, the companies list with ?search=<name>.
+// with ?filter=<preset>, ?status=A,B, ?favorites=1 and ?company=<id>, the companies list with ?search=<name>.
 // Unknown values are dropped, so a stale or hand-edited link still opens a sensible list.
 export const parseListingsQuery = (query: Record<string, unknown>): ListingsView => {
   const languages = LANGUAGE_OPTIONS.map((o) => o.value)
@@ -163,7 +171,8 @@ export const parseListingsQuery = (query: Record<string, unknown>): ListingsView
       languages: known(languages, query.language),
       postedFrom: isoDate(query.postedFrom),
       postedTo: isoDate(query.postedTo),
-      dueWithinDays: Number(known(DUE_WITHIN_OPTIONS.map(String), query.due)[0]) || null
+      dueWithinDays: Number(known(DUE_WITHIN_OPTIONS.map(String), query.due)[0]) || null,
+      companyId: positiveInt(query.company)
     },
     page: pageFromQuery(query.page)
   }
@@ -188,6 +197,7 @@ export const toListingsQuery = ({ search, sort, filter, facets, page }: Listings
     it: facets.itRoles ? '1' : '',
     englishPosting: facets.englishPosting ? '1' : '',
     englishMentioned: facets.englishMentioned ? '1' : '',
+    company: facets.companyId ? String(facets.companyId) : '',
     page: page > 1 ? String(page) : ''
   }
   return Object.fromEntries(Object.entries(query).filter(([, value]) => value))
@@ -271,6 +281,11 @@ export const buildListingsQuery = (
     facets.postedFrom && 'gte: $postedFrom',
     facets.postedTo && 'lte: $postedTo'
   ].filter(Boolean)
+  if (facets.companyId) {
+    facetClauses.push('companyId: { eq: $companyId }')
+    declarations.push('$companyId: Int!')
+    variables.companyId = facets.companyId
+  }
   if (posted.length) facetClauses.push(`postedOn: { ${posted.join(', ')} }`)
   if (facets.postedFrom) {
     declarations.push('$postedFrom: LocalDate!')

@@ -41,7 +41,8 @@ describe('LlmUsage widget', () => {
     const wrapper = await mountWith(usage({}))
 
     expect(wrapper.text()).toContain('120')
-    expect(wrapper.text()).toContain('4,000')
+    expect(wrapper.text()).toContain('4K')
+    expect(wrapper.text()).toContain('No daily limit')
     expect(wrapper.text()).not.toContain('remaining')
     expect(wrapper.find('[data-testid="dashboard-llm-usage-bar"]').exists()).toBe(false)
   })
