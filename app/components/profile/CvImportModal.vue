@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { ProfileData } from '~/composables/useProfile'
 import {
   createCvDraft,
@@ -208,7 +209,7 @@ const save = async () => {
     return
   }
   emit('saved', result.value)
-  toast.add({ title: 'CV import saved', color: 'success' })
+  toast.add({ title: 'CV import saved', color: 'success', duration: SUCCESS_TOAST_DURATION })
   draft.value = undefined
   reviewing.value = false
   cv.value = json.value = ''

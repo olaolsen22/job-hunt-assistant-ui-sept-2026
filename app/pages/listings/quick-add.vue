@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { PreparedJobs } from '~/utils/collectedJobs'
 import { collectedJobsPosting, prepareCollectedJobs } from '~/utils/collectedJobs'
 import { useCollectedJobProcessing } from '~/composables/useCollectedJobProcessing'
@@ -379,6 +380,7 @@ const onSave = async () => {
       toast.add({
         title: `${savedCount} ${savedCount === 1 ? 'listing' : 'listings'} added`,
         color: 'success',
+        duration: SUCCESS_TOAST_DURATION,
         icon: 'i-lucide-check'
       })
     }
@@ -480,7 +482,12 @@ const openCompare = (row: Row, id: number) => {
 const onCompareKeep = () => {
   compareOpen.value = false
   compareRow.value!.duplicates = undefined
-  toast.add({ title: 'Kept both listings', color: 'success', icon: 'i-lucide-check' })
+  toast.add({
+    title: 'Kept both listings',
+    color: 'success',
+    duration: SUCCESS_TOAST_DURATION,
+    icon: 'i-lucide-check'
+  })
 }
 
 // The compare modal confirms in its own footer; it unmounts when the row is removed.
@@ -501,7 +508,12 @@ const onConfirmRemove = async () => {
       return
     }
     removeRow(row)
-    toast.add({ title: 'Listing removed', color: 'success', icon: 'i-lucide-check' })
+    toast.add({
+      title: 'Listing removed',
+      color: 'success',
+      duration: SUCCESS_TOAST_DURATION,
+      icon: 'i-lucide-check'
+    })
   } catch {
     toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
   } finally {

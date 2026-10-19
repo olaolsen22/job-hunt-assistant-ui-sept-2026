@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 // The model every built-in AI action runs on. Saves on change: it is the section's only field.
@@ -27,7 +28,8 @@ const save = async (value: string) => {
   choice.value = defaultModel.value
   toast.add({
     title: value === APP_DEFAULT ? 'Using the app default model' : `Now using ${label(value)}`,
-    color: 'success'
+    color: 'success',
+    duration: SUCCESS_TOAST_DURATION
   })
 }
 </script>

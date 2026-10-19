@@ -1,3 +1,4 @@
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { ResultOf } from 'gql.tada'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { CoverLetter } from '~/utils/coverLetter'
@@ -276,7 +277,12 @@ export const useCoverLetterDraft = (listingId: number) => {
     letter.value = coverLetterFromContent(savedDraft.content, savedDraft.brief)
     saved.value = seed.value = snapshot(letter.value)
     beforeCandidate.value = undefined
-    toast.add({ title: 'Cover letter saved', color: 'success', icon: 'i-lucide-check' })
+    toast.add({
+      title: 'Cover letter saved',
+      color: 'success',
+      duration: SUCCESS_TOAST_DURATION,
+      icon: 'i-lucide-check'
+    })
     return true
   }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { ListingLocation } from '~/composables/useListingForm'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
@@ -99,7 +100,12 @@ const onSave = async () => {
     // The company page shares this key and mounts before this page unmounts, so it would reuse
     // the pre-edit data instead of fetching.
     await refreshNuxtData(`company-${id}`)
-    toast.add({ title: 'Company saved', color: 'success', icon: 'i-lucide-check' })
+    toast.add({
+      title: 'Company saved',
+      color: 'success',
+      duration: SUCCESS_TOAST_DURATION,
+      icon: 'i-lucide-check'
+    })
     // Opened from the company page: step back to that entry, so one Back from there reaches the list.
     if (router.options.history.state.back === `/companies/${id}`) {
       router.back()

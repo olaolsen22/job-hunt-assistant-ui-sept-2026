@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { VariablesOf } from 'gql.tada'
 import { PROFILE_FIELDS, type ProfileData } from '~/composables/useProfile'
 import { STORY_FIELDS } from '~/constants/profileStory'
@@ -146,7 +147,8 @@ const clear = async () => {
   if (!ok || !saved) return
   toast.add({
     title: all ? 'CV content cleared' : `${section.value!.label} cleared`,
-    color: 'success'
+    color: 'success',
+    duration: SUCCESS_TOAST_DURATION
   })
   target.value = null
   emit('saved', saved)

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { INVALID_DRAFT_JSON } from '~/utils/parseDraft'
 import { LANGUAGE_OPTIONS } from '~/constants/listing'
 import type {
@@ -214,7 +215,7 @@ const applyPlan = async () => {
   // Merged-away skills are gone, so cached listing and CV-draft data may point at deleted ids.
   clearNuxtData((key) => key.startsWith('listing-') || key.startsWith('tailored-cv-draft-'))
   emit('changed')
-  toast.add({ title: 'Skills cleaned up', color: 'success' })
+  toast.add({ title: 'Skills cleaned up', color: 'success', duration: SUCCESS_TOAST_DURATION })
   discard()
 }
 

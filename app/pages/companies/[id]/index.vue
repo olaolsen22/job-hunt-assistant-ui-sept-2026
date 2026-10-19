@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { ResultOf } from 'gql.tada'
 import type { CompanyContact } from '~/composables/contactFields'
@@ -177,7 +178,11 @@ const setAvoided = async (isAvoided: boolean) => {
   avoidOpen.value = false
   if (!ok) return
   await refresh()
-  toast.add({ title: isAvoided ? 'Company avoided' : 'No longer avoided', color: 'success' })
+  toast.add({
+    title: isAvoided ? 'Company avoided' : 'No longer avoided',
+    color: 'success',
+    duration: SUCCESS_TOAST_DURATION
+  })
 }
 
 const contacts = computed(() =>

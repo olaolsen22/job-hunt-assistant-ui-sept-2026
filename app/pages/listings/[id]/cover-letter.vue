@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LANGUAGE_OPTIONS } from '~/constants/listing'
 
@@ -137,7 +138,12 @@ const deletePdf = async () => {
   pdfToDelete.value = null
   if (ok) {
     deletedPdfIds.value = [...deletedPdfIds.value, target.id]
-    toast.add({ title: 'PDF deleted', color: 'success', icon: 'i-lucide-check' })
+    toast.add({
+      title: 'PDF deleted',
+      color: 'success',
+      duration: SUCCESS_TOAST_DURATION,
+      icon: 'i-lucide-check'
+    })
   }
   await refreshListing()
 }

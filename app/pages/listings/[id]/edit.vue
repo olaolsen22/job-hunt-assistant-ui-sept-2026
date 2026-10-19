@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Edit listing' })
@@ -79,7 +80,12 @@ const onConfirm = async () => {
     // The detail page shares this key and mounts before this page unmounts, so it would reuse the
     // pre-edit data instead of fetching.
     await refreshNuxtData(`listing-${id}`)
-    toast.add({ title: 'Listing saved', color: 'success', icon: 'i-lucide-check' })
+    toast.add({
+      title: 'Listing saved',
+      color: 'success',
+      duration: SUCCESS_TOAST_DURATION,
+      icon: 'i-lucide-check'
+    })
     // Opened from the detail page: step back to that entry. Pushing or replacing would leave a second
     // copy of the detail page in history, so Back would need two presses to reach the list.
     if (router.options.history.state.back === `/listings/${id}`) {

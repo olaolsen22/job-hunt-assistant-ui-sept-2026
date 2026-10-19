@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { APPLICATION_STATUS_OPTIONS } from '~/constants/listing'
 
@@ -75,7 +76,12 @@ const onConfirm = async () => {
               }
             ]
           }
-        : { title: 'Listing added', color: 'success', icon: 'i-lucide-check' }
+        : {
+            title: 'Listing added',
+            color: 'success',
+            duration: SUCCESS_TOAST_DURATION,
+            icon: 'i-lucide-check'
+          }
     )
     await navigateTo('/listings', { replace: true })
   } catch {

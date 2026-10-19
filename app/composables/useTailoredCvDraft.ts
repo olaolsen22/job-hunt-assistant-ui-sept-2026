@@ -1,3 +1,4 @@
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { Ref } from 'vue'
 import type { ResultOf, VariablesOf } from 'gql.tada'
 import type { ProfileData } from '~/composables/useProfile'
@@ -549,7 +550,12 @@ export const useTailoredCvDraft = (
     // Back from the API in its normalized form (blank fields and empty bullets dropped).
     cv.value = tailoredCvFromContent((result as TailoredCvDraft).content)
     saved.value = seed.value = snapshot(cv.value)
-    toast.add({ title: 'Draft saved', color: 'success', icon: 'i-lucide-check' })
+    toast.add({
+      title: 'Draft saved',
+      color: 'success',
+      duration: SUCCESS_TOAST_DURATION,
+      icon: 'i-lucide-check'
+    })
     return true
   }
 

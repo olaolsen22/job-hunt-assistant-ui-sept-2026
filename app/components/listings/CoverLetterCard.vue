@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { ListingDetail } from '~/composables/useListing'
 
@@ -55,7 +56,13 @@ const deletePdf = async () => {
     return deleteDocument.errors
   })
   deleteOpen.value = false
-  if (ok) toast.add({ title: 'PDF deleted', color: 'success', icon: 'i-lucide-check' })
+  if (ok)
+    toast.add({
+      title: 'PDF deleted',
+      color: 'success',
+      duration: SUCCESS_TOAST_DURATION,
+      icon: 'i-lucide-check'
+    })
   emit('changed')
 }
 </script>

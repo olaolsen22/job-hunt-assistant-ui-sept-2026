@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { LlmCallLimit } from '~/composables/useProviderKeys'
 
 // One provider's daily allowance. The API reads null as no limit and 0 as paused, which a plain
@@ -50,7 +51,11 @@ const submit = async () => {
   const message = await save(limit.provider, value)
   if (message) return void (error.value = message)
   open.value = false
-  toast.add({ title: `${providerLabel(limit.provider)} limit saved`, color: 'success' })
+  toast.add({
+    title: `${providerLabel(limit.provider)} limit saved`,
+    color: 'success',
+    duration: SUCCESS_TOAST_DURATION
+  })
 }
 </script>
 

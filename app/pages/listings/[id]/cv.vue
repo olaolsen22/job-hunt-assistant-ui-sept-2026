@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { TailoredCvSectionKey } from '~/utils/tailoredCv'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { VueDraggable } from 'vue-draggable-plus'
@@ -137,7 +138,12 @@ const deletePdf = async () => {
   }
   deletedPdfIds.value = [...deletedPdfIds.value, target.id]
   if (state.generated.value?.id === target.id) state.generated.value = undefined
-  toast.add({ title: 'PDF deleted', color: 'success', icon: 'i-lucide-check' })
+  toast.add({
+    title: 'PDF deleted',
+    color: 'success',
+    duration: SUCCESS_TOAST_DURATION,
+    icon: 'i-lucide-check'
+  })
   await refreshDocuments()
 }
 const generatePdf = async () => {

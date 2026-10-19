@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { SKILL_LEVELS } from '~/constants/listing'
 import type { ListingDetail } from '~/composables/useListing'
 
@@ -114,7 +115,8 @@ const submit = async () => {
     title: isOwned.value
       ? `Updated ${skill.name} on your profile`
       : `Added ${skill.name} to your profile`,
-    color: 'success'
+    color: 'success',
+    duration: SUCCESS_TOAST_DURATION
   })
   await refreshProfile()
   emit('changed')

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { ListingDetail } from '~/composables/useListing'
@@ -73,7 +74,12 @@ const markAnalyzed = async () => {
       return
     }
     await refresh()
-    toast.add({ title: 'Marked as analyzed', color: 'success', icon: 'i-lucide-check' })
+    toast.add({
+      title: 'Marked as analyzed',
+      color: 'success',
+      duration: SUCCESS_TOAST_DURATION,
+      icon: 'i-lucide-check'
+    })
   } catch {
     toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
   } finally {
@@ -94,7 +100,11 @@ const toggleArchived = async () => {
   })
   if (!ok) return
   await refresh()
-  toast.add({ title: isArchived ? 'Archived' : 'Unarchived', color: 'success' })
+  toast.add({
+    title: isArchived ? 'Archived' : 'Unarchived',
+    color: 'success',
+    duration: SUCCESS_TOAST_DURATION
+  })
 }
 
 // Infrequent actions live in the menu so Edit is the one obvious primary button.

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { FormError } from '@nuxt/ui'
 import type { ResultOf } from 'gql.tada'
 import type { ListingLocation } from '~/composables/useListingForm'
@@ -166,6 +167,7 @@ const onSave = async () => {
       toast.add({
         title: `${createdCount} ${createdCount === 1 ? 'company' : 'companies'} added`,
         color: 'success',
+        duration: SUCCESS_TOAST_DURATION,
         icon: 'i-lucide-check'
       })
     }

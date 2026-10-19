@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { INVALID_DRAFT_JSON } from '~/utils/parseDraft'
 import type { ProfileData } from '~/composables/useProfile'
 import type { SkillWording } from '~/composables/useSkillWording'
@@ -147,7 +148,7 @@ const apply = async () => {
     return
   }
   emit('changed')
-  toast.add({ title: 'Skill wording updated', color: 'success' })
+  toast.add({ title: 'Skill wording updated', color: 'success', duration: SUCCESS_TOAST_DURATION })
   discard()
 }
 
