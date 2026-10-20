@@ -11,6 +11,9 @@ defineProps<{
   subtitle?: string | null
   dates?: string
   location?: string | null
+  // Project type, shown as a badge by the title.
+  badge?: string
+  technologies?: string[] | null
   analyzable?: boolean
   analyzing?: boolean
   disabled?: boolean
@@ -25,10 +28,27 @@ const editing = ref(false)
   <li class="py-3 first:pt-0 last:pb-0" data-testid="tailored-cv-entry">
     <div class="flex items-start gap-2">
       <div class="min-w-0 flex-1">
-        <p class="break-words font-medium text-highlighted">{{ title }}</p>
+        <p class="break-words font-medium text-highlighted">
+          {{ title }}
+          <UBadge
+            v-if="badge"
+            color="neutral"
+            variant="subtle"
+            size="sm"
+            class="ml-1 align-middle"
+            >{{ badge }}</UBadge
+          >
+        </p>
         <p v-if="subtitle" class="break-words text-sm">{{ subtitle }}</p>
         <p v-if="dates || location" class="break-words text-sm text-muted">
           {{ [dates, location].filter(Boolean).join(' · ') }}
+        </p>
+        <p
+          v-if="technologies?.length"
+          class="break-words text-sm text-muted"
+          data-testid="tailored-cv-entry-technologies"
+        >
+          {{ technologies.join(', ') }}
         </p>
       </div>
       <UButton

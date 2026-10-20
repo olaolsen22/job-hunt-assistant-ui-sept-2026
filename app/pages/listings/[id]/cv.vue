@@ -3,7 +3,7 @@ import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { TailoredCvSectionKey } from '~/utils/tailoredCv'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { VueDraggable } from 'vue-draggable-plus'
-import { PROFICIENCY_OPTIONS } from '~/constants/listing'
+import { PROFICIENCY_OPTIONS, projectKindLabel } from '~/constants/listing'
 
 definePageMeta({ title: 'Tailored CV' })
 
@@ -27,9 +27,9 @@ const SECTION_ORDER_OPTIONS = [
 ]
 const SECTION_ORDER_HINTS = {
   STANDARD:
-    'Standard order; skills print on one line, in the order shown. Only changes the generated PDF, not the text you edit.',
+    'Standard order; skills print on one line, in the order shown, and technologies are not printed. Only changes the generated PDF, not the text you edit.',
   DEVELOPER:
-    'Links under the contact lines; skills and projects moved up, and skills grouped by category. Only changes the generated PDF, not the text you edit.'
+    'Links under the contact lines; skills and projects moved up, skills grouped by category, and technologies listed under experience and projects. Only changes the generated PDF, not the text you edit.'
 } as const
 
 // The owner's categories (edited on the skills page); a deleted one shows as uncategorized.
@@ -73,6 +73,12 @@ watch(
     if (!cv.value) state.init()
   },
   { immediate: true }
+)
+// Technologies only print in the developer layout, so the hint follows the chosen one.
+const technologiesHint = computed(() =>
+  cv.value?.sectionOrder === 'DEVELOPER'
+    ? 'Printed under this entry in the PDF.'
+    : 'Only printed with the Developer PDF layout.'
 )
 // Loaded up front, so "Copy prompt" is a direct write (browsers can refuse one after an await).
 onMounted(() => state.loadPrompt())
@@ -647,6 +653,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   :subtitle="e.employer"
                   :dates="dates(e.startMonth, e.endMonth, 'Present')"
                   :location="e.location"
+                  :technologies="e.technologies"
                   :analyzable="e.sourceEntryId != null"
                   :analyzing="analyzingKey === `experience:${e.sourceEntryId}`"
                   :disabled="busy"
@@ -687,6 +694,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                     <UFormField label="Start"><AppMonthField v-model="e.startMonth" /></UFormField>
                     <UFormField label="End" help="Empty means present."
                       ><AppMonthField v-model="e.endMonth"
+                    /></UFormField>
+                    <UFormField label="Technologies" :help="technologiesHint" class="sm:col-span-2"
+                      ><ProfileNamesField
+                        v-model="e.technologies"
+                        lookup="skills"
+                        placeholder="Add a technology"
                     /></UFormField>
                   </template>
                 </ListingsTailoredCvEntry>
@@ -945,10 +958,39 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                   :subtitle="p.url"
                   :dates="dates(p.startMonth, p.endMonth)"
                   :location="p.location"
+                  :badge="projectKindLabel(p.kind)"
+                  :technologies="p.technologies"
+                  :analyzable="p.sourceEntryId != null"
+                  :analyzing="analyzingKey === `project:${p.sourceEntryId}`"
+                  :disabled="busy"
+                  @analyze="openAi(`project:${p.sourceEntryId!}`, p.name)"
                   @remove="cv.projects.splice(i, 1)"
                 >
+                  <UAlert
+                    v-if="sectionErrors[`project:${p.sourceEntryId!}`]"
+                    color="error"
+                    variant="subtle"
+                    icon="i-lucide-circle-alert"
+                    :title="sectionErrors[`project:${p.sourceEntryId!}`]"
+                    :description="sectionDetails[`project:${p.sourceEntryId!}`]"
+                    :ui="{ description: 'text-xs break-words' }"
+                    data-testid="tailored-cv-entry-error"
+                  />
+                  <ListingsTailoredCvSuggestion
+                    v-for="s in suggestionsFor((k) => k === `project:${p.sourceEntryId}`)"
+                    :key="s.key"
+                    :current="s.current"
+                    :suggested="s.suggested"
+                    @accept="state.accept(s.key)"
+                    @dismiss="state.dismiss(s.key)"
+                  />
                   <template #fields>
-                    <UFormField label="Name"><UInput v-model="p.name" class="w-full" /></UFormField>
+                    <UFormField label="Name" class="sm:col-span-2"
+                      ><UInput v-model="p.name" class="w-full"
+                    /></UFormField>
+                    <UFormField label="Type"
+                      ><ProfileProjectKindSelect v-model="p.kind"
+                    /></UFormField>
                     <UFormField label="URL"
                       ><UInput
                         :model-value="p.url ?? undefined"
@@ -964,6 +1006,12 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                     /></UFormField>
                     <UFormField label="Start"><AppMonthField v-model="p.startMonth" /></UFormField>
                     <UFormField label="End"><AppMonthField v-model="p.endMonth" /></UFormField>
+                    <UFormField label="Technologies" :help="technologiesHint" class="sm:col-span-2"
+                      ><ProfileNamesField
+                        v-model="p.technologies"
+                        lookup="skills"
+                        placeholder="Add a technology"
+                    /></UFormField>
                   </template>
                 </ListingsTailoredCvEntry>
               </ul>

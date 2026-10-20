@@ -89,6 +89,10 @@ export const PROFILE_FIELDS = graphql(
         skills {
           id
           name
+          translations {
+            language
+            name
+          }
         }
         bullets {
           ...BulletFields
@@ -123,6 +127,7 @@ export const PROFILE_FIELDS = graphql(
       projects {
         id
         name
+        kind
         url
         location {
           city
@@ -133,6 +138,10 @@ export const PROFILE_FIELDS = graphql(
         skills {
           id
           name
+          translations {
+            language
+            name
+          }
         }
         bullets {
           ...BulletFields

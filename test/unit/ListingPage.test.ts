@@ -182,7 +182,12 @@ describe('Listing skills on the profile', () => {
 
   const profile = {
     experiences: [
-      { id: 10, employer: 'Acme', title: 'Developer', skills: [{ id: 1, name: 'Vue' }] },
+      {
+        id: 10,
+        employer: 'Acme',
+        title: 'Developer',
+        skills: [{ id: 1, name: 'Vue', translations: [] }]
+      },
       { id: 11, employer: 'Globex', title: 'Engineer', skills: [] }
     ],
     projects: [{ id: 20, name: 'Side project', skills: [] }]

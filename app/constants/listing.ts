@@ -57,6 +57,13 @@ export const LINK_KIND_OPTIONS = [
   { label: 'Other', value: 'OTHER', icon: 'i-lucide-link' }
 ] as const
 
+export const PROJECT_KIND_OPTIONS = [
+  { label: 'Work', value: 'WORK' },
+  { label: 'Personal', value: 'PERSONAL' },
+  { label: 'Coursework', value: 'COURSEWORK' },
+  { label: 'Open source', value: 'OPEN_SOURCE' }
+] as const
+
 export type Seniority = (typeof SENIORITY_OPTIONS)[number]['value']
 export type EmploymentType = (typeof EMPLOYMENT_TYPE_OPTIONS)[number]['value']
 export type Schedule = (typeof SCHEDULE_OPTIONS)[number]['value']
@@ -65,6 +72,10 @@ export type DeadlineType = (typeof DEADLINE_TYPE_OPTIONS)[number]['value']
 export type Language = (typeof LANGUAGE_OPTIONS)[number]['value']
 export type CefrLevel = (typeof CEFR_LEVELS)[number]
 export type Proficiency = (typeof PROFICIENCY_OPTIONS)[number]['value']
+export type ProjectKind = (typeof PROJECT_KIND_OPTIONS)[number]['value']
+
+export const projectKindLabel = (kind?: ProjectKind | null) =>
+  PROJECT_KIND_OPTIONS.find((o) => o.value === kind)?.label
 
 export const APPLICATION_STATUS_OPTIONS = [
   { label: 'Saved', value: 'SAVED', color: 'neutral' },

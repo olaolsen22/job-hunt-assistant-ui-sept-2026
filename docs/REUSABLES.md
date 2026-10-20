@@ -112,7 +112,7 @@ remove it when you delete one.
   `<ProfileClearSectionsModal v-model:target :profile @saved>` (confirms and runs `clearProfileSections` for one
   `ProfileSectionName` or `'ALL'`, naming what is deleted and kept), `<ProfileEntry kind entry-id title subtitle? dates? bullets>` (an
   entry row with edit/delete + `<ProfileBullets kind entry-id bullets>`: add/edit/delete/drag-reorder, max 20),
-  `<ProfileNamesField v-model lookup?>` (name chips; combobox with `lookup`, free text without, used for hobbies; exposes `commit()` to add typed text before saving), `<ProfileLocationField v-model:country-code v-model:city>` (country + city, city reset on country change), `<ProfileReferenceList>`/`<ProfileReferenceModal>` (drag-reorder via `moveProfileReference`), the four `…List` + `…Modal` pairs (Experience,
+  `<ProfileNamesField v-model lookup?>` (name chips; combobox with `lookup`, free text without, used for hobbies; exposes `commit()` to add typed text before saving), `<ProfileProjectKindSelect v-model>` (nullable project type; clearable USelectMenu, placeholder "Not specified"), `<ProfileLocationField v-model:country-code v-model:city>` (country + city, city reset on country change), `<ProfileReferenceList>`/`<ProfileReferenceModal>` (drag-reorder via `moveProfileReference`), the four `…List` + `…Modal` pairs (Experience,
   Education, Certification, Project), `<ProfileSkillList>`/`<ProfileSkillModal>`, `<ProfileLanguageList>` (inline
   levels), `<ProfilePreferencesCard>` (+ target locations via `saveLocation`) and `<ProfileBasicsModal>`.
   Translations mode: the page provides `{ translating, target }` (`provideProfileTranslation`); `<ProfileBullets>` then
@@ -207,5 +207,5 @@ remove it when you delete one.
 
 - `countries.ts` — `COUNTRY_CODES`, `COUNTRY_OPTIONS` (`{ label, value }`, sorted by English name).
 - `listing.ts` — `*_OPTIONS` for the listing enums (`APPLICATION_STATUS_OPTIONS` also carries each
-  status's badge color; `Outcome` is `OUTCOME_OPTIONS`' value type), `CEFR_LEVELS`, `SKILL_LEVELS` (`{ label: 'Level n', value: n }`), `LINK_KIND_OPTIONS` (profile link kinds with icon), and their value types.
+  status's badge color; `Outcome` is `OUTCOME_OPTIONS`' value type), `CEFR_LEVELS`, `SKILL_LEVELS` (`{ label: 'Level n', value: n }`), `LINK_KIND_OPTIONS` (profile link kinds with icon), `PROJECT_KIND_OPTIONS` + `projectKindLabel(kind)`, and their value types.
 - `errorMessages.ts` — `ERROR_MESSAGES` for user-facing errors.

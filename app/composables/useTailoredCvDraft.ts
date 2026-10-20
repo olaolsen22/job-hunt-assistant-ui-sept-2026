@@ -31,6 +31,7 @@ const CONTENT_FIELDS = graphql(`
       endMonth
       sourceEntryId
       paragraph
+      technologies
       bullets {
         text
         sourceBulletId
@@ -71,6 +72,8 @@ const CONTENT_FIELDS = graphql(`
       endMonth
       sourceEntryId
       paragraph
+      kind
+      technologies
       bullets {
         text
         sourceBulletId
@@ -135,6 +138,7 @@ const ANALYZE = graphql(`
         selectedSkillIds
         summary
         paragraph
+        technologies
         error
         errorCode
       }
@@ -331,11 +335,8 @@ export const useTailoredCvDraft = (
   const fillsDirectly = () => !draft.value && !!cv.value && snapshot(cv.value) === seed.value
 
   // The profile as a candidate, in the posting's language when the listing has one.
-  const fromProfile = (source: ProfileData) => {
-    const fresh = tailoredCvFromProfile(source)
-    if (postingLanguage.value) fresh.language = postingLanguage.value
-    return fresh
-  }
+  const fromProfile = (source: ProfileData) =>
+    tailoredCvFromProfile(source, postingLanguage.value ?? source.contentLanguage)
   // No draft and no edits yet: the candidate is just the profile, so "unsaved" would blame the owner.
   const pristine = computed(() => !draft.value && !!cv.value && snapshot(cv.value) === seed.value)
   const matchesProfile = computed(
@@ -404,11 +405,12 @@ export const useTailoredCvDraft = (
     suggestions.value = suggestions.value.filter((s) => s.key !== key)
   }
 
-  // The API's own order: work experience first, then education, then skills to match them, and
-  // the summary last.
+  // The API's own order: work experience first, then education and projects, then skills to match
+  // them, and the summary last.
   const steps = (): AnalysisStep[] => {
     const experiences = profile.value?.experiences ?? []
     const educations = profile.value?.educations ?? []
+    const projects = profile.value?.projects ?? []
     return [
       ...experiences.map((e, i) => ({
         key: `experience:${e.id}` as const,
@@ -421,6 +423,12 @@ export const useTailoredCvDraft = (
         label: `Analyzing education ${i + 1} of ${educations.length}`,
         section: 'EDUCATION' as const,
         sourceEntryId: e.id
+      })),
+      ...projects.map((p, i) => ({
+        key: `project:${p.id}` as const,
+        label: `Analyzing project ${i + 1} of ${projects.length}`,
+        section: 'PROJECT' as const,
+        sourceEntryId: p.id
       })),
       { key: 'skills', label: 'Analyzing skills', section: 'SKILLS', sourceEntryId: null },
       { key: 'summary', label: 'Writing the summary', section: 'SUMMARY', sourceEntryId: null }
