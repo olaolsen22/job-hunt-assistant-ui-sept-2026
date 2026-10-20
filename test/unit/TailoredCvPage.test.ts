@@ -177,7 +177,7 @@ describe('Tailored CV page', () => {
     await click('tailored-cv-optimize')
 
     await vi.waitFor(() => expect(el('ai-usage-requests')?.textContent).toContain('3 of 50'))
-    expect(el('tailored-cv-ai-requests')!.textContent).toContain('Makes 3 AI requests')
+    expect(el('tailored-cv-ai-requests')!.textContent).toContain('Makes 4 AI requests')
     expect(ops('AnalyzeTailoredCvSection')).toHaveLength(0)
 
     await click('tailored-cv-ai-run')
@@ -214,7 +214,7 @@ describe('Tailored CV page', () => {
 
     expect(
       ops('AnalyzeTailoredCvSection').map((c) => (c.variables.input as { model?: string }).model)
-    ).toEqual([undefined, undefined, undefined])
+    ).toEqual([undefined, undefined, undefined, undefined])
   })
 
   describe('analysis errors', () => {
@@ -262,6 +262,7 @@ describe('Tailored CV page', () => {
 
       expect(ops('AnalyzeTailoredCvSection').map((c) => c.variables.input!.section)).toEqual([
         'EXPERIENCE',
+        'PROJECT',
         'SKILLS'
       ])
       expect(el('tailored-cv-skills-error')!.textContent).toContain('Stopped: daily-limit-reached')
@@ -285,9 +286,9 @@ describe('Tailored CV page', () => {
       await flushPromises()
 
       await click('ai-retry-confirm-run')
-      await vi.waitFor(() => expect(ops('AnalyzeTailoredCvSection')).toHaveLength(4))
+      await vi.waitFor(() => expect(ops('AnalyzeTailoredCvSection')).toHaveLength(5))
       const ids = ops('AnalyzeTailoredCvSection').map((c) => c.variables.input!.requestId)
-      expect(new Set(ids).size).toBe(4)
+      expect(new Set(ids).size).toBe(5)
       await vi.waitFor(() => expect(el('ai-retry-confirm')).toBeNull())
     })
   })
@@ -315,6 +316,47 @@ describe('Tailored CV page', () => {
     expect(summaryValue()).toBe('Tailored summary')
     expect(el('tailored-cv-suggestions')).toBeNull()
     expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+  })
+
+  it('optimizes one project with AI and offers its technologies as a suggestion', async () => {
+    savedDraft = savedSummary()
+    releaseAnalysis()
+    analysisOverride = (input) =>
+      input.section === 'PROJECT'
+        ? {
+            result: {
+              status: 'SUCCEEDED',
+              section: 'PROJECT',
+              sourceEntryId: input.sourceEntryId,
+              selectedBulletIds: [200],
+              selectedSkillIds: [],
+              summary: null,
+              technologies: ['Nuxt'],
+              error: null
+            },
+            errors: null
+          }
+        : undefined
+    await mountPage()
+    const projects = () => el('tailored-cv-projects')!
+    await vi.waitFor(() => expect(el('tailored-cv-projects')).not.toBeNull())
+    projects().querySelector<HTMLElement>('[data-testid="tailored-cv-entry-analyze"]')!.click()
+    await flushPromises()
+    await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
+    await click('tailored-cv-ai-run')
+
+    await vi.waitFor(() =>
+      expect(projects().querySelector('[data-testid="tailored-cv-suggestion"]')).not.toBeNull()
+    )
+    expect(ops('AnalyzeTailoredCvSection').map((c) => c.variables.input)).toMatchObject([
+      { section: 'PROJECT', sourceEntryId: 20 }
+    ])
+    expect(projects().textContent).toContain('Technologies: Nuxt')
+    projects().querySelector<HTMLElement>('[data-testid="tailored-cv-accept"]')!.click()
+    await flushPromises()
+    expect(
+      projects().querySelector('[data-testid="tailored-cv-entry-technologies"]')!.textContent
+    ).toContain('Nuxt')
   })
 
   it('accepts every pending suggestion at once', async () => {
@@ -351,7 +393,7 @@ describe('Tailored CV page', () => {
     const tabs = [...document.body.querySelectorAll('button[role="tab"]')]
     expect(tabs.map((t) => t.textContent?.trim())).toEqual(['Built-in AI', 'Your own AI'])
     expect(tabs[0]!.getAttribute('aria-selected')).toBe('true')
-    expect(el('tailored-cv-ai-requests')!.textContent).toContain('Makes 3 AI requests')
+    expect(el('tailored-cv-ai-requests')!.textContent).toContain('Makes 4 AI requests')
   })
 
   it('opens a saved draft and saves the complete edited candidate', async () => {

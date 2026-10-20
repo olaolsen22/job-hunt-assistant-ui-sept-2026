@@ -88,9 +88,10 @@ const hasSuggestions = computed(
 // The API rejects a removal that is also part of an operation. Dropping the operation frees it.
 const operationIds = computed(() => new Set(activeRows.value.flatMap((r) => r.skillIds)))
 const removalName = (row: RemovalRow) => skillNames.value.get(row.skillId)!
-const acceptedRemovals = computed(() =>
-  removalRows.value.filter((x) => x.accepted && !operationIds.value.has(x.skillId))
+const selectableRemovals = computed(() =>
+  removalRows.value.filter((x) => !operationIds.value.has(x.skillId))
 )
+const acceptedRemovals = computed(() => selectableRemovals.value.filter((x) => x.accepted))
 const summary = computed(() => {
   const chips: { section: keyof typeof sectionOpen; label: string; count: number }[] = [
     { section: 'changes', label: 'skill changes', count: rows.value?.length ?? 0 },
@@ -372,7 +373,7 @@ const requestClose = () => (dirty.value ? (discardOpen.value = true) : discard()
           </ul>
         </ProfileSkillCleanupSection>
 
-        <!-- Last and framed in red: the only suggestions that can't be undone. No select-all. -->
+        <!-- Last and framed in red: the only suggestions that can't be undone. Select all skips rows blocked by a change. -->
         <ProfileSkillCleanupSection
           v-if="removalRows.length || skippedRemovals"
           v-model:open="sectionOpen.removals"
@@ -386,6 +387,13 @@ const requestClose = () => (dirty.value ? (discardOpen.value = true) : discard()
             Permanent. A removed skill also disappears from your profile, listings, and
             experience/project tags.
           </p>
+          <AppAiReviewSelectAll
+            v-if="selectableRemovals.length"
+            :selected="acceptedRemovals.length"
+            :total="selectableRemovals.length"
+            @all="selectableRemovals.forEach((x) => (x.accepted = true))"
+            @none="selectableRemovals.forEach((x) => (x.accepted = false))"
+          />
           <ul class="space-y-2">
             <li
               v-for="x in removalRows"

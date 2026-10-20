@@ -17,6 +17,7 @@ const hobbiesOpen = ref(false)
 const storyOpen = ref(false)
 const addressOpen = ref(false)
 const cvImportOpen = ref(false)
+const translateAiOpen = ref(false)
 const clearTarget = ref<ProfileSectionName | 'ALL' | null>(null)
 
 const hasAddress = computed(() => !!(profile.value?.streetAddress || profile.value?.postalCode))
@@ -55,6 +56,8 @@ const target = computed<Language>(() =>
 const locale = computed(() => (profile.value?.contentLanguage === 'ENGLISH' ? 'en-GB' : 'nb-NO'))
 provideProfileTranslation({ translating, target, locale })
 const targetLabel = computed(() => LANGUAGE_OPTIONS.find((o) => o.value === target.value)!.label)
+// The API only translates English profiles, into Norwegian.
+const aiTranslateAvailable = computed(() => target.value === 'NORWEGIAN')
 
 const bulletsOf = (p: ProfileData) => [
   ...p.experiences.flatMap((e) => e.bullets),
@@ -276,6 +279,16 @@ const contact = computed(() => {
               >Translate to {{ targetLabel }}</UButton
             >
           </UChip>
+          <UButton
+            v-if="aiTranslateAvailable && !translating"
+            icon="i-lucide-sparkles"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            data-testid="profile-translate-ai"
+            @click="translateAiOpen = true"
+            >Translate with AI</UButton
+          >
           <span
             v-if="hasTranslations"
             class="basis-full text-xs text-muted"
@@ -407,7 +420,7 @@ const contact = computed(() => {
               </dl>
             </ProfileSection>
 
-            <ProfileWritingSampleList />
+            <ProfileWritingSampleList id="writing-samples" class="scroll-mt-4" />
           </div>
 
           <div class="space-y-4">
@@ -482,6 +495,15 @@ const contact = computed(() => {
             </p>
           </div>
           <UButton
+            v-if="aiTranslateAvailable"
+            icon="i-lucide-sparkles"
+            color="neutral"
+            variant="outline"
+            data-testid="profile-translating-ai"
+            @click="translateAiOpen = true"
+            >Translate with AI</UButton
+          >
+          <UButton
             icon="i-lucide-check"
             data-testid="profile-translate-done"
             class="w-full justify-center sm:w-auto"
@@ -502,6 +524,12 @@ const contact = computed(() => {
           :profile="profile"
           :refresh-profile="refreshCvProfile"
           @saved="onSaved"
+        />
+        <LazyProfileTranslationAiModal
+          v-if="translateAiOpen"
+          v-model:open="translateAiOpen"
+          :profile="profile"
+          @changed="refresh"
         />
         <ProfileBasicsModal
           v-model:open="basicsOpen"

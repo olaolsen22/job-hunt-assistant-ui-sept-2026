@@ -4,7 +4,9 @@ import type { TailoredCvAnalysis } from '~/composables/useTailoredCvDraft'
 import {
   changedCvSections,
   cvSectionFromAnalysis,
+  cvSectionText,
   mergeExternalCandidate,
+  tailoredCvFromContent,
   tailoredCvFromProfile,
   tailoredCvToText,
   toTailoredCvInput
@@ -154,6 +156,83 @@ describe('tailored CV candidate', () => {
       degree: 'Master of Science',
       bullets: [{ text: 'Thesis on compilers', sourceBulletId: 300 }]
     })
+  })
+
+  it('fills entry technologies by profile level then name, in the draft language, and the project type', () => {
+    const p = profile()
+    const skill = (id: number, name: string) => ({ id, name, translations: [] })
+    p.experiences[0]!.skills = [
+      skill(2, 'Go'),
+      skill(9, 'Make'),
+      skill(1, 'Vue'),
+      {
+        id: 3,
+        name: 'Code review',
+        translations: [{ language: 'NORWEGIAN', name: 'Kodegjennomgang' }]
+      }
+    ]
+    p.projects[0] = { ...p.projects[0]!, kind: 'PERSONAL', skills: [skill(1, 'Vue')] }
+
+    const cv = tailoredCvFromProfile(p, 'NORWEGIAN')
+    // Level 5, 4, 3, then the skill missing from the profile list.
+    expect(cv.experiences[0]!.technologies).toEqual(['Kodegjennomgang', 'Vue', 'Go', 'Make'])
+    expect(cv.projects[0]).toMatchObject({ kind: 'PERSONAL', technologies: ['Vue'] })
+    expect(tailoredCvFromProfile(profile()).projects[0]!.kind).toBeNull()
+  })
+
+  it('replaces entry technologies only when the analysis returns a list', () => {
+    const cv = tailoredCvFromProfile(profile())
+    cv.experiences[0]!.technologies = ['Mine']
+    const kept = cvSectionFromAnalysis(cv, profile(), result({ technologies: null }))
+    expect(kept?.value).toMatchObject({ technologies: ['Mine'] })
+    const replaced = cvSectionFromAnalysis(cv, profile(), result({ technologies: ['Go', 'Vue'] }))
+    expect(replaced?.value).toMatchObject({ technologies: ['Go', 'Vue'] })
+  })
+
+  it('takes a project result from the projects, never an experience with the same id', () => {
+    const p = profile()
+    p.projects[0] = { ...p.projects[0]!, id: 10 }
+    const cv = tailoredCvFromProfile(p)
+    cv.projects[0]!.name = 'Renamed'
+    const section = cvSectionFromAnalysis(
+      cv,
+      p,
+      result({ section: 'PROJECT', sourceEntryId: 10, technologies: ['Nuxt'] })
+    )
+    expect(section?.key).toBe('project:10')
+    expect(section?.value).toMatchObject({ name: 'Renamed', bullets: [], technologies: ['Nuxt'] })
+    expect(
+      cvSectionFromAnalysis(cv, p, result({ section: 'PROJECT', sourceEntryId: 99 }))
+    ).toBeNull()
+  })
+
+  it('always sends the project type and cleans the technologies', () => {
+    const cv = tailoredCvFromProfile(profile())
+    cv.projects[0]!.technologies = [' Vue ', 'vue', '', 'Nuxt']
+    cv.experiences[0]!.technologies = []
+    const input = toTailoredCvInput(cv)
+    expect(input.projects![0]).toHaveProperty('kind', null)
+    expect(input.projects![0]!.technologies).toEqual(['Vue', 'Nuxt'])
+    expect(input.experiences![0]!.technologies).toEqual([])
+
+    const saved = tailoredCvFromContent({
+      ...input,
+      experiences: [{ ...input.experiences![0]!, technologies: null }],
+      projects: [{ ...input.projects![0]!, kind: undefined }]
+    } as Parameters<typeof tailoredCvFromContent>[0])
+    expect(saved.experiences[0]!.technologies).toEqual([])
+    expect(saved.projects[0]!.kind).toBeNull()
+  })
+
+  it('shows the project type and technologies in the compare text', () => {
+    const project = {
+      ...tailoredCvFromProfile(profile()).projects[0]!,
+      kind: 'OPEN_SOURCE' as const,
+      technologies: ['Vue', 'Nuxt']
+    }
+    expect(cvSectionText('project:20', project)).toBe(
+      'Portfolio (Open source project)\n- Project bullet\nTechnologies: Vue, Nuxt'
+    )
   })
 
   it('suggests nothing for a failed section', () => {

@@ -5,6 +5,7 @@ import { readBody } from 'h3'
 import { USelectMenu, USelect, UCheckbox } from '#components'
 import { VueDraggable } from 'vue-draggable-plus'
 import ProfileExperienceModal from '~/components/profile/ExperienceModal.vue'
+import ProfileProjectKindSelect from '~/components/profile/ProjectKindSelect.vue'
 import ProfilePreferencesModal from '~/components/profile/PreferencesModal.vue'
 import AppMonthField from '~/components/app/MonthField.vue'
 import ProfilePage from '~/pages/profile.vue'
@@ -111,7 +112,7 @@ const filledProfile = {
       location: { city: 'Bergen', countryCode: 'NO' },
       startMonth: '2020-01-01',
       endMonth: null,
-      skills: [{ id: 1, name: 'Vue' }],
+      skills: [{ id: 1, name: 'Vue', translations: [] }],
       bullets: [bullet(100, 'Led a team', 0)]
     }
   ],
@@ -142,6 +143,7 @@ const filledProfile = {
     {
       id: 40,
       name: 'Side project',
+      kind: null,
       url: null,
       location: null,
       startMonth: null,
@@ -569,6 +571,39 @@ describe('ProfilePage', () => {
         id: 20
       })
     )
+    wrapper.unmount()
+  })
+
+  it('always sends the project type, set or cleared, since the update replaces the project', async () => {
+    const profile = {
+      ...filledProfile,
+      projects: [{ ...filledProfile.projects[0]!, kind: 'OPEN_SOURCE' as const }]
+    }
+    const { wrapper, requests } = await mountPage(profile, (body) =>
+      body.query.includes('updateProfileProject(')
+        ? { updateProfileProject: { profileProject: { id: 40 }, errors: null } }
+        : undefined
+    )
+    expect(wrapper.get('[data-testid="profile-projects"]').text()).toContain('Open source project')
+
+    const projectActions = '[data-testid="profile-projects"] [data-testid="profile-entry-actions"]'
+    const saveWith = async (kind: unknown) => {
+      await chooseAction(wrapper, projectActions, 'Edit')
+      if (kind !== undefined)
+        wrapper.getComponent(ProfileProjectKindSelect).vm.$emit('update:modelValue', kind)
+      await flushPromises()
+      clickSave()
+      await flushPromises()
+    }
+    const sentKinds = () =>
+      requests
+        .filter((r) => r.query.includes('updateProfileProject('))
+        .map((r) => r.variables.input.kind)
+
+    await saveWith(undefined)
+    await vi.waitFor(() => expect(sentKinds()).toEqual(['OPEN_SOURCE']))
+    await saveWith(null)
+    await vi.waitFor(() => expect(sentKinds()).toEqual(['OPEN_SOURCE', null]))
     wrapper.unmount()
   })
 

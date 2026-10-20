@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProfileProject } from '~/composables/useProfile'
+import { projectKindLabel } from '~/constants/listing'
 
 const props = defineProps<{ projects: readonly ProfileProject[] }>()
 const emit = defineEmits<{ changed: []; clear: [] }>()
@@ -69,6 +70,7 @@ const remove = async () => {
         kind="PROJECT"
         :entry-id="e.id"
         :title="e.name"
+        :subtitle="e.kind && `${projectKindLabel(e.kind)} project`"
         :dates="
           [
             formatMonthRange(e.startMonth, e.endMonth, undefined, locale),

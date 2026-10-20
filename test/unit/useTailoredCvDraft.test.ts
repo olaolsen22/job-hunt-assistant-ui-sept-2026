@@ -106,7 +106,7 @@ beforeEach(() => {
 })
 
 describe('useTailoredCvDraft', () => {
-  it('analyzes experience, then education, then skills, then summary, filling a new candidate without saving', async () => {
+  it('analyzes experience, education, projects, then skills and summary, filling a new candidate without saving', async () => {
     const profile = cvProfile()
     profile.educations = [
       {
@@ -127,6 +127,7 @@ describe('useTailoredCvDraft', () => {
     expect(operations()).toEqual([
       'AnalyzeTailoredCvSection:EXPERIENCE',
       'AnalyzeTailoredCvSection:EDUCATION',
+      'AnalyzeTailoredCvSection:PROJECT',
       'AnalyzeTailoredCvSection:SKILLS',
       'AnalyzeTailoredCvSection:SUMMARY'
     ])
@@ -186,6 +187,54 @@ describe('useTailoredCvDraft', () => {
     state.accept('summary')
     expect(state.cv.value!.summary).toBe('Tailored summary')
     expect(state.dirty.value).toBe(true)
+  })
+
+  it("fills project technologies from analysis, and a null list keeps the entry's", async () => {
+    analyze = (input) => {
+      const reply = succeeded(input)
+      if (input.section !== 'PROJECT') return reply
+      return {
+        ...reply,
+        result: { ...reply.result, selectedBulletIds: [200], technologies: ['Nuxt', 'Vue'] }
+      }
+    }
+    const state = await setup()
+    state.init()
+    expect(state.matchesProfile.value).toBe(true)
+    expect(state.cv.value!.experiences[0]!.technologies).toEqual(['Vue'])
+    await state.analyzeAll()
+
+    expect(state.cv.value!.projects[0]).toMatchObject({
+      bullets: [{ text: 'Project bullet', sourceBulletId: 200 }],
+      technologies: ['Nuxt', 'Vue']
+    })
+    expect(state.cv.value!.experiences[0]!.technologies).toEqual(['Vue'])
+  })
+
+  it('analyzes one project and offers it as a suggestion over a saved draft', async () => {
+    savedDraft = {
+      id: 1,
+      updatedAt: '2026-10-12T10:00:00Z',
+      content: toTailoredCvInput(tailoredCvFromProfile(cvProfile()))
+    }
+    analyze = (input) => {
+      const reply = succeeded(input)
+      return { ...reply, result: { ...reply.result, technologies: ['Nuxt'] } }
+    }
+    const state = await setup()
+    state.init()
+    await state.analyzeSection('project:20')
+
+    const input = calls.find((c) => c.query.includes('mutation AnalyzeTailoredCvSection'))!
+      .variables.input
+    expect(input).toMatchObject({ section: 'PROJECT', sourceEntryId: 20 })
+    expect(state.suggestions.value).toHaveLength(1)
+    expect(state.suggestions.value[0]).toMatchObject({
+      key: 'project:20',
+      value: { name: 'Portfolio', technologies: ['Nuxt'] }
+    })
+    state.accept('project:20')
+    expect(state.cv.value!.projects[0]!.technologies).toEqual(['Nuxt'])
   })
 
   it('saves the complete candidate and is clean afterwards', async () => {

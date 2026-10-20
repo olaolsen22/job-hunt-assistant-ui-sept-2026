@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProfileProject } from '~/composables/useProfile'
+import type { ProjectKind } from '~/constants/listing'
 
 // Without `project` it adds one; with it, it edits that one. Its bullets save on their own.
 const { project } = defineProps<{ project: ProfileProject | null }>()
@@ -39,6 +40,7 @@ const UPDATE_PROJECT = graphql(`
 `)
 
 const name = ref('')
+const kind = ref<ProjectKind | null>(null)
 const url = ref('')
 const countryCode = ref<string>()
 const city = ref<string>()
@@ -51,6 +53,7 @@ const endPartial = ref(false)
 watch(open, (isOpen) => {
   if (!isOpen) return
   name.value = project?.name ?? ''
+  kind.value = project?.kind ?? null
   url.value = project?.url ?? ''
   countryCode.value = project?.location?.countryCode
   city.value = project?.location?.city ?? undefined
@@ -61,6 +64,7 @@ watch(open, (isOpen) => {
 
 const state = computed(() => ({
   name: name.value,
+  kind: kind.value,
   url: url.value,
   countryCode: countryCode.value,
   city: city.value,
@@ -84,6 +88,8 @@ const submit = async () => {
   if (!(await bullets.value!.flush())) return
   const fields = {
     name: name.value.trim(),
+    // Always sent: the update replaces the whole project, so leaving it out would clear it.
+    kind: kind.value ?? null,
     url: url.value.trim() || null,
     location: locationInput(countryCode.value, city.value),
     startMonth: startMonth.value,
@@ -118,9 +124,12 @@ const submit = async () => {
     @submit="submit"
   >
     <div class="space-y-4">
+      <UFormField label="Name" name="name" required>
+        <UInput v-model="name" class="w-full" data-testid="project-name" />
+      </UFormField>
       <div class="grid gap-4 sm:grid-cols-2">
-        <UFormField label="Name" name="name" required>
-          <UInput v-model="name" class="w-full" data-testid="project-name" />
+        <UFormField label="Type">
+          <ProfileProjectKindSelect v-model="kind" />
         </UFormField>
         <UFormField label="URL">
           <UInput v-model="url" placeholder="https://" class="w-full" />

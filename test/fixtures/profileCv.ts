@@ -35,7 +35,7 @@ export const cvProfile = (): ProfileData => ({
       startMonth: '2020-01-01',
       endMonth: '2022-01-01',
       location: { city: 'Oslo', countryCode: 'NO' },
-      skills: [{ id: 1, name: 'Vue' }],
+      skills: [{ id: 1, name: 'Vue', translations: [] }],
       bullets: [
         {
           id: 100,
@@ -61,6 +61,7 @@ export const cvProfile = (): ProfileData => ({
     {
       id: 20,
       name: 'Portfolio',
+      kind: null,
       url: null,
       location: null,
       startMonth: null,
