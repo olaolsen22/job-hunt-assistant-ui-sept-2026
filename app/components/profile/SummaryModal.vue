@@ -6,10 +6,20 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ saved: [profile: ProfileData]; changed: [] }>()
 
 const summary = ref('')
+const aiOpen = ref(false)
+// Set when the text came from the AI, so the owner knows it still needs saving.
+const drafted = ref(false)
 
 watch(open, (isOpen) => {
-  if (isOpen) summary.value = profile.summary ?? ''
+  if (!isOpen) return
+  summary.value = profile.summary ?? ''
+  drafted.value = false
 })
+
+const useSuggestion = (text: string) => {
+  summary.value = text
+  drafted.value = true
+}
 
 const { save, loading } = useProfileUpdate(() => emit('changed'))
 
@@ -29,6 +39,21 @@ const submit = async () => {
     :loading="loading"
     @submit="submit"
   >
-    <AppMarkdownEditor v-model="summary" label="Summary" data-testid="summary-text" />
+    <div class="space-y-2">
+      <UButton
+        icon="i-lucide-sparkles"
+        color="neutral"
+        variant="soft"
+        :disabled="loading"
+        data-testid="summary-generate"
+        @click="aiOpen = true"
+        >Generate with AI</UButton
+      >
+      <AppMarkdownEditor v-model="summary" label="Summary" data-testid="summary-text" />
+      <p v-if="drafted" class="text-sm text-muted" data-testid="summary-drafted">
+        AI draft. Review it, then save.
+      </p>
+    </div>
   </AppFormModal>
+  <ProfileSummaryAiModal v-model:open="aiOpen" :current="summary" @use="useSuggestion" />
 </template>
