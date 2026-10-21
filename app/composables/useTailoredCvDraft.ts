@@ -368,7 +368,14 @@ export const useTailoredCvDraft = (
       if (!tailoredCvDraftFromProfile) return 'This listing no longer exists.'
       // The API returns defaults for the three toggles, so the owner's choices stay.
       const { contentStyle, sectionOrder, referencesOnRequest } = cv.value ?? {}
-      const fresh = tailoredCvFromContent(tailoredCvDraftFromProfile)
+      // A saved draft pins the API to its own language, so an old English draft would rebuild in
+      // English on a Norwegian ad; the client-side build follows the posting instead.
+      const apiFresh = tailoredCvFromContent(tailoredCvDraftFromProfile)
+      const target = postingLanguage.value
+      const fresh =
+        target && apiFresh.language !== target && profile.value
+          ? fromProfile(profile.value)
+          : apiFresh
       cv.value = {
         ...fresh,
         contentStyle: contentStyle ?? fresh.contentStyle,

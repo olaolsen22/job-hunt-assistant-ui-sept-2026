@@ -57,6 +57,31 @@ const result = (overrides: Partial<TailoredCvAnalysis>): TailoredCvAnalysis => (
   ...overrides
 })
 
+describe('tailoredCvFromProfile translations', () => {
+  it('uses the Norwegian summary, headline and bullets when the draft is Norwegian', () => {
+    const p = profile()
+    p.summary = 'English summary'
+    p.headline = 'English headline'
+    p.translations = [
+      { language: 'NORWEGIAN', summary: 'Norsk sammendrag', headline: 'Norsk tittel' }
+    ] as ProfileData['translations']
+    p.experiences[0]!.bullets[0]!.translations = [
+      { language: 'NORWEGIAN', text: 'Bygde kassen' }
+    ] as ProfileData['experiences'][number]['bullets'][number]['translations']
+
+    const cv = tailoredCvFromProfile(p, 'NORWEGIAN')
+
+    expect(cv.summary).toBe('Norsk sammendrag')
+    expect(cv.headline).toBe('Norsk tittel')
+    expect(cv.experiences[0]!.bullets.map((b) => b.text)).toEqual([
+      'Bygde kassen',
+      'Ran the design system',
+      'Mentored juniors'
+    ])
+    expect(tailoredCvFromProfile(p, 'ENGLISH').summary).toBe('English summary')
+  })
+})
+
 describe('tailored CV candidate', () => {
   it('starts from the whole profile with contact fields and source ids', () => {
     const cv = tailoredCvFromProfile(profile())

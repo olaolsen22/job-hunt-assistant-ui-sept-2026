@@ -68,8 +68,19 @@ export const CV_SECTION_TITLES: Record<string, string> = {
 // The paragraph is only written once the owner or AI fills it in; the CV-wide contentStyle decides which shows.
 const BULLET_CONTENT = { paragraph: null } as const
 
-const bulletsOf = (bullets: readonly { id: number; text: string }[]) =>
-  bullets.map((b) => ({ text: b.text, sourceBulletId: b.id }))
+// Uses the bullet's translation for the draft language when it has one, like the API's prefill.
+const bulletsOf = (
+  bullets: readonly {
+    id: number
+    text: string
+    translations?: readonly { language: string; text: string }[]
+  }[],
+  language?: Language
+) =>
+  bullets.map((b) => ({
+    text: b.translations?.find((t) => t.language === language)?.text ?? b.text,
+    sourceBulletId: b.id
+  }))
 
 const linkLabel = (link: ProfileData['links'][number]) =>
   link.kind === 'OTHER' && link.label
@@ -96,37 +107,47 @@ const technologiesFromProfile = (
 export const tailoredCvFromProfile = (
   profile: ProfileData,
   language: Language = profile.contentLanguage
-): TailoredCv => ({
-  fullName: profile.fullName ?? '',
-  headline: profile.headline ?? '',
-  email: profile.email ?? '',
-  phone: profile.phone ?? '',
-  address: profile.location ? formatLocation(profile.location) : '',
-  language,
-  dateOfBirth: profile.dateOfBirth ?? '',
-  referencesOnRequest: false,
-  sectionOrder: 'STANDARD',
-  contentStyle: 'BULLETS',
-  links: profile.links.map((l) => ({ label: linkLabel(l), url: l.url })),
-  summary: profile.summary ?? '',
-  experiences: profile.experiences.map((e) => experienceFromProfile(e, profile, language)),
-  educations: profile.educations.map(educationFromProfile),
-  certifications: profile.certifications.map((c) => ({
-    name: c.name,
-    issuer: c.issuer,
-    issuedMonth: c.issuedMonth,
-    expiresMonth: c.expiresMonth,
-    url: c.url,
-    ...BULLET_CONTENT,
-    bullets: bulletsOf(c.bullets),
-    sourceEntryId: c.id
-  })),
-  projects: profile.projects.map((p) => projectFromProfile(p, profile, language)),
-  skills: profile.skills.map((s) => skillFromProfile(s, language)),
-  languages: profile.languages.map((l) => ({ name: l.name, spoken: l.spoken, written: l.written }))
-})
+): TailoredCv => {
+  const translated = profile.translations.find((t) => t.language === language)
+  return {
+    fullName: profile.fullName ?? '',
+    headline: translated?.headline ?? profile.headline ?? '',
+    email: profile.email ?? '',
+    phone: profile.phone ?? '',
+    address: profile.location ? formatLocation(profile.location) : '',
+    language,
+    dateOfBirth: profile.dateOfBirth ?? '',
+    referencesOnRequest: false,
+    sectionOrder: 'STANDARD',
+    contentStyle: 'BULLETS',
+    links: profile.links.map((l) => ({ label: linkLabel(l), url: l.url })),
+    summary: translated?.summary ?? profile.summary ?? '',
+    experiences: profile.experiences.map((e) => experienceFromProfile(e, profile, language)),
+    educations: profile.educations.map((e) => educationFromProfile(e, language)),
+    certifications: profile.certifications.map((c) => ({
+      name: c.name,
+      issuer: c.issuer,
+      issuedMonth: c.issuedMonth,
+      expiresMonth: c.expiresMonth,
+      url: c.url,
+      ...BULLET_CONTENT,
+      bullets: bulletsOf(c.bullets, language),
+      sourceEntryId: c.id
+    })),
+    projects: profile.projects.map((p) => projectFromProfile(p, profile, language)),
+    skills: profile.skills.map((s) => skillFromProfile(s, language)),
+    languages: profile.languages.map((l) => ({
+      name: l.name,
+      spoken: l.spoken,
+      written: l.written
+    }))
+  }
+}
 
-const educationFromProfile = (e: ProfileData['educations'][number]): TailoredCvEducation => ({
+const educationFromProfile = (
+  e: ProfileData['educations'][number],
+  language: Language
+): TailoredCvEducation => ({
   school: e.school,
   degree: e.degree,
   field: e.field,
@@ -134,7 +155,7 @@ const educationFromProfile = (e: ProfileData['educations'][number]): TailoredCvE
   startMonth: e.startMonth,
   endMonth: e.endMonth,
   ...BULLET_CONTENT,
-  bullets: bulletsOf(e.bullets),
+  bullets: bulletsOf(e.bullets, language),
   sourceEntryId: e.id
 })
 
@@ -150,7 +171,7 @@ const experienceFromProfile = (
   endMonth: e.endMonth,
   ...BULLET_CONTENT,
   technologies: technologiesFromProfile(e.skills, profile, language),
-  bullets: bulletsOf(e.bullets),
+  bullets: bulletsOf(e.bullets, language),
   sourceEntryId: e.id
 })
 
@@ -167,7 +188,7 @@ const projectFromProfile = (
   endMonth: p.endMonth,
   ...BULLET_CONTENT,
   technologies: technologiesFromProfile(p.skills, profile, language),
-  bullets: bulletsOf(p.bullets),
+  bullets: bulletsOf(p.bullets, language),
   sourceEntryId: p.id
 })
 
@@ -324,7 +345,8 @@ export const cvSectionFromAnalysis = (
     if (!source) return null
     const key = `education:${source.id}` as const
     const current =
-      (getCvSection(cv, key) as TailoredCvEducation | undefined) ?? educationFromProfile(source)
+      (getCvSection(cv, key) as TailoredCvEducation | undefined) ??
+      educationFromProfile(source, cv.language)
     return {
       key,
       value: {
