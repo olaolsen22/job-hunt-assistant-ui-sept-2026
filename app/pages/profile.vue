@@ -159,7 +159,7 @@ const contact = computed(() => {
 
 <template>
   <div class="flex justify-center">
-    <div class="w-full max-w-3xl space-y-4 sm:space-y-6 lg:max-w-6xl">
+    <div class="w-full min-w-0 max-w-3xl space-y-4 sm:space-y-6 lg:max-w-6xl">
       <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />
 
       <!-- Only on first load: refreshes after an edit keep the page (and its modals) mounted. -->
@@ -183,7 +183,7 @@ const contact = computed(() => {
               </h1>
               <p v-if="profile.headline" class="text-muted">{{ profile.headline }}</p>
             </div>
-            <div class="flex shrink-0 gap-2">
+            <div class="flex shrink-0 flex-wrap gap-2">
               <UButton
                 icon="i-lucide-pencil"
                 color="neutral"
@@ -297,7 +297,7 @@ const contact = computed(() => {
           >
         </div>
 
-        <div class="grid items-start gap-4 lg:grid-cols-3">
+        <div class="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
           <div class="space-y-4 lg:col-span-2">
             <ProfileSection
               title="Summary"
