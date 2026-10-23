@@ -4,6 +4,8 @@ import type { DropdownMenuItem } from '@nuxt/ui'
 import type { ResultOf } from 'gql.tada'
 import type { CompanyContact } from '~/composables/contactFields'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import { companyKindLabel, companySizeRange } from '~/constants/company'
+import { LANGUAGE_OPTIONS, WORK_MODE_OPTIONS } from '~/constants/listing'
 
 definePageMeta({ title: 'Company' })
 
@@ -38,6 +40,23 @@ const COMPANY_PAGE = graphql(
               city
               countryCode
               isTarget
+            }
+          }
+          orgNumber
+          websiteUrl
+          careersUrl
+          linkedInUrl
+          kind
+          sizeBand
+          foundedYear
+          description
+          workMode
+          workingLanguage
+          researchedAt
+          skills {
+            skill {
+              id
+              name
             }
           }
         }
@@ -165,6 +184,34 @@ const locations = computed(() =>
     )
 )
 
+// Every fact is listed, unset ones as "Not set", so a half-researched company shows what's missing.
+const facts = computed(() => {
+  const c = company.value
+  if (!c) return []
+  const size = companySizeRange(c.sizeBand)
+  return [
+    { label: 'Type', value: companyKindLabel(c.kind) },
+    { label: 'Size', value: size && `${size} employees` },
+    { label: 'Founded', value: c.foundedYear?.toString() },
+    { label: 'Work mode', value: WORK_MODE_OPTIONS.find((o) => o.value === c.workMode)?.label },
+    {
+      label: 'Working language',
+      value: LANGUAGE_OPTIONS.find((o) => o.value === c.workingLanguage)?.label
+    },
+    { label: 'Org.nr', value: c.orgNumber && formatOrgNumber(c.orgNumber) }
+  ]
+})
+
+const links = computed(() =>
+  [
+    { label: 'Website', to: company.value?.websiteUrl },
+    { label: 'Careers page', to: company.value?.careersUrl },
+    { label: 'LinkedIn', to: company.value?.linkedInUrl }
+  ].filter((l): l is { label: string; to: string } => !!l.to)
+)
+
+const hasResearch = computed(() => !!company.value && hasCompanyResearch(company.value))
+
 const toast = useToast()
 const notesOpen = ref(false)
 const avoidOpen = ref(false)
@@ -237,8 +284,23 @@ const moreItems = computed<DropdownMenuItem[]>(() =>
           Back
         </UButton>
 
-        <div v-if="company" class="flex items-center gap-2">
-          <UButton :to="`/companies/${company.id}/edit`" icon="i-lucide-pencil">Edit</UButton>
+        <!-- Research beside Edit, like Analyze ad on a listing. -->
+        <div v-if="company" class="flex w-full items-center gap-2 sm:w-auto">
+          <UButton
+            :to="`/companies/${company.id}/edit?analyze`"
+            icon="i-lucide-sparkles"
+            color="neutral"
+            variant="subtle"
+            class="min-w-0 flex-1 justify-center sm:w-auto sm:flex-none"
+            data-testid="company-research-ai"
+            >{{ hasResearch ? 'Re-research' : 'Research company' }}</UButton
+          >
+          <UButton
+            :to="`/companies/${company.id}/edit`"
+            icon="i-lucide-pencil"
+            class="min-w-0 flex-1 justify-center sm:w-auto sm:flex-none"
+            >Edit</UButton
+          >
           <UDropdownMenu :items="moreItems" :content="{ align: 'end' }">
             <UButton
               icon="i-lucide-ellipsis-vertical"
@@ -307,7 +369,10 @@ const moreItems = computed<DropdownMenuItem[]>(() =>
             />
           </div>
 
-          <div v-if="company.industry || company.avoidedAt" class="flex flex-wrap gap-2">
+          <div
+            v-if="company.industry || company.kind || company.sizeBand || company.avoidedAt"
+            class="flex flex-wrap gap-2"
+          >
             <UBadge
               v-if="company.industry"
               color="neutral"
@@ -315,6 +380,17 @@ const moreItems = computed<DropdownMenuItem[]>(() =>
               size="lg"
               icon="i-lucide-factory"
               >{{ company.industry.name }}</UBadge
+            >
+            <UBadge v-if="company.kind" color="neutral" variant="outline" size="lg">{{
+              companyKindLabel(company.kind)
+            }}</UBadge>
+            <UBadge
+              v-if="company.sizeBand"
+              color="neutral"
+              variant="outline"
+              size="lg"
+              icon="i-lucide-users"
+              >{{ companySizeRange(company.sizeBand) }} employees</UBadge
             >
             <CompaniesAvoidedBadge v-if="company.avoidedAt" size="lg" />
           </div>
@@ -331,6 +407,86 @@ const moreItems = computed<DropdownMenuItem[]>(() =>
             </div>
           </dl>
         </UCard>
+
+        <AppCard title="Research" data-testid="company-research">
+          <template v-if="hasResearch" #actions>
+            <UButton
+              :to="`/companies/${company.id}/edit`"
+              icon="i-lucide-pencil"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              aria-label="Edit research"
+            />
+          </template>
+          <div v-if="hasResearch" class="space-y-4">
+            <p v-if="company.description" class="max-w-prose break-words">
+              {{ company.description }}
+            </p>
+            <div v-if="links.length" class="flex flex-wrap gap-2">
+              <UButton
+                v-for="l in links"
+                :key="l.label"
+                :to="l.to"
+                target="_blank"
+                rel="noopener"
+                color="neutral"
+                variant="soft"
+                trailing-icon="i-lucide-external-link"
+                >{{ l.label }}</UButton
+              >
+            </div>
+            <dl class="grid gap-x-6 gap-y-2 sm:grid-cols-2" data-testid="company-facts">
+              <div v-for="f in facts" :key="f.label" class="flex justify-between gap-4">
+                <dt class="text-muted">{{ f.label }}</dt>
+                <dd :class="f.value ? 'text-highlighted' : 'text-dimmed'">
+                  {{ f.value || 'Not set' }}
+                </dd>
+              </div>
+            </dl>
+            <div
+              v-if="company.skills.length"
+              class="flex flex-wrap gap-1.5"
+              data-testid="company-skills"
+            >
+              <UBadge
+                v-for="{ skill } in company.skills"
+                :key="skill.id"
+                color="neutral"
+                variant="subtle"
+                >{{ skill.name }}</UBadge
+              >
+            </div>
+            <p v-if="company.researchedAt" class="text-sm text-muted">
+              Researched
+              {{ formatDate(new Date(company.researchedAt).toLocaleDateString('sv-SE')) }}
+            </p>
+          </div>
+          <div
+            v-else
+            class="flex flex-col items-center justify-center gap-3 py-6 text-center"
+            data-testid="company-research-empty"
+          >
+            <UIcon name="i-lucide-search" class="size-10 text-muted" />
+            <p>No research yet.</p>
+            <p class="text-sm text-muted">Add details to compare this company with others.</p>
+            <div class="flex flex-col gap-2 sm:flex-row">
+              <UButton
+                :to="`/companies/${company.id}/edit?analyze`"
+                icon="i-lucide-sparkles"
+                data-testid="company-research-empty-ai"
+                >Research company</UButton
+              >
+              <UButton
+                :to="`/companies/${company.id}/edit`"
+                color="neutral"
+                variant="subtle"
+                icon="i-lucide-plus"
+                >Add research</UButton
+              >
+            </div>
+          </div>
+        </AppCard>
 
         <div class="grid items-start gap-4 lg:grid-cols-3">
           <AppCard title="Positions" class="lg:col-span-2">

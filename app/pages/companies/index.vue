@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { parse, print } from '@0no-co/graphql.web'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import { companySizeRange } from '~/constants/company'
 import { measurePageSize, pageFromQuery, useCompaniesView } from '~/composables/useListingsList'
 
 definePageMeta({ title: 'Companies' })
@@ -17,6 +18,7 @@ const COMPANIES = graphql(`
         applicationCount
         favoritedAt
         avoidedAt
+        sizeBand
         industry {
           name
         }
@@ -146,6 +148,46 @@ const goTo = async (target: number) => {
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
+// Selected companies (id → name) are kept across searches and pages, so the count in the bar can
+// include ones that are no longer listed. One AI reply has to cover them all, hence the cap.
+const MAX_SELECTED = 20
+const selected = ref(new Map<number, string>())
+const selectionNotice = ref('')
+
+const setSelected = (c: { id: number; name: string }, on: boolean) => {
+  if (!on) {
+    selected.value.delete(c.id)
+    selectionNotice.value = ''
+  } else if (selected.value.size >= MAX_SELECTED) {
+    selectionNotice.value = `You can research up to ${MAX_SELECTED} companies at once.`
+  } else selected.value.set(c.id, c.name)
+}
+
+const allShownSelected = computed(
+  () => companies.value.length > 0 && companies.value.every((c) => selected.value.has(c.id))
+)
+const selectAllState = computed(() =>
+  allShownSelected.value
+    ? true
+    : companies.value.some((c) => selected.value.has(c.id))
+      ? 'indeterminate'
+      : false
+)
+const toggleAllShown = () => companies.value.forEach((c) => setSelected(c, !allShownSelected.value))
+
+const clearSelection = () => {
+  selected.value.clear()
+  selectionNotice.value = ''
+}
+
+// Handed to /companies/add, which opens its paste modal with them. State, not the URL, since 20
+// names can make a long query string.
+const researchNames = useState<string[]>('companiesResearchNames', () => [])
+const researchSelected = () => {
+  researchNames.value = [...selected.value.values()]
+  return navigateTo('/companies/add')
+}
 </script>
 
 <template>
@@ -184,9 +226,18 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
       v-if="companies.length || search || hideAvoided"
       class="flex items-center justify-between gap-2"
     >
-      <p class="text-lg font-semibold text-highlighted" data-testid="companies-total">
-        {{ totalCount }} {{ totalCount === 1 ? 'company' : 'companies' }}
-      </p>
+      <div class="flex items-center gap-4">
+        <p class="text-lg font-semibold text-highlighted" data-testid="companies-total">
+          {{ totalCount }} {{ totalCount === 1 ? 'company' : 'companies' }}
+        </p>
+        <UCheckbox
+          v-if="companies.length"
+          :model-value="selectAllState"
+          label="Select all shown"
+          data-testid="companies-select-all"
+          @update:model-value="toggleAllShown"
+        />
+      </div>
       <UButton
         size="sm"
         color="neutral"
@@ -224,46 +275,64 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
           class="relative transition hover:bg-elevated"
           data-testid="companies-row"
         >
-          <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-6">
-            <div class="min-w-0 lg:flex-1">
-              <!-- The ::after overlay stretches the link over the card (like ListingsRow), so the
-                   favorite button isn't nested inside an <a>. -->
-              <NuxtLink
-                :to="`/companies/${c.id}`"
-                class="block truncate font-medium text-highlighted after:absolute after:inset-0"
-                data-testid="companies-row-link"
-                >{{ c.name }}</NuxtLink
-              >
-              <p v-if="c.industry" class="truncate text-sm text-muted">{{ c.industry.name }}</p>
-            </div>
-            <p
-              v-if="c.locations.length"
-              class="flex min-w-0 items-center gap-1 text-sm text-muted lg:flex-1"
-            >
-              <UIcon name="i-lucide-map-pin" class="size-4 shrink-0" />
-              <span class="truncate">{{ formatPlaces(c.locations.map((l) => l.location)) }}</span>
-            </p>
-            <div class="flex shrink-0 items-center gap-2">
-              <CompaniesAvoidedBadge v-if="c.avoidedAt" />
-              <CompaniesFavoriteButton
-                :id="c.id"
-                :favorited-at="c.favoritedAt"
-                class="relative z-10"
+          <div class="flex items-center gap-3">
+            <!-- Above the card's overlay link (like the favorite button); the padding is the touch area. -->
+            <div class="relative z-10 -m-2.5 shrink-0 p-2.5">
+              <UCheckbox
+                :model-value="selected.has(c.id)"
+                :aria-label="`Select ${c.name}`"
+                data-testid="companies-row-select"
+                @update:model-value="setSelected(c, $event === true)"
               />
-              <UBadge
-                color="neutral"
-                variant="subtle"
-                icon="i-lucide-briefcase"
-                data-testid="companies-row-listings"
-                >{{ plural(c.listingCount, 'listing') }}</UBadge
+            </div>
+            <div class="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center lg:gap-6">
+              <div class="min-w-0 lg:flex-1">
+                <!-- The ::after overlay stretches the link over the card (like ListingsRow), so the
+                   favorite button isn't nested inside an <a>. -->
+                <NuxtLink
+                  :to="`/companies/${c.id}`"
+                  class="block truncate font-medium text-highlighted after:absolute after:inset-0"
+                  data-testid="companies-row-link"
+                  >{{ c.name }}</NuxtLink
+                >
+                <!-- Size first, so truncation cuts the industry name rather than the size. -->
+                <p
+                  v-if="c.industry || c.sizeBand"
+                  class="truncate text-sm text-muted"
+                  data-testid="companies-row-industry"
+                >
+                  {{ [companySizeRange(c.sizeBand), c.industry?.name].filter(Boolean).join(' · ') }}
+                </p>
+              </div>
+              <p
+                v-if="c.locations.length"
+                class="flex min-w-0 items-center gap-1 text-sm text-muted lg:flex-1"
               >
-              <UBadge
-                color="neutral"
-                variant="subtle"
-                icon="i-lucide-send"
-                data-testid="companies-row-applications"
-                >{{ plural(c.applicationCount, 'application') }}</UBadge
-              >
+                <UIcon name="i-lucide-map-pin" class="size-4 shrink-0" />
+                <span class="truncate">{{ formatPlaces(c.locations.map((l) => l.location)) }}</span>
+              </p>
+              <div class="flex shrink-0 items-center gap-2">
+                <CompaniesAvoidedBadge v-if="c.avoidedAt" />
+                <CompaniesFavoriteButton
+                  :id="c.id"
+                  :favorited-at="c.favoritedAt"
+                  class="relative z-10"
+                />
+                <UBadge
+                  color="neutral"
+                  variant="subtle"
+                  icon="i-lucide-briefcase"
+                  data-testid="companies-row-listings"
+                  >{{ plural(c.listingCount, 'listing') }}</UBadge
+                >
+                <UBadge
+                  color="neutral"
+                  variant="subtle"
+                  icon="i-lucide-send"
+                  data-testid="companies-row-applications"
+                  >{{ plural(c.applicationCount, 'application') }}</UBadge
+                >
+              </div>
             </div>
           </div>
         </UCard>
@@ -281,5 +350,31 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
         />
       </div>
     </template>
+
+    <!-- Sticky at the end of the content, so it sits at the bottom of the screen without covering
+         the last row. -->
+    <div
+      v-if="selected.size"
+      class="sticky bottom-4 z-20 flex flex-wrap items-center gap-3 rounded-lg border border-default bg-default p-3 shadow-lg"
+      data-testid="companies-selection-bar"
+    >
+      <p class="text-sm font-medium text-highlighted">{{ selected.size }} selected</p>
+      <p v-if="selectionNotice" class="text-sm text-warning">{{ selectionNotice }}</p>
+      <div class="ml-auto flex items-center gap-2">
+        <UButton
+          color="neutral"
+          variant="ghost"
+          data-testid="companies-selection-clear"
+          @click="clearSelection"
+          >Clear</UButton
+        >
+        <UButton
+          icon="i-lucide-sparkles"
+          data-testid="companies-research-selected"
+          @click="researchSelected"
+          >Research selected</UButton
+        >
+      </div>
+    </div>
   </div>
 </template>

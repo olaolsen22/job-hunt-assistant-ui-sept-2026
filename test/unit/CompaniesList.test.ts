@@ -1,14 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
+import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import CompaniesPage from '~/pages/companies/index.vue'
 import { useCompaniesView } from '~/composables/useListingsList'
+
+const { navigateTo } = vi.hoisted(() => ({ navigateTo: vi.fn() }))
+mockNuxtImport('navigateTo', () => navigateTo)
 
 const company = (id: number, name: string, avoidedAt: string | null = null) => ({
   id,
   name,
   avoidedAt,
+  sizeBand: null as string | null,
   listingCount: 3,
   applicationCount: 1,
   industry: { name: 'Consulting' },
@@ -31,7 +35,7 @@ describe('Companies list', () => {
         return {
           data: {
             companies: {
-              nodes: [company(1, 'Bekk'), company(2, 'Vipps')],
+              nodes: [{ ...company(1, 'Bekk'), sizeBand: 'MEDIUM' }, company(2, 'Vipps')],
               pageInfo: { hasNextPage: true, endCursor: 'c2' },
               totalCount: 45
             }
@@ -48,6 +52,10 @@ describe('Companies list', () => {
     expect(queries[0]).toMatch(/first: \d+/)
     expect(queries[0]).not.toContain('$first')
     expect(wrapper.get('[data-testid="companies-total"]').text()).toBe('45 companies')
+    expect(wrapper.findAll('[data-testid="companies-row-industry"]').map((p) => p.text())).toEqual([
+      '51–200 · Consulting',
+      'Consulting'
+    ])
 
     await wrapper.getComponent('[data-testid="companies-pagination"]').vm.$emit('update:page', 2)
     await flushPromises()
@@ -160,6 +168,72 @@ describe('Companies list', () => {
       expect(useRouter().currentRoute.value.query).toEqual({ hideAvoided: '1' })
     )
     expect(useCompaniesView().value).toBe('/companies?hideAvoided=1')
+    wrapper.unmount()
+  })
+
+  it('keeps the selection across searches and hands the names to the add page', async () => {
+    navigateTo.mockClear()
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: async (event) => {
+        const { variables } = await readBody(event)
+        const nodes = variables.search
+          ? [company(3, 'Cegal')]
+          : [company(1, 'Bekk'), company(2, 'Vipps')]
+        return {
+          data: {
+            companies: {
+              nodes,
+              pageInfo: { hasNextPage: false, endCursor: null },
+              totalCount: nodes.length
+            }
+          }
+        }
+      }
+    })
+    const wrapper = await mountSuspended(CompaniesPage)
+    await vi.waitFor(() => expect(wrapper.findAll('[data-testid="companies-row"]')).toHaveLength(2))
+    expect(wrapper.find('[data-testid="companies-selection-bar"]').exists()).toBe(false)
+
+    await wrapper.get('[data-testid="companies-row-select"]').trigger('click')
+    expect(wrapper.get('[data-testid="companies-selection-bar"]').text()).toContain('1 selected')
+
+    // The selected company is no longer listed, but is still counted.
+    await wrapper.get('input[data-testid="companies-search"]').setValue('ceg')
+    await vi.waitFor(
+      () => expect(wrapper.get('[data-testid="companies-row-link"]').text()).toBe('Cegal'),
+      { timeout: 2000 }
+    )
+    await wrapper.get('[data-testid="companies-row-select"]').trigger('click')
+    expect(wrapper.get('[data-testid="companies-selection-bar"]').text()).toContain('2 selected')
+
+    await wrapper.get('[data-testid="companies-research-selected"]').trigger('click')
+    expect(navigateTo).toHaveBeenCalledWith('/companies/add')
+    expect(useState<string[]>('companiesResearchNames').value).toEqual(['Bekk', 'Cegal'])
+    wrapper.unmount()
+  })
+
+  it('selects every listed company at once and clears the selection', async () => {
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: () => ({
+        data: {
+          companies: {
+            nodes: [company(1, 'Bekk'), company(2, 'Vipps')],
+            pageInfo: { hasNextPage: false, endCursor: null },
+            totalCount: 2
+          }
+        }
+      })
+    })
+    const wrapper = await mountSuspended(CompaniesPage)
+    await vi.waitFor(() => expect(wrapper.findAll('[data-testid="companies-row"]')).toHaveLength(2))
+
+    await wrapper.get('[data-testid="companies-select-all"]').trigger('click')
+    expect(wrapper.get('[data-testid="companies-selection-bar"]').text()).toContain('2 selected')
+
+    await wrapper.get('[data-testid="companies-selection-clear"]').trigger('click')
+    expect(wrapper.find('[data-testid="companies-selection-bar"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

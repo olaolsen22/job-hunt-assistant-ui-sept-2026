@@ -34,7 +34,19 @@ const baseCompany = {
   applicationCount: 2,
   industry: { name: 'Consulting' },
   locations: [location(1, 'Oslo', 'NO')],
-  contacts: [] as Record<string, unknown>[]
+  contacts: [] as Record<string, unknown>[],
+  orgNumber: null as string | null,
+  websiteUrl: null as string | null,
+  careersUrl: null as string | null,
+  linkedInUrl: null as string | null,
+  kind: null as string | null,
+  sizeBand: null as string | null,
+  foundedYear: null as number | null,
+  description: null as string | null,
+  workMode: null as string | null,
+  workingLanguage: null as string | null,
+  researchedAt: null as string | null,
+  skills: [] as { skill: { id: number; name: string } }[]
 }
 
 type Request = { query: string; variables: Record<string, unknown> }
@@ -246,6 +258,52 @@ describe('Company page', () => {
       companyId: 3,
       contact: { name: 'Kari', title: null, email: null, phone: null, url: null, notes: null }
     })
+    wrapper.unmount()
+  })
+
+  it('shows the research, listing unset facts as Not set', async () => {
+    const { wrapper } = await mountPage({
+      kind: 'PRODUCT',
+      sizeBand: 'MEDIUM',
+      orgNumber: '923609016',
+      description: 'Builds payment apps.',
+      careersUrl: 'https://acme.no/jobs',
+      researchedAt: '2026-10-20T10:00:00Z',
+      skills: [{ skill: { id: 1, name: 'Kotlin' } }]
+    })
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="company-research"]').exists()).toBe(true)
+    )
+
+    expect(wrapper.get('[data-testid="company-header"]').text()).toContain('51–200 employees')
+    const research = wrapper.get('[data-testid="company-research"]')
+    expect(research.text()).toContain('Builds payment apps.')
+    expect(research.get('a[href="https://acme.no/jobs"]').text()).toContain('Careers page')
+    expect(research.find('a[href^="https://acme.no"]').attributes('target')).toBe('_blank')
+    const facts = research.get('[data-testid="company-facts"]').text()
+    expect(facts).toContain('TypeProduct company')
+    expect(facts).toContain('Org.nr923 609 016')
+    expect(facts).toContain('FoundedNot set')
+    expect(research.get('[data-testid="company-skills"]').text()).toBe('Kotlin')
+    expect(research.text()).toContain('Researched')
+    // In the toolbar beside Edit, like Analyze ad; the edit page only fills the gaps.
+    const ai = wrapper.get('[data-testid="company-research-ai"]')
+    expect(ai.text()).toBe('Re-research')
+    expect(ai.attributes('href')).toBe('/companies/3/edit?analyze')
+    wrapper.unmount()
+  })
+
+  it('offers to add research when there is none', async () => {
+    const { wrapper } = await mountPage()
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="company-research-empty"]').exists()).toBe(true)
+    )
+    expect(wrapper.find('[data-testid="company-facts"]').exists()).toBe(false)
+    for (const testid of ['company-research-ai', 'company-research-empty-ai']) {
+      const ai = wrapper.get(`[data-testid="${testid}"]`)
+      expect(ai.text()).toBe('Research company')
+      expect(ai.attributes('href')).toBe('/companies/3/edit?analyze')
+    }
     wrapper.unmount()
   })
 })

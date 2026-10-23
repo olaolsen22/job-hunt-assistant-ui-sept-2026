@@ -2,8 +2,8 @@
 import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { FormError } from '@nuxt/ui'
 import type { ResultOf } from 'gql.tada'
+import type { CompanyResearch } from '~/utils/companyResearch'
 import type { ListingLocation } from '~/composables/useListingForm'
-import { COUNTRY_CODES } from '~/constants/countries'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Add companies' })
@@ -13,6 +13,7 @@ const CREATE_COMPANIES = graphql(`
     createCompanies(input: { companies: $companies }) {
       results {
         created
+        filled
         company {
           id
           name
@@ -37,11 +38,23 @@ interface Row {
   name?: string
   industryName?: string
   locations: ListingLocation[]
+  // Passed through as pasted (only name, industry and locations are editable here).
+  research?: CompanyResearch
+  researchSummary: string
+  ignored: string[]
+  // Picked from the companies list, so the API will fill its empty fields instead of creating it.
+  existing: boolean
   saved?: CompanyResult
 }
 
 let nextKey = 0
-const newRow = (): Row => ({ key: nextKey++, locations: [] })
+const newRow = (): Row => ({
+  key: nextKey++,
+  locations: [],
+  researchSummary: '',
+  ignored: [],
+  existing: false
+})
 
 // Rows come from the pasted AI reply; "Add row" is only for a stray manual entry.
 const state = reactive({ rows: [] as Row[] })
@@ -59,6 +72,7 @@ const validate = (s: typeof state): FormError[] =>
   )
 
 const toInput = (r: Row) => ({
+  ...r.research,
   name: r.name!.trim(),
   industryName: r.industryName || null,
   locations: r.locations.map((l) => ({ ...l, city: l.city || null }))
@@ -66,83 +80,82 @@ const toInput = (r: Row) => ({
 
 // The reply is an external AI's JSON, so keep only values a row can hold.
 const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
-const list = (v: unknown) => (Array.isArray(v) ? v : [])
 
-const toRow = (d: Record<string, unknown>): Row => ({
-  ...newRow(),
-  name: text(d?.name) || undefined,
-  industryName: text(d?.industryName) || undefined,
-  locations: list(d?.locations)
-    .filter((l) => COUNTRY_CODES.find((c) => c === l?.countryCode))
-    .map((l) => ({ countryCode: l.countryCode, city: text(l.city) }))
-})
-
-const {
-  instructions,
-  copied,
-  load,
-  copy,
-  parsing,
-  parse,
-  needsConfirm,
-  safetyMessage,
-  confirmRetry,
-  toastError
-} = useParsePrompt('companyParsePrompt')
-onMounted(load)
+const toRow = (d: Record<string, unknown>): Row => {
+  const basics = basicsFromJson(d)
+  const { research, ignored } = researchFromJson(d)
+  return {
+    ...newRow(),
+    name: text(d?.name) || undefined,
+    industryName: basics.industryName,
+    locations: basics.locations,
+    research,
+    researchSummary: researchSummary(research),
+    ignored: [...basics.ignored, ...ignored],
+    existing: existingNames.has(text(d?.name).toLowerCase())
+  }
+}
 
 const form = useTemplateRef('form')
-const pasteOpen = ref(true)
-const ad = ref('')
-const json = ref('')
-const jsonError = ref('')
+const parseOpen = ref(false)
 const pastedCount = ref(0)
-const builtIn = ref(false)
-watch(json, () => (jsonError.value = ''))
+// "Researched N companies", like the listing's "Filled from the ad": until dismissed.
+const researchedNotice = ref(false)
 
-const addRows = async (reply: string) => {
-  // AIs often wrap the JSON in a code fence or a sentence, so take the outermost array.
-  const raw = reply.slice(reply.indexOf('['), reply.lastIndexOf(']') + 1)
-  let items: unknown
-  try {
-    items = JSON.parse(raw)
-  } catch {
-    jsonError.value = 'That doesn’t look like a valid JSON array.'
-    return false
-  }
-  const rows = list(items).map(toRow)
-  if (!rows.length) {
-    jsonError.value = 'No companies found in that reply.'
-    return false
-  }
+// "Research selected" on the companies list leaves the picked names here; they open the modal.
+const researchNames = useState<string[]>('companiesResearchNames', () => [])
+const startText = ref('')
+const existingNames = new Set(researchNames.value.map((n) => n.toLowerCase()))
+onMounted(() => {
+  if (!researchNames.value.length) return
+  startText.value = researchNames.value.join('\n')
+  researchNames.value = []
+  parseOpen.value = true
+})
+// Only the first open starts from the names; "Research more" starts empty.
+watch(parseOpen, (isOpen) => {
+  if (!isOpen) startText.value = ''
+})
+
+// Called by the parse modal; a returned message keeps the modal open with it.
+const addRows = (reply: string) => {
+  const parsed = parseCompaniesReply(reply)
+  if ('error' in parsed) return parsed.error
+  const rows = parsed.rows.map(toRow)
+  // The handed-over names describe only that first reply, not later ones.
+  existingNames.clear()
+  researchedNotice.value = true
   // Appended, not replaced, so a second paste never drops rows already saved or edited.
   state.rows.push(...rows)
   pastedCount.value = rows.length
-  ad.value = ''
-  json.value = ''
-  pasteOpen.value = false
   // Shows what the AI missed (e.g. a null name) right away instead of on Save. The row fields use
   // eager-validation because UForm otherwise only rechecks a field on input after its first blur:
   // the error would stay while fixing it, then vanish on the Save mousedown, shifting Save away
   // from under the click.
-  await nextTick()
-  form.value?.validate({ silent: true })
-  return true
+  nextTick(() => form.value?.validate({ silent: true }))
 }
 
-const parseBuiltIn = async () => {
-  const reply = await parse(ad.value)
-  // An interrupted or lost run shows the retry warning by the run button instead.
-  if (needsConfirm.value) return
-  if ('error' in reply) toastError(reply)
-  // Failed: show the copy-paste steps, with the text still filled in.
-  if ('error' in reply || !(await addRows(reply.result))) builtIn.value = false
+const count = (n: number, word: string) => (n ? `${n} ${word}` : '')
+// "2 created, 1 enriched", leaving out zero counts.
+const summarize = (rows: Row[]) => {
+  const saved = rows.flatMap((r) => (r.saved ? [r.saved] : []))
+  return [
+    count(saved.filter((s) => s.created).length, 'created'),
+    count(saved.filter((s) => !s.created && s.filled).length, 'enriched'),
+    count(saved.filter((s) => !s.created && !s.filled).length, 'unchanged')
+  ]
+    .filter(Boolean)
+    .join(', ')
 }
+// Every save on this visit, kept on the page after the toast is gone.
+const saveSummary = computed(() => summarize(state.rows))
 
-// The last run may have been billed without a result; only this explicit choice sends another.
-const retryConfirmed = () => {
-  confirmRetry()
-  void parseBuiltIn()
+const savedText = (row: Row) => {
+  const saved = row.saved!
+  if (saved.created) return row.researchSummary ? 'Created with research' : 'Created'
+  return saved.filled
+    ? 'Already existed, filled in missing details'
+    : 'Already existed, nothing new to add'
 }
 
 const toast = useToast()
@@ -161,16 +174,14 @@ const onSave = async () => {
       return
     }
     rows.forEach((row, i) => (row.saved = createCompanies.results?.[i]))
-    const createdCount = rows.filter((r) => r.saved?.created).length
-    if (createdCount) {
-      clearNuxtState('name-lookups')
-      toast.add({
-        title: `${createdCount} ${createdCount === 1 ? 'company' : 'companies'} added`,
-        color: 'success',
-        duration: SUCCESS_TOAST_DURATION,
-        icon: 'i-lucide-check'
-      })
-    }
+    // Created or filled rows may bring new industries and skills.
+    if (rows.some((r) => r.saved?.created || r.saved?.filled)) clearNuxtState('name-lookups')
+    toast.add({
+      title: summarize(rows),
+      color: 'success',
+      duration: SUCCESS_TOAST_DURATION,
+      icon: 'i-lucide-check'
+    })
   } catch {
     saveError.value = ERROR_MESSAGES.generic
   } finally {
@@ -190,100 +201,70 @@ const removeRow = (row: Row) => state.rows.splice(state.rows.indexOf(row), 1)
     data-testid="companies-add-form"
     @submit="onSave"
   >
-    <UCard v-if="pasteOpen" data-testid="companies-add-paste">
-      <div class="space-y-6">
-        <div class="space-y-3">
-          <UCheckbox
-            v-model="builtIn"
-            label="Use built-in parser"
-            data-testid="companies-add-builtin"
-          />
-          <UFormField
-            :label="
-              builtIn
-                ? 'Paste company names, or a page that lists companies'
-                : '1. Paste company names, or a page that lists companies'
-            "
-            help="Only name, industry and locations are parsed."
-          >
-            <UTextarea
-              v-model="ad"
-              :rows="6"
-              :maxrows="12"
-              autoresize
-              placeholder="The names or the page text"
-              class="w-full"
-              data-testid="companies-add-ad"
-            />
-          </UFormField>
-          <UButton
-            v-if="builtIn"
-            icon="i-lucide-sparkles"
-            :loading="parsing"
-            :disabled="!ad.trim() || needsConfirm"
-            data-testid="companies-add-builtin-run"
-            @click="parseBuiltIn"
-          >
-            Parse into rows
-          </UButton>
-          <AppAiRetryConfirm
-            v-if="builtIn && needsConfirm"
-            :message="safetyMessage"
-            :loading="parsing"
-            @retry="retryConfirmed"
-          />
-          <UButton
-            v-else
-            :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-            :color="copied ? 'success' : 'primary'"
-            variant="subtle"
-            :loading="!instructions"
-            :disabled="!ad.trim()"
-            data-testid="companies-add-copy-prompt"
-            @click="copy(ad)"
-          >
-            {{ copied ? 'Copied' : 'Copy prompt' }}
-          </UButton>
-        </div>
-
-        <USeparator v-if="!builtIn" />
-
-        <div v-if="!builtIn" class="space-y-3">
-          <UFormField label="2. Paste the AI’s reply" :error="jsonError || undefined">
-            <UTextarea
-              v-model="json"
-              :rows="6"
-              :maxrows="12"
-              autoresize
-              placeholder="The JSON array the AI returned"
-              class="w-full font-mono"
-              data-testid="companies-add-json"
-            />
-          </UFormField>
-          <UButton :disabled="!json.trim()" data-testid="companies-add-parse" @click="addRows(json)"
-            >Parse into rows</UButton
-          >
-        </div>
-      </div>
-    </UCard>
+    <!-- Opened only on request: a modal over the empty page would hide "Add row". -->
+    <CompaniesParseModal v-model:open="parseOpen" :apply="addRows" :initial-text="startText" />
 
     <div
-      v-else
-      class="flex items-center justify-between gap-2"
-      data-testid="companies-add-paste-summary"
+      v-if="!state.rows.length"
+      class="flex flex-col items-center justify-center gap-3 py-12 text-center"
+      data-testid="companies-add-empty"
     >
+      <UIcon name="i-lucide-building-2" class="size-10 text-muted" />
+      <p>No companies yet.</p>
       <p class="text-sm text-muted">
-        Pasted {{ pastedCount }} {{ pastedCount === 1 ? 'company' : 'companies' }}. Check them
-        below, then save.
+        Enter company names, or paste a page that lists them. The AI adds their details.
       </p>
-      <UButton
-        icon="i-lucide-clipboard-paste"
-        color="neutral"
-        variant="ghost"
-        data-testid="companies-add-paste-more"
-        @click="pasteOpen = true"
-        >Paste more</UButton
+      <div class="flex flex-col gap-2 sm:flex-row">
+        <UButton
+          icon="i-lucide-sparkles"
+          data-testid="companies-add-paste"
+          @click="parseOpen = true"
+          >Research companies</UButton
+        >
+        <UButton
+          icon="i-lucide-plus"
+          color="neutral"
+          variant="ghost"
+          data-testid="companies-add-add-row"
+          @click="state.rows.push(newRow())"
+          >Add row</UButton
+        >
+      </div>
+    </div>
+
+    <div v-else class="space-y-3" data-testid="companies-add-paste-summary">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-sm text-muted">
+          <template v-if="saveSummary">{{ saveSummary }}.</template>
+        </p>
+        <UButton
+          icon="i-lucide-sparkles"
+          color="neutral"
+          variant="ghost"
+          class="shrink-0"
+          data-testid="companies-add-paste-more"
+          @click="parseOpen = true"
+          >Research more</UButton
+        >
+      </div>
+      <UAlert
+        v-if="researchedNotice && pending.length"
+        color="info"
+        variant="subtle"
+        icon="i-lucide-sparkles"
+        :title="`Researched ${pastedCount} ${pastedCount === 1 ? 'company' : 'companies'}`"
+        close
+        data-testid="companies-add-researched"
+        @update:open="researchedNotice = $event"
       >
+        <template #description>
+          <p>Nothing is saved yet. Check them below, then save.</p>
+          <p>
+            Name, industry and locations are editable here. Description, links, size and skills are
+            saved as researched; edit them later on the company.
+          </p>
+        </template>
+      </UAlert>
     </div>
 
     <UAlert
@@ -298,21 +279,40 @@ const removeRow = (row: Row) => state.rows.splice(state.rows.indexOf(row), 1)
     <template v-for="row in state.rows" :key="row.key">
       <UCard
         v-if="row.saved"
-        :data-testid="row.saved.created ? 'companies-add-row-saved' : 'companies-add-row-existing'"
+        :data-testid="
+          row.saved.created
+            ? 'companies-add-row-saved'
+            : row.saved.filled
+              ? 'companies-add-row-enriched'
+              : 'companies-add-row-existing'
+        "
       >
         <div class="flex items-start gap-3">
           <UIcon
-            :name="row.saved.created ? 'i-lucide-circle-check' : 'i-lucide-info'"
-            :class="row.saved.created ? 'text-success' : 'text-muted'"
+            :name="
+              row.saved.created
+                ? 'i-lucide-circle-check'
+                : row.saved.filled
+                  ? 'i-lucide-sparkles'
+                  : 'i-lucide-info'
+            "
+            :class="
+              row.saved.created ? 'text-success' : row.saved.filled ? 'text-primary' : 'text-muted'
+            "
             class="mt-0.5 size-5 shrink-0"
           />
           <div class="min-w-0 flex-1 space-y-1">
-            <p class="truncate font-medium text-highlighted">{{ row.saved.company.name }}</p>
-            <!-- An existing company keeps its own industry and locations, so show none for it. -->
-            <p v-if="!row.saved.created" class="text-sm text-muted">
-              Already existed, left unchanged
-            </p>
-            <p v-else-if="row.industryName || row.locations.length" class="text-sm text-muted">
+            <NuxtLink
+              :to="`/companies/${row.saved.company.id}`"
+              class="block truncate font-medium text-highlighted hover:underline"
+              >{{ row.saved.company.name }}</NuxtLink
+            >
+            <p class="text-sm text-muted">{{ savedText(row) }}</p>
+            <!-- An existing company keeps its own industry and locations, so show them only when created. -->
+            <p
+              v-if="row.saved.created && (row.industryName || row.locations.length)"
+              class="text-sm text-muted"
+            >
               {{ [row.industryName, formatPlaces(row.locations)].filter(Boolean).join(' · ') }}
             </p>
           </div>
@@ -355,11 +355,41 @@ const removeRow = (row: Row) => state.rows.splice(state.rows.indexOf(row), 1)
         <UFormField label="Locations" :name="`${row.key}.locations`" class="mt-3">
           <ListingsLocationsField v-model="row.locations" />
         </UFormField>
+        <div
+          v-if="row.existing || row.researchSummary || row.ignored.length"
+          class="mt-3 space-y-1 text-sm"
+        >
+          <p
+            v-if="row.existing"
+            class="flex items-start gap-1.5 text-muted"
+            data-testid="companies-add-row-existing-note"
+          >
+            <UIcon name="i-lucide-info" class="mt-0.5 size-4 shrink-0" />
+            <span>Existing company, will fill empty fields only</span>
+          </p>
+          <p
+            v-if="row.researchSummary"
+            class="flex items-start gap-1.5 text-muted"
+            data-testid="companies-add-row-research"
+          >
+            <UIcon name="i-lucide-sparkles" class="mt-0.5 size-4 shrink-0" />
+            <span>Research included: {{ row.researchSummary }}</span>
+          </p>
+          <p
+            v-if="row.ignored.length"
+            class="flex items-start gap-1.5 text-warning"
+            data-testid="companies-add-row-ignored"
+          >
+            <UIcon name="i-lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
+            <span>Ignored: {{ row.ignored.join(', ') }}</span>
+          </p>
+        </div>
       </UCard>
     </template>
 
     <div class="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
       <UButton
+        v-if="state.rows.length"
         icon="i-lucide-plus"
         color="neutral"
         variant="ghost"
