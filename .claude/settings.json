@@ -13,5 +13,18 @@
       "Bash(pnpm dev:*)",
       "Bash(nuxt dev:*)"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/preview.sh",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
   }
 }

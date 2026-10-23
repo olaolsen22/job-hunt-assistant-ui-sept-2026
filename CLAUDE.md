@@ -96,9 +96,10 @@ SSE subscriptions for parse-job updates.
   Report checks honestly; for UI changes include E2E/UI verification status. Do not claim
   skill-format validation proves workflow behavior.
 - `pnpm gql:gen` regenerates `app/graphql-env.d.ts` after schema changes; include it in the next
-  requested commit. Never run `pnpm dev` / `nuxt dev` or stop the owner's dev server.
-- The owner runs `pnpm build` and `pnpm preview` themselves (background processes get killed
-  after a while). Do not build or start a preview after changes; say the UI was not built or checked.
+  requested commit. Never run `pnpm dev` / `nuxt dev`.
+- No `nuxt dev`: a Stop hook (`.claude/hooks/preview.sh`) rebuilds and restarts `nuxt preview`
+  on :3000 (the `tailscale serve` target) when app sources changed. Do not build or start a
+  server yourself; fix reported build failures. Serving is not UI verification; say so.
 
 ## Boundaries and commits
 
@@ -114,3 +115,22 @@ SSE subscriptions for parse-job updates.
 Preserve the active goal, owner decisions/authorization, changed paths, checks and their outcomes,
 unresolved blockers, and next step. Drop verbose tool output and abandoned approaches. Compaction
 does not finish or reset the task; continue without repeating exploration, edits, or passing checks.
+
+## Starting and restarting Job Hunt UI
+
+- Owner preference (2026-10-23): "start Job Hunt UI" or "restart Job Hunt UI"
+  means run `pnpm dev --host` in Ubuntu WSL at
+  `/home/ola/development/job-hunt-assistant-ui-sept-2026`.
+  "development/ui" refers to this directory.
+- Explicit start/restart requests override the default no-dev-server rule above.
+  Host permission requirements still apply.
+- Inspect processes and confirm their working directory before stopping them.
+  For restart, send TERM to the confirmed UI dev process group, then start it again.
+  For start, reuse a matching running server or launch it if absent.
+  Do not use `pkill` or `killall`.
+- Ensure Node and pnpm are on PATH. Verified paths are
+  `/home/ola/.nvm/versions/node/v24.21.0/bin` and `/home/ola/.local/share/pnpm`;
+  use the current installed runtime if these change.
+- Keep the server running after the command returns, for example with `nohup`,
+  logging to `/tmp/job-hunt-ui-dev-host.log`. Check startup output and the listening
+  socket; expect all interfaces on port 3000. Report the actual URLs.
