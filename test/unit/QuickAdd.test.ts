@@ -144,6 +144,21 @@ describe('Quick add', () => {
     expect(document.body.textContent).toContain('Leave 1 unsaved listing?')
   })
 
+  it('opens the listing after saving a single new one, but not a flagged one or a batch', async () => {
+    mockApi([saved(7)])
+    await save(await pasteRows(1))
+    expect(navigation).toHaveBeenCalledWith('/listings/7')
+
+    navigation.mockReset()
+    mockApi([duplicate(8)])
+    await save(await pasteRows(1))
+    expect(navigation).not.toHaveBeenCalled()
+
+    mockApi([saved(1), saved(2)])
+    await save(await pasteRows(2))
+    expect(navigation).not.toHaveBeenCalled()
+  })
+
   it('offers View listings instead of Save once everything is saved', async () => {
     mockApi([saved(1), saved(2)])
     const w = await pasteRows(2)

@@ -43,6 +43,13 @@ const LISTING = graphql(
           scheduledAt
           notes
         }
+        applicationQuestions(order: { id: ASC }) {
+          id
+          question
+          charLimit
+          answer
+          notes
+        }
         documents {
           id
           kind

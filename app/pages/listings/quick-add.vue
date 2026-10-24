@@ -383,6 +383,11 @@ const onSave = async () => {
         duration: SUCCESS_TOAST_DURATION,
         icon: 'i-lucide-check'
       })
+      // A lone, unflagged listing has nothing left to review here, so open it.
+      const [only] = state.rows
+      if (state.rows.length === 1 && only?.saved && !isFlagged(only)) {
+        await navigateTo(`/listings/${only.saved.id}`)
+      }
     }
   } catch {
     saveError.value = ERROR_MESSAGES.generic

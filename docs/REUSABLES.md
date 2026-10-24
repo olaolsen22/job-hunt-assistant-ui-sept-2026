@@ -30,7 +30,9 @@ remove it when you delete one.
 - `<AppFormModal v-model:open title description? save-label? loading? :state validate? @submit>` — form
   modal on `UForm`: Enter or Save submits, `validate` errors show inline and focus the first one, closing
   with `state` changed since opening asks "Discard changes?", full screen on phones. `after` slot holds
-  content that saves on its own (bullets), outside the form. Used by the profile forms.
+  content that saves on its own (bullets), outside the form. Used by the profile forms. Exposes
+  `validate()` (inline errors + focus, returns ok) and `markClean()` for forms that save without
+  closing (the application question's AI draft).
 - `PHONE_FULLSCREEN_MODAL` (`constants/ui.ts`) — `UModal` content classes for full screen below `sm`.
 - `<AppMarkdownEditor v-model label>` — `UTextarea` for a Markdown note with a `n / 10000` counter
   (the API's max). Send the raw string; the API stores blank as null.
@@ -98,6 +100,9 @@ remove it when you delete one.
   `<ListingsStatusTimeline>` + `<ListingsInterviews>`. `@changed` = refetch the listing.
 - `<ListingsStatusTimeline listing @changed>` — `UTimeline` of `statusHistory` with Edit
   (`<ListingsStatusChangeModal>`) per entry and Undo (confirmed) on the newest.
+- `<ListingsQuestionsCard listing @changed>` — application questions with answers (max 20), add/edit/delete via
+  `<ListingsQuestionModal>`; its "Refine with AI" (saves first, stays open) opens `<ListingsQuestionAiModal>` (built-in or own AI,
+  candidate is editable and over-limit blocks "Use answer"; only the edit form's Save writes).
 - `<ListingsInterviews listing @changed>` — upcoming/past interviews as "Round N · title", add/edit
   via `<ListingsInterviewModal>`, confirmed delete.
 - `<ListingsApplyModal>`, `<ListingsOutcomeModal>`, `<ListingsStatusChangeModal>`,

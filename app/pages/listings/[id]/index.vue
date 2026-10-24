@@ -338,6 +338,7 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
           />
           <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
           <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
+          <ListingsQuestionsCard :listing="listing" @changed="refresh" />
         </template>
 
         <div
@@ -384,6 +385,7 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
             <template v-if="listing.status === 'SAVED'">
               <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
               <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
+              <ListingsQuestionsCard :listing="listing" @changed="refresh" />
               <ListingsApplication
                 v-model:apply-open="applyOpen"
                 :listing="listing"

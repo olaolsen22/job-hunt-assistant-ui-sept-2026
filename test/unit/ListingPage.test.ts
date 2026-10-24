@@ -29,6 +29,7 @@ const listing = {
   status: 'SAVED',
   statusHistory: [],
   interviews: [],
+  applicationQuestions: [],
   documents: [],
   locations: [],
   languages: [],
