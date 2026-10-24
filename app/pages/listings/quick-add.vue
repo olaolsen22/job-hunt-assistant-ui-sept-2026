@@ -858,9 +858,13 @@ const onConfirmRemove = async () => {
             >
             <p class="text-sm text-muted">{{ row.companyName }} · {{ row.jobRoleName }}</p>
             <!-- The API's cleaned-up URL, which can differ from what was typed. -->
-            <ULink :to="row.saved.url" target="_blank" class="block truncate text-sm">{{
-              row.saved.url
-            }}</ULink>
+            <ULink
+              v-if="row.saved.url"
+              :to="row.saved.url"
+              target="_blank"
+              class="block truncate text-sm"
+              >{{ row.saved.url }}</ULink
+            >
           </div>
         </div>
 

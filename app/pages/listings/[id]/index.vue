@@ -309,6 +309,7 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
           </dl>
           <div class="flex flex-wrap gap-2">
             <UButton
+              v-if="listing.url"
               :to="listing.url"
               target="_blank"
               rel="noopener"

@@ -9,6 +9,7 @@ import CvPage from '~/pages/listings/[id]/cv.vue'
 import { tailoredCvFromProfile, toTailoredCvInput } from '~/utils/tailoredCv'
 import { cvProfile } from '../fixtures/profileCv'
 import { llmModels } from '../fixtures/llmModels'
+import { trackUnloadGuards } from '../fixtures/unloadGuard'
 
 type Body = { query: string; variables: { input?: Record<string, unknown> } }
 
@@ -158,6 +159,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   mounted.splice(0).forEach((w) => w.unmount())
+  vi.restoreAllMocks()
 })
 
 describe('Tailored CV page', () => {
@@ -172,6 +174,7 @@ describe('Tailored CV page', () => {
   })
 
   it('optimizes the whole CV with built-in AI after showing usage, keeping the page readable', async () => {
+    const unloadPrevented = trackUnloadGuards()
     await mountPage()
     await vi.waitFor(() => expect(el('tailored-cv-optimize')).not.toBeNull())
     await click('tailored-cv-optimize')
@@ -197,9 +200,7 @@ describe('Tailored CV page', () => {
     expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
 
     // Closing or reloading the tab now gets the browser's leave warning.
-    const unload = new Event('beforeunload', { cancelable: true })
-    window.dispatchEvent(unload)
-    expect(unload.defaultPrevented).toBe(true)
+    expect(unloadPrevented()).toBe(true)
   })
 
   it('runs the whole CV without a per-run model and links to Settings', async () => {
@@ -397,14 +398,13 @@ describe('Tailored CV page', () => {
   })
 
   it('opens a saved draft and saves the complete edited candidate', async () => {
+    const unloadPrevented = trackUnloadGuards()
     savedDraft = savedSummary()
     await mountPage()
     await vi.waitFor(() => expect(el('tailored-cv-summary-input')).not.toBeNull())
     expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved')
 
-    const unload = new Event('beforeunload', { cancelable: true })
-    window.dispatchEvent(unload)
-    expect(unload.defaultPrevented).toBe(false)
+    expect(unloadPrevented()).toBe(false)
 
     const summary = el('tailored-cv-summary-input') as HTMLTextAreaElement
     summary.value = 'Edited summary'
