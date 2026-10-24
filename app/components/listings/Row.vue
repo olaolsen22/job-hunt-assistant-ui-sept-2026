@@ -165,6 +165,7 @@ const postedLabel = computed(() =>
         @click="setArchived(!listing.archivedAt)"
       />
       <UButton
+        v-if="listing.url"
         :to="listing.url"
         target="_blank"
         rel="noopener"

@@ -309,6 +309,7 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
           </dl>
           <div class="flex flex-wrap gap-2">
             <UButton
+              v-if="listing.url"
               :to="listing.url"
               target="_blank"
               rel="noopener"
@@ -338,6 +339,7 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
           />
           <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
           <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
+          <ListingsQuestionsCard :listing="listing" @changed="refresh" />
         </template>
 
         <div
@@ -384,6 +386,7 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
             <template v-if="listing.status === 'SAVED'">
               <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
               <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
+              <ListingsQuestionsCard :listing="listing" @changed="refresh" />
               <ListingsApplication
                 v-model:apply-open="applyOpen"
                 :listing="listing"

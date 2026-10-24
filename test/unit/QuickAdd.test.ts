@@ -5,6 +5,7 @@ import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-uti
 import { readBody } from 'h3'
 import QuickAddPage from '~/pages/listings/quick-add.vue'
 import { llmModels, unknownModelError } from '../fixtures/llmModels'
+import { trackUnloadGuards } from '../fixtures/unloadGuard'
 
 const { navigation, routing } = vi.hoisted(() => ({
   navigation: vi.fn(),
@@ -142,6 +143,21 @@ describe('Quick add', () => {
     await flushPromises()
     // The confirm is teleported to <body>, outside the wrapper.
     expect(document.body.textContent).toContain('Leave 1 unsaved listing?')
+  })
+
+  it('opens the listing after saving a single new one, but not a flagged one or a batch', async () => {
+    mockApi([saved(7)])
+    await save(await pasteRows(1))
+    expect(navigation).toHaveBeenCalledWith('/listings/7')
+
+    navigation.mockReset()
+    mockApi([duplicate(8)])
+    await save(await pasteRows(1))
+    expect(navigation).not.toHaveBeenCalled()
+
+    mockApi([saved(1), saved(2)])
+    await save(await pasteRows(2))
+    expect(navigation).not.toHaveBeenCalled()
   })
 
   it('offers View listings instead of Save once everything is saved', async () => {
@@ -713,23 +729,18 @@ describe('Quick add unsaved work protection', () => {
 
   it('protects prepared input and unload only while work exists, and cleans up the listener', async () => {
     collectedApi(eligible)
+    const unloadPrevented = trackUnloadGuards()
     const removeListener = vi.spyOn(window, 'removeEventListener')
     const w = await openCollected()
-    const emptyEvent = new Event('beforeunload', { cancelable: true })
-    window.dispatchEvent(emptyEvent)
-    expect(emptyEvent.defaultPrevented).toBe(false)
+    expect(unloadPrevented()).toBe(false)
     await checkCollection(w)
-    const preparedEvent = new Event('beforeunload', { cancelable: true })
-    window.dispatchEvent(preparedEvent)
-    expect(preparedEvent.defaultPrevented).toBe(true)
+    expect(unloadPrevented()).toBe(true)
     await w.get('[data-testid="quick-add-edit-collected"]').trigger('click')
     await cancelModal()
     expect(w.find('[data-testid="quick-add-check-summary"]').exists()).toBe(true)
     await w.get('[data-testid="quick-add-edit-collected"]').trigger('click')
     await confirmModal()
-    const clearedEvent = new Event('beforeunload', { cancelable: true })
-    window.dispatchEvent(clearedEvent)
-    expect(clearedEvent.defaultPrevented).toBe(false)
+    expect(unloadPrevented()).toBe(false)
     expect(routing.guard!({ fullPath: '/listings' })).toBe(true)
     w.unmount()
     wrapper = undefined
@@ -737,6 +748,7 @@ describe('Quick add unsaved work protection', () => {
   })
 
   it('does not prompt after all collected drafts have been saved', async () => {
+    const unloadPrevented = trackUnloadGuards()
     collectedApi(allEligible)
     const w = await openCollected(JSON.stringify([row(1)]))
     await startCollected(w)
@@ -744,8 +756,6 @@ describe('Quick add unsaved work protection', () => {
     await save(w)
     expect(w.find('[data-testid="quick-add-view-listings"]').exists()).toBe(true)
     expect(routing.guard!({ fullPath: '/listings' })).toBe(true)
-    const savedEvent = new Event('beforeunload', { cancelable: true })
-    window.dispatchEvent(savedEvent)
-    expect(savedEvent.defaultPrevented).toBe(false)
+    expect(unloadPrevented()).toBe(false)
   })
 })

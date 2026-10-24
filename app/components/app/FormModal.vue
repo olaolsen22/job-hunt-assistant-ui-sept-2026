@@ -47,6 +47,18 @@ const focusFirstError = (event: FormErrorEvent) => {
   const first = event.errors[0]?.id
   if (first) document.getElementById(first)?.focus()
 }
+
+// For forms that save without closing (a draft step): validate shows the inline errors the way
+// Save does, and markClean stops closing afterwards from asking to discard what was just saved.
+const form = useTemplateRef('form')
+defineExpose({
+  validate: async () => {
+    const ok = await form.value?.validate({ silent: true })
+    if (!ok) focusFirstError({ errors: form.value?.getErrors() ?? [] } as FormErrorEvent)
+    return !!ok
+  },
+  markClean: () => (snapshot.value = JSON.stringify(props.state))
+})
 </script>
 
 <template>
@@ -60,6 +72,7 @@ const focusFirstError = (event: FormErrorEvent) => {
     <template #body>
       <UForm
         :id="id"
+        ref="form"
         :state="state"
         :validate="validate"
         :validate-on="['input']"
