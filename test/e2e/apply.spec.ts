@@ -25,12 +25,13 @@ const listing = (applied: boolean) => ({
   favoritedAt: null,
   archivedAt: null,
   analyzedAt: null,
-  archivedAt: null,
+  reanalyzedAt: null,
   status: applied ? 'APPLIED' : 'SAVED',
   statusHistory: applied
     ? [{ id: 1, status: 'APPLIED', occurredAt: '2026-09-27T10:00:00Z', note: null }]
     : [],
   interviews: [],
+  applicationQuestions: [],
   documents: [
     {
       id: 9,

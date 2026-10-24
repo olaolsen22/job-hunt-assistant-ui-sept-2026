@@ -11,14 +11,14 @@ test('dashboard shows Healthy when the API is up', async ({ page }) => {
   await page.goto('/')
 
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
-  await expect(page.getByTestId('api-health')).toHaveText('Healthy')
+  await expect(page.getByTestId('api-health')).toHaveText('API healthy')
 })
 
-test('dashboard shows Unhealthy when the database is down', async ({ page }) => {
+test('dashboard shows Database down when the database is down', async ({ page }) => {
   await page.route('**/api/health', (route) => route.fulfill({ status: 503, body: 'Unhealthy' }))
   await page.goto('/')
 
-  await expect(page.getByTestId('api-health')).toHaveText('Unhealthy')
+  await expect(page.getByTestId('api-health')).toHaveText('Database down')
 })
 
 test('logs out from the user menu', async ({ page }) => {
