@@ -10,20 +10,17 @@ const emit = defineEmits<{ use: [summary: string] }>()
 
 const api = useProfileSummary()
 const { busy, needsConfirm, safetyMessage } = api
-const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
-const usage = computed(() => usageData.value?.llmUsageToday)
 
 const reply = ref('')
 const suggestion = ref<string>()
 const tooLittle = ref(false)
 
-const { method, tab, error, errorCode } = useAiModalState(open, {
+const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(open, {
   onOpen: () => {
     suggestion.value = undefined
     tooLittle.value = false
     reply.value = ''
     api.loadPrompt()
-    refreshUsage()
   }
 })
 watch([reply, tab], () => {

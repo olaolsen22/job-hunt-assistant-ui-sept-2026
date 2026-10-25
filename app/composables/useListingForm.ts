@@ -2,11 +2,13 @@ import type { FormError } from '@nuxt/ui'
 import { reactive } from 'vue'
 import type { ListingDetail } from '~/composables/useListing'
 import { todayIso } from '~/utils/todayIso'
+import { graphql } from '~/utils/graphql'
 import { COUNTRY_CODES } from '~/constants/countries'
 import {
   CEFR_LEVELS,
   DEADLINE_TYPE_OPTIONS,
   EMPLOYMENT_TYPE_OPTIONS,
+  LISTING_KIND_OPTIONS,
   LANGUAGE_OPTIONS,
   SCHEDULE_OPTIONS,
   SENIORITY_OPTIONS,
@@ -17,10 +19,28 @@ import type {
   DeadlineType,
   EmploymentType,
   Language,
+  ListingKind,
   Schedule,
   Seniority,
   WorkMode
 } from '~/constants/listing'
+
+// Full replace: every field the form doesn't send goes back to its default (see toInput).
+export const UPDATE_LISTING = graphql(`
+  mutation UpdateListing($id: Int!, $listing: ListingInput!) {
+    updateListing(input: { id: $id, listing: $listing }) {
+      listing {
+        id
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
 
 export interface ListingLocation {
   countryCode: string
@@ -64,9 +84,9 @@ const option = <T>(options: readonly { value: T }[], v: unknown) =>
 const int = (v: unknown, min: number, max: number) =>
   Number.isInteger(v) && (v as number) >= min && (v as number) <= max ? (v as number) : undefined
 
-// Duplicates are dropped because the skill and language rows allow one of each. No url: the draft
-// doesn't have one.
-const cleanDraft = (d: Record<string, unknown>) => {
+// Duplicates are dropped because the skill and language rows allow one of each. No url: the full
+// draft doesn't have one (quick-add reads its rows' links itself).
+export const cleanListingDraft = (d: Record<string, unknown>) => {
   const skills = list(d.skills)
     .map((s) => ({
       name: text(s?.name),
@@ -104,6 +124,8 @@ const cleanDraft = (d: Record<string, unknown>) => {
         c.name && all.findIndex((x) => x.name.toLowerCase() === c.name.toLowerCase()) === i
     )
   return {
+    // The parse prompts never answer UNSOLICITED: an ad always has one.
+    kind: option(LISTING_KIND_OPTIONS.slice(0, 2), d.kind),
     title: text(d.title),
     companyName: text(d.companyName) || undefined,
     jobRoleName: text(d.jobRoleName) || undefined,
@@ -132,8 +154,42 @@ const cleanDraft = (d: Record<string, unknown>) => {
 const isBlank = (v: unknown) =>
   v === undefined || v === '' || v === 'UNSPECIFIED' || (Array.isArray(v) && !v.length)
 
+type ListingBasics = {
+  kind: ListingKind
+  title: string
+  companyName?: string
+  jobRoleName?: string
+  url: string
+  postedOn: string
+  deadlineType: DeadlineType
+  deadlineOn: string
+}
+
+// The API's rules for every listing, checked first so they show beside their fields. `name` maps a
+// field to its form name (quick-add prefixes the row). An unsolicited application has no ad, so no
+// link or posting date.
+export const listingBasicsErrors = (
+  l: ListingBasics,
+  name: (field: string) => string = (field) => field
+): FormError[] => {
+  const errors: FormError[] = []
+  const add = (field: string, message: string) => errors.push({ name: name(field), message })
+  if (!l.title.trim()) add('title', 'Required')
+  if (!l.companyName) add('companyName', 'Required')
+  if (!l.jobRoleName) add('jobRoleName', 'Required')
+  if (l.kind !== 'UNSOLICITED') {
+    if (!/^https?:\/\/\S+$/i.test(l.url.trim())) add('url', 'Enter an http(s) link')
+    if (!l.postedOn) add('postedOn', 'Required')
+  }
+  // ISO dates compare correctly as strings.
+  if (l.postedOn > todayIso()) add('postedOn', 'Can’t be in the future')
+  if (l.deadlineType === 'DATE' && !l.deadlineOn) add('deadlineOn', 'Pick a date')
+  return errors
+}
+
 export const useListingForm = () => {
   const state = reactive({
+    kind: 'VACANCY' as ListingKind,
     title: '',
     companyName: undefined as string | undefined,
     jobRoleName: undefined as string | undefined,
@@ -158,27 +214,11 @@ export const useListingForm = () => {
   // Whether the loaded listing was analyzed already, which makes a merged parse a re-analysis.
   let analyzedBefore = false
 
-  const validate = (s: typeof state): FormError[] => {
-    const errors: FormError[] = []
-    if (!s.title.trim()) errors.push({ name: 'title', message: 'Required' })
-    if (!s.companyName) errors.push({ name: 'companyName', message: 'Required' })
-    if (!s.jobRoleName) errors.push({ name: 'jobRoleName', message: 'Required' })
-    if (!/^https?:\/\/\S+$/i.test(s.url.trim())) {
-      errors.push({ name: 'url', message: 'Enter an http(s) link' })
-    }
-    if (!s.postedOn) {
-      errors.push({ name: 'postedOn', message: 'Required' })
-    } else if (s.postedOn > todayIso()) {
-      // ISO dates compare correctly as strings.
-      errors.push({ name: 'postedOn', message: 'Can’t be in the future' })
-    }
-    if (s.deadlineType === 'DATE' && !s.deadlineOn) {
-      errors.push({ name: 'deadlineOn', message: 'Pick a date' })
-    }
-    return errors
-  }
+  const validate = (s: typeof state) => listingBasicsErrors(s)
 
   const toInput = () => ({
+    // updateListing replaces the whole listing, and an omitted kind would mean VACANCY.
+    kind: state.kind,
     title: state.title.trim(),
     // Callers validate() first, which requires both.
     companyName: state.companyName!,
@@ -188,8 +228,9 @@ export const useListingForm = () => {
     schedule: state.schedule ?? null,
     workMode: state.workMode ?? null,
     description: orNull(state.description),
-    url: state.url.trim(),
-    postedOn: state.postedOn,
+    // Empty only for an unsolicited application, which has neither.
+    url: orNull(state.url),
+    postedOn: state.postedOn || null,
     deadlineType: state.deadlineType,
     // The API rejects a date unless the type is DATE.
     deadlineOn: state.deadlineType === 'DATE' ? state.deadlineOn : null,
@@ -221,6 +262,7 @@ export const useListingForm = () => {
   const fill = (listing: ListingDetail) => {
     analyzedBefore = listing.analyzedAt != null
     return Object.assign(state, {
+      kind: listing.kind,
       title: listing.title,
       companyName: listing.company.name,
       jobRoleName: listing.jobRole.name,
@@ -229,8 +271,8 @@ export const useListingForm = () => {
       schedule: listing.schedule ?? undefined,
       workMode: listing.workMode ?? undefined,
       description: listing.description ?? '',
-      url: listing.url,
-      postedOn: listing.postedOn,
+      url: listing.url ?? '',
+      postedOn: listing.postedOn ?? '',
       deadlineType: listing.deadlineType,
       deadlineOn: listing.deadlineOn ?? '',
       postingLanguage: listing.postingLanguage ?? undefined,
@@ -253,9 +295,10 @@ export const useListingForm = () => {
 
   // A parsed ad has its details filled in, which is what "analyzed" means.
   const fillDraft = (d: Record<string, unknown>) => {
-    const draft = cleanDraft(d)
+    const draft = cleanListingDraft(d)
     Object.assign(state, {
       ...draft,
+      kind: draft.kind ?? 'VACANCY',
       postedOn: draft.postedOn || todayIso(),
       isAnalyzed: true
     })
@@ -264,7 +307,7 @@ export const useListingForm = () => {
   // For an existing listing: parsed values win, saved ones stay where the parse found nothing.
   // Contacts are added rather than replaced, since the user may have linked some by hand.
   const mergeDraft = (d: Record<string, unknown>) => {
-    const { contacts, ...draft } = cleanDraft(d)
+    const { contacts, ...draft } = cleanListingDraft(d)
     const found = Object.entries(draft).filter(([, v]) => !isBlank(v))
     const known = new Set(state.contacts.map((c) => c.name.trim().toLowerCase()))
     Object.assign(state, Object.fromEntries(found), {

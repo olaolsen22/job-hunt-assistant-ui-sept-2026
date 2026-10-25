@@ -11,7 +11,11 @@ const emit = defineEmits<{ changed: [] }>()
 
 const bullets = useTemplateRef('bullets')
 // For the entry form's Save: commits typed bullet text. True when there was nothing to save.
-defineExpose({ flush: async () => (await bullets.value?.flush()) ?? true })
+// hasDraft: typed bullet text that closing the form would lose.
+defineExpose({
+  flush: async () => (await bullets.value?.flush()) ?? true,
+  hasDraft: computed(() => !!bullets.value?.hasDraft)
+})
 </script>
 
 <template>

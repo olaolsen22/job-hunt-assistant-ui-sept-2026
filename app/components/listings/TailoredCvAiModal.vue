@@ -17,12 +17,10 @@ const {
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ analyze: [] }>()
 
-const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
 const json = ref('')
-const { method, tab, error } = useAiModalState(open, {
+const { method, tab, error, usage } = useAiModalState(open, {
   onOpen: () => {
     json.value = ''
-    refreshUsage()
     if (!ai.instructions.value) ai.loadPrompt()
   }
 })
@@ -57,7 +55,7 @@ const preview = async () => {
       <p class="text-sm text-muted" data-testid="tailored-cv-ai-requests">
         Makes {{ requests }} AI {{ requests === 1 ? 'request' : 'requests' }}.
       </p>
-      <AppAiCostNotice :usage="usageData?.llmUsageToday" data-testid="tailored-cv-ai-usage" />
+      <AppAiCostNotice :usage="usage" data-testid="tailored-cv-ai-usage" />
       <!-- The retry runs on the page, where the overlay and per-section errors are. -->
       <UAlert
         v-if="ai.needsConfirm.value"

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { INVALID_DRAFT_JSON } from '~/utils/parseDraft'
 import { LANGUAGE_OPTIONS } from '~/constants/listing'
 import type {
@@ -15,9 +14,7 @@ const emit = defineEmits<{ changed: [] }>()
 
 const api = useSkillCleanup()
 const { busy, needsConfirm, safetyMessage } = api
-const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
-const usage = computed(() => usageData.value?.llmUsageToday)
-const toast = useToast()
+const toastSuccess = useSuccessToast()
 
 const MAX_NAMES = 10
 // A dropped change stays in the list so it can be restored; it just isn't applied.
@@ -103,11 +100,10 @@ const summary = computed(() => {
 })
 const canApply = computed(() => !!changeCount.value && !problems.value)
 
-const { method, tab, error, errorCode } = useAiModalState(open, {
+const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(open, {
   onOpen: () => {
     // Loaded on open: a clipboard write that follows an await can be refused.
     api.loadPrompt()
-    refreshUsage()
   }
 })
 watch([reply, tab], () => (error.value = ''))
@@ -216,7 +212,7 @@ const applyPlan = async () => {
   // Merged-away skills are gone, so cached listing and CV-draft data may point at deleted ids.
   clearNuxtData((key) => key.startsWith('listing-') || key.startsWith('tailored-cv-draft-'))
   emit('changed')
-  toast.add({ title: 'Skills cleaned up', color: 'success', duration: SUCCESS_TOAST_DURATION })
+  toastSuccess('Skills cleaned up')
   discard()
 }
 

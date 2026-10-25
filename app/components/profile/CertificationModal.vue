@@ -104,6 +104,7 @@ const submit = async () => {
     v-model:open="open"
     :title="certification ? 'Edit certification' : 'Add certification'"
     :state="state"
+    :unsaved="bullets?.hasDraft"
     :validate="validate"
     :loading="loading"
     @submit="submit"

@@ -1,6 +1,7 @@
 import type { ResultOf, VariablesOf } from 'gql.tada'
 import { PROFILE_FIELDS } from '~/composables/useProfile'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import type { AiOutcome } from '~/utils/aiOutcome'
 
 export const CV_CANDIDATE = graphql(`
   fragment CvCandidate on ProfileCvCandidate {
@@ -171,32 +172,22 @@ type Outcome<T> =
     }
 
 export const useProfileCvImport = () => {
-  const llm = useLlmModels()
-  const { attempt, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
+  const { run, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
   const busy = ref(false)
   const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
     async () => (await gql(PROMPT)).profileCvParsePrompt.instructions
   )
-  const parse = async (text: string): Promise<Outcome<CvCandidate>> => {
-    busy.value = true
-    try {
-      const input = { text: text.trim() }
-      const payload = await attempt(
-        input,
-        async (requestId) => (await gql(PARSE, { ...input, requestId })).parseProfileCv
-      )
-      // The saved default model is gone: show the message and fetch the list again.
-      if (isUnknownModel(payload.errors)) await llm.refresh()
-      if (payload.errors?.length)
-        return { error: payload.errors[0]!.message, code: aiSafetyCode(payload.errors) }
-      if (payload.result?.status === 'SUCCEEDED' && payload.result.candidate)
-        return { value: payload.result.candidate }
-      return { error: payload.result?.error ?? ERROR_MESSAGES.generic }
-    } catch {
-      return { error: ERROR_MESSAGES.generic }
-    } finally {
-      busy.value = false
-    }
+  const parse = (text: string) => {
+    const input = { text: text.trim() }
+    return run(
+      busy,
+      input,
+      async (requestId) => (await gql(PARSE, { ...input, requestId })).parseProfileCv,
+      ({ result }): AiOutcome<CvCandidate> =>
+        result?.status === 'SUCCEEDED' && result.candidate
+          ? { value: result.candidate }
+          : { error: result?.error ?? ERROR_MESSAGES.generic }
+    )
   }
   const preview = async (json: string): Promise<Outcome<CvCandidate>> => {
     busy.value = true

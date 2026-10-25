@@ -26,8 +26,6 @@ const {
 const link = ref('')
 
 // Fetched on open and after each parse, so the counter shows what this parse just used.
-const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
-const usage = computed(() => usageData.value?.llmUsageToday)
 
 // What the AI is given, in both methods: the ad's link or its pasted text. Your own AI starts on
 // text, since it must be able to open web pages to read a link.
@@ -52,12 +50,11 @@ const json = ref('')
 const errorDetail = ref('')
 
 // immediate: the edit page can mount this already open (?analyze), and a watcher alone would miss that.
-const { method, tab, error, errorCode } = useAiModalState(open, {
+const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(open, {
   onOpen: (openTab) => {
     link.value = props.url ?? ''
     source.value = openTab.value === 'own' ? 'text' : 'link'
     loadPrompt()
-    refreshUsage()
   }
 })
 

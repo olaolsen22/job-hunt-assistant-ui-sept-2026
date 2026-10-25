@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { FormError } from '@nuxt/ui'
 import type { ResultOf } from 'gql.tada'
 import type { CompanyResearch } from '~/utils/companyResearch'
@@ -158,7 +157,7 @@ const savedText = (row: Row) => {
     : 'Already existed, nothing new to add'
 }
 
-const toast = useToast()
+const toastSuccess = useSuccessToast()
 const saving = ref(false)
 const saveError = ref('')
 
@@ -176,12 +175,7 @@ const onSave = async () => {
     rows.forEach((row, i) => (row.saved = createCompanies.results?.[i]))
     // Created or filled rows may bring new industries and skills.
     if (rows.some((r) => r.saved?.created || r.saved?.filled)) clearNuxtState('name-lookups')
-    toast.add({
-      title: summarize(rows),
-      color: 'success',
-      duration: SUCCESS_TOAST_DURATION,
-      icon: 'i-lucide-check'
-    })
+    toastSuccess(summarize(rows))
   } catch {
     saveError.value = ERROR_MESSAGES.generic
   } finally {

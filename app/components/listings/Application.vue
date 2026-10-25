@@ -24,6 +24,8 @@ const showSummary = computed(
 )
 
 const applyOpen = defineModel<boolean>('applyOpen', { default: false })
+// Mounted on first open: it fetches the tailored CV draft, which the page doesn't need until then.
+const applyOpened = useOpenedOnce(applyOpen)
 const outcomeOpen = ref(false)
 </script>
 
@@ -114,7 +116,12 @@ const outcomeOpen = ref(false)
       </div>
     </div>
 
-    <ListingsApplyModal v-model:open="applyOpen" :listing="listing" @changed="emit('changed')" />
+    <LazyListingsApplyModal
+      v-if="applyOpened"
+      v-model:open="applyOpen"
+      :listing="listing"
+      @changed="emit('changed')"
+    />
     <ListingsOutcomeModal
       v-model:open="outcomeOpen"
       :listing-id="listing.id"

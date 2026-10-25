@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { INVALID_DRAFT_JSON } from '~/utils/parseDraft'
 import type { ProfileData } from '~/composables/useProfile'
 import type { SkillWording } from '~/composables/useSkillWording'
@@ -13,24 +12,24 @@ const emit = defineEmits<{ changed: [] }>()
 
 const api = useSkillWording()
 const { busy, needsConfirm, safetyMessage } = api
-const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
-const usage = computed(() => usageData.value?.llmUsageToday)
-const toast = useToast()
-
-type Row = {
-  key: string
-  label: string
-  bulletId?: number
-  field?: 'headline' | 'summary'
-  before?: string
-  text: string
-  include: boolean
-}
+const toastSuccess = useSuccessToast()
 
 const reply = ref('')
-const applyError = ref('')
-const rows = ref<Row[]>()
-const confirmOpen = ref(false)
+const {
+  rows,
+  applyError,
+  confirmOpen,
+  included,
+  blank,
+  canApply,
+  applicable,
+  setAll,
+  start,
+  discard,
+  back,
+  requestClose,
+  apply: applyRows
+} = useTextRewriteReview(open, reply)
 
 const currentBullets = computed(
   () =>
@@ -46,30 +45,20 @@ const currentBullets = computed(
     )
 )
 
-const included = computed(() => rows.value?.filter((r) => r.include) ?? [])
-const blank = computed(() => included.value.filter((r) => !r.text.trim()).length)
-const canApply = computed(() => !!included.value.length && !blank.value)
-
-const { method, tab, error, errorCode } = useAiModalState(open, {
-  onOpen: () => {
-    api.loadPrompt()
-    refreshUsage()
-  }
+const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(open, {
+  onOpen: () => api.loadPrompt()
 })
 watch([reply, tab], () => (error.value = ''))
-const { dirty, mark, clear } = useReviewDirty(() => rows.value?.map((r) => [r.include, r.text]))
-const setAll = (include: boolean) =>
-  rows.value?.forEach((r) => r.before != null && (r.include = include))
 
-const startReview = ({ bullets, headline, summary }: SkillWording) => {
-  rows.value = [
+const startReview = ({ bullets, headline, summary }: SkillWording) =>
+  start([
     ...(headline != null
       ? [
           {
             key: 'headline',
             label: 'Headline',
             field: 'headline' as const,
-            before: profile.headline ?? '',
+            current: profile.headline ?? '',
             text: headline,
             include: true
           }
@@ -81,7 +70,7 @@ const startReview = ({ bullets, headline, summary }: SkillWording) => {
             key: 'summary',
             label: 'Summary',
             field: 'summary' as const,
-            before: profile.summary ?? '',
+            current: profile.summary ?? '',
             text: summary,
             include: true
           }
@@ -89,20 +78,17 @@ const startReview = ({ bullets, headline, summary }: SkillWording) => {
       : []),
     // An id that isn't on the profile can't be applied, so it starts unticked and stays that way.
     ...bullets.map((b) => {
-      const before = currentBullets.value.get(b.id)
+      const current = currentBullets.value.get(b.id)
       return {
         key: `bullet-${b.id}`,
         label: 'Bullet',
         bulletId: b.id,
-        before,
+        current,
         text: b.text,
-        include: before != null
+        include: current != null
       }
     })
-  ]
-  applyError.value = ''
-  mark()
-}
+  ])
 const suggest = async () => {
   error.value = ''
   const result = await api.suggest()
@@ -129,42 +115,13 @@ const preview = () => {
   startReview(wording)
 }
 
-const apply = async () => {
-  if (!canApply.value || busy.value) return
-  applyError.value = ''
-  const pick = (field: Row['field']) => {
-    const row = included.value.find((r) => r.field === field)
-    return row ? row.text.trim() : null
-  }
-  const result = await api.apply({
-    bullets: included.value
-      .filter((r) => r.bulletId != null)
-      .map((r) => ({ id: r.bulletId!, text: r.text.trim() })),
-    headline: pick('headline'),
-    summary: pick('summary')
+const apply = () => {
+  if (busy.value) return
+  return applyRows(api.apply, () => {
+    emit('changed')
+    toastSuccess('Skill wording updated')
   })
-  if (result.error !== undefined) {
-    applyError.value = result.error
-    return
-  }
-  emit('changed')
-  toast.add({ title: 'Skill wording updated', color: 'success', duration: SUCCESS_TOAST_DURATION })
-  discard()
 }
-
-// Closing a review that was edited asks first; an untouched one just goes.
-const discard = () => {
-  confirmOpen.value = false
-  rows.value = undefined
-  reply.value = ''
-  clear()
-  open.value = false
-}
-const back = () => {
-  rows.value = undefined
-  clear()
-}
-const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard())
 </script>
 
 <template>
@@ -182,7 +139,6 @@ const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard()
   >
     <fieldset :disabled="busy" class="min-w-0 space-y-4">
       <template v-if="rows">
-        <AppAiErrorAlert v-if="error" :title="error" data-testid="wording-error" />
         <AppAiReviewEmpty
           v-if="!rows.length"
           icon="i-lucide-spell-check"
@@ -192,7 +148,7 @@ const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard()
         <template v-else>
           <AppAiReviewSelectAll
             :selected="included.length"
-            :total="rows.filter((r) => r.before != null).length"
+            :total="applicable"
             @all="setAll(true)"
             @none="setAll(false)"
           />
@@ -202,11 +158,11 @@ const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard()
               :key="row.key"
               v-model:include="row.include"
               :label="row.label"
-              :disabled="row.before == null"
+              :disabled="row.current == null"
               :description="
-                row.before == null ? 'Not on your profile, so it can’t be applied.' : undefined
+                row.current == null ? 'Not on your profile, so it can’t be applied.' : undefined
               "
-              :current="row.before"
+              :current="row.current"
               testid-prefix="wording"
             >
               <template #suggested>

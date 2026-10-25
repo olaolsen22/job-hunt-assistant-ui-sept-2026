@@ -32,12 +32,12 @@ const fields = (l: ComparedListing) => ({
   Title: l.title,
   Company: l.company.name,
   Role: l.jobRole.name,
-  URL: l.url,
+  URL: l.url ?? '',
   Locations: l.locations
     .map((x) => formatLocation(x.location))
     .sort()
     .join(' · '),
-  Posted: formatDate(l.postedOn),
+  Posted: l.postedOn ? formatDate(l.postedOn) : '',
   Deadline:
     l.deadlineType === 'DATE' && l.deadlineOn
       ? formatDate(l.deadlineOn)

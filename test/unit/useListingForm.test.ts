@@ -241,4 +241,53 @@ describe('useListingForm', () => {
 
     expect(state.contacts.map((c) => c.name)).toEqual(['Kari', 'Ola'])
   })
+
+  // updateListing replaces the whole listing, and an omitted kind would turn it into a vacancy.
+  it('sends the listing kind back on save', () => {
+    const { state, toInput, fill } = useListingForm()
+    expect(toInput().kind).toBe('VACANCY')
+
+    fill({
+      kind: 'OPEN_INVITATION',
+      title: 'Open application',
+      company: { name: 'Acme' },
+      jobRole: { name: 'Developer' },
+      url: 'https://example.com/careers',
+      postedOn: '2026-09-01',
+      deadlineType: 'UNSPECIFIED',
+      deadlineOn: null,
+      analyzedAt: null,
+      locations: [],
+      languages: [],
+      skills: [],
+      contacts: []
+    } as never)
+
+    expect(state.kind).toBe('OPEN_INVITATION')
+    expect(toInput().kind).toBe('OPEN_INVITATION')
+  })
+
+  it('takes the kind from a parsed ad, but only one the form offers', () => {
+    const { state, fillDraft, mergeDraft } = useListingForm()
+    fillDraft({ title: 'Open application', kind: 'OPEN_INVITATION' })
+    expect(state.kind).toBe('OPEN_INVITATION')
+
+    // A parse without a kind keeps the one already chosen.
+    mergeDraft({ title: 'Open application' })
+    expect(state.kind).toBe('OPEN_INVITATION')
+
+    fillDraft({ title: 'No ad', kind: 'UNSOLICITED' })
+    expect(state.kind).toBe('VACANCY')
+  })
+
+  it('saves an unsolicited application without a link or posting date', () => {
+    const { state, validate, toInput } = useListingForm()
+    fillRequired(state)
+    state.kind = 'UNSOLICITED'
+    state.url = ''
+    state.postedOn = ''
+
+    expect(validate(state)).toEqual([])
+    expect(toInput()).toMatchObject({ kind: 'UNSOLICITED', url: null, postedOn: null })
+  })
 })

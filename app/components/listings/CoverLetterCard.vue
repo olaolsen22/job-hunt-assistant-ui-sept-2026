@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { ListingDetail } from '~/composables/useListing'
 
@@ -8,23 +7,21 @@ import type { ListingDetail } from '~/composables/useListing'
 const { listing } = defineProps<{ listing: ListingDetail }>()
 const emit = defineEmits<{ changed: [] }>()
 
-const DELETE_DOCUMENT = graphql(`
-  mutation DeleteDocument($input: DeleteDocumentInput!) {
-    deleteDocument(input: $input) {
-      id
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
-
 const { data: draft, status, error, refresh } = useCoverLetterDraftQuery(listing.id)
 const editorPath = computed(() => `/listings/${listing.id}/cover-letter`)
-const pdf = computed(() => latestUnsentDocument(listing.documents, 'COVER_LETTER'))
+const {
+  confirmOpen: deleteOpen,
+  deleting,
+  ask: askDelete,
+  confirm: deletePdf,
+  isDeleted
+} = useDeleteDocument(() => emit('changed'))
+const pdf = computed(() =>
+  latestUnsentDocument(
+    listing.documents.filter((d) => !isDeleted(d.id)),
+    'COVER_LETTER'
+  )
+)
 const pdfStale = computed(
   () =>
     !!pdf.value &&
@@ -32,39 +29,15 @@ const pdfStale = computed(
     Date.parse(pdf.value.createdAt) < Date.parse(draft.value.updatedAt)
 )
 
-const toast = useToast()
+const toastSuccess = useSuccessToast()
+const { copy: copyText } = useCopyAsText('cover letter')
 const copy = async () => {
   if (!draft.value) return
-  try {
-    await navigator.clipboard.writeText(
-      coverLetterToText(coverLetterFromContent(draft.value.content))
-    )
-    toast.add({ title: 'Cover letter copied as text', color: 'success', icon: 'i-lucide-check' })
-  } catch {
-    toast.add({ title: 'Could not copy the cover letter. Try again.', color: 'error' })
-  }
+  const text = coverLetterToText(coverLetterFromContent(draft.value.content))
+  if (await copyText(text)) toastSuccess('Cover letter copied as text')
 }
 
 const pdfOpen = ref(false)
-const deleteOpen = ref(false)
-const { run: runDelete, loading: deleting } = useMutation()
-const deletePdf = async () => {
-  const target = pdf.value
-  if (!target) return
-  const ok = await runDelete(async () => {
-    const { deleteDocument } = await gql(DELETE_DOCUMENT, { input: { id: target.id } })
-    return deleteDocument.errors
-  })
-  deleteOpen.value = false
-  if (ok)
-    toast.add({
-      title: 'PDF deleted',
-      color: 'success',
-      duration: SUCCESS_TOAST_DURATION,
-      icon: 'i-lucide-check'
-    })
-  emit('changed')
-}
 </script>
 
 <template>
@@ -137,7 +110,7 @@ const deletePdf = async () => {
             class="ml-auto"
             aria-label="Delete unsent cover letter PDF"
             data-testid="cover-letter-card-delete-pdf"
-            @click="deleteOpen = true"
+            @click="askDelete(pdf)"
             >Delete PDF</UButton
           >
         </div>

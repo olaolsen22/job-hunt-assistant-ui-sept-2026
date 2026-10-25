@@ -5,7 +5,6 @@ import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-uti
 import { readBody } from 'h3'
 import QuickAddPage from '~/pages/listings/quick-add.vue'
 import { llmModels, unknownModelError } from '../fixtures/llmModels'
-import { trackUnloadGuards } from '../fixtures/unloadGuard'
 
 const { navigation, routing } = vi.hoisted(() => ({
   navigation: vi.fn(),
@@ -54,17 +53,18 @@ const failed = {
 
 // Each test sets how the batch's rows come back; saves are counted to catch accidental ones.
 const mockApi = (results: unknown[]) => {
-  const saves = { count: 0 }
+  const saves = { count: 0, variables: {} as Record<string, unknown> }
   registerEndpoint('/graphql', {
     method: 'POST',
     handler: async (event) => {
-      const { query } = await readBody(event)
+      const { query, variables } = await readBody(event)
       if (query.includes('ListingQuickParsePrompt')) {
         return { data: { prompt: { instructions: 'x' } } }
       }
       if (query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
       if (query.includes('QuickAddListings')) {
         saves.count++
+        saves.variables = variables
         return { data: Object.fromEntries(results.map((r, i) => [`r${i}`, r])) }
       }
       return { data: { result: { nodes: [] } } }
@@ -86,9 +86,18 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+// Reka tabs switch on mousedown. Tests pick one: the remembered AI method lasts between tests.
+const aiTab = (w: VueWrapper, method: 'builtin' | 'own') =>
+  w.findAll('[role="tab"]')[method === 'builtin' ? 0 : 1]!
+const chooseAi = async (w: VueWrapper, method: 'builtin' | 'own') => {
+  await aiTab(w, method).trigger('mousedown')
+  await flushPromises()
+}
+
 const pasteRows = async (count: number) => {
   wrapper = await mountSuspended(QuickAddPage, { attachTo: document.body })
   await flushPromises()
+  await chooseAi(wrapper, 'own')
   const reply = JSON.stringify([...Array(count).keys()].map((i) => row(i + 1)))
   await wrapper.get('[data-testid="quick-add-json"]').setValue(reply)
   await wrapper.get('[data-testid="quick-add-parse"]').trigger('click')
@@ -143,6 +152,25 @@ describe('Quick add', () => {
     await flushPromises()
     // The confirm is teleported to <body>, outside the wrapper.
     expect(document.body.textContent).toContain('Leave 1 unsaved listing?')
+  })
+
+  // Every save is a full listing; an omitted kind would make an open invitation a vacancy.
+  it('saves the kind each parsed ad came with', async () => {
+    const saves = mockApi([saved(1), saved(2)])
+    wrapper = await mountSuspended(QuickAddPage, { attachTo: document.body })
+    await flushPromises()
+    await chooseAi(wrapper, 'own')
+    await wrapper
+      .get('[data-testid="quick-add-json"]')
+      .setValue(JSON.stringify([{ ...row(1), kind: 'OPEN_INVITATION' }, row(2)]))
+    await wrapper.get('[data-testid="quick-add-parse"]').trigger('click')
+    await flushPromises()
+    await save(wrapper)
+
+    expect(saves.variables).toMatchObject({
+      l0: { kind: 'OPEN_INVITATION' },
+      l1: { kind: 'VACANCY' }
+    })
   })
 
   it('opens the listing after saving a single new one, but not a flagged one or a batch', async () => {
@@ -305,6 +333,7 @@ const collection = [
 const openCollected = async (source = JSON.stringify(collection)) => {
   wrapper = await mountSuspended(QuickAddPage, { attachTo: document.body })
   await flushPromises()
+  await chooseAi(wrapper, 'own')
   await wrapper.get('[data-testid="quick-add-mode-collected"]').trigger('click')
   await wrapper.get('[data-testid="quick-add-collected"]').setValue(source)
   return wrapper
@@ -360,7 +389,7 @@ describe('Quick add collected jobs', () => {
   it('sends only retained jobs to the built-in parser after checking', async () => {
     const requests = collectedApi(eligible)
     const w = await openCollected()
-    await w.get('[data-testid="quick-add-builtin"]').trigger('click')
+    await chooseAi(w, 'builtin')
     expect(w.get('[data-testid="quick-add-builtin-run"]').attributes('disabled')).toBeDefined()
     await checkCollection(w)
     await w.get('[data-testid="quick-add-builtin-run"]').trigger('click')
@@ -378,7 +407,7 @@ describe('Quick add collected jobs', () => {
     )
     expect(w.get('[data-testid="quick-add-check-empty"]').text()).toContain('No new jobs remain')
     expect(w.get('[data-testid="quick-add-copy-prompt"]').attributes('disabled')).toBeDefined()
-    await w.get('[data-testid="quick-add-builtin"]').trigger('click')
+    await chooseAi(w, 'builtin')
     expect(w.get('[data-testid="quick-add-builtin-run"]').attributes('disabled')).toBeDefined()
   })
 
@@ -395,7 +424,7 @@ describe('Quick add collected jobs', () => {
     await vi.waitFor(() => expect(requests.checks).toHaveLength(1))
     expect(w.get('[data-testid="quick-add-collected"]').attributes('disabled')).toBeDefined()
     expect(w.get('[data-testid="quick-add-copy-prompt"]').attributes('disabled')).toBeDefined()
-    expect(w.get('[data-testid="quick-add-builtin"]').attributes('disabled')).toBeDefined()
+    expect(aiTab(w, 'builtin').attributes('disabled')).toBeDefined()
     finish(eligible(collection.map((r) => r.url)))
     await vi.waitFor(() =>
       expect(w.find('[data-testid="quick-add-check-summary"]').exists()).toBe(true)
@@ -425,7 +454,7 @@ describe('Quick add collected jobs', () => {
       (w.get('[data-testid="quick-add-collected"]').element as HTMLTextAreaElement).value
     ).toBe(source)
     expect(w.get('[data-testid="quick-add-copy-prompt"]').attributes('disabled')).toBeDefined()
-    await w.get('[data-testid="quick-add-builtin"]').trigger('click')
+    await chooseAi(w, 'builtin')
     expect(w.get('[data-testid="quick-add-builtin-run"]').attributes('disabled')).toBeDefined()
     expect(requests.parses).toEqual([])
     fail = false
@@ -439,7 +468,7 @@ const allEligible = (urls: string[]) =>
   eligible(urls).map((job) => ({ ...job, shouldProcess: true }))
 const manyJobs = (count: number) => Array.from({ length: count }, (_, i) => row(i + 100))
 const startCollected = async (w: VueWrapper) => {
-  await w.get('[data-testid="quick-add-builtin"]').trigger('click')
+  await chooseAi(w, 'builtin')
   await checkCollection(w)
   await w.get('[data-testid="quick-add-builtin-run"]').trigger('click')
 }
@@ -492,8 +521,6 @@ describe('Quick add collected batch processing', () => {
     ).toBe(source)
     for (const selector of [
       'quick-add-mode-text',
-      'quick-add-builtin',
-      'quick-add-external',
       'quick-add-check',
       'quick-add-add-row',
       'quick-add-row-remove',
@@ -501,6 +528,8 @@ describe('Quick add collected batch processing', () => {
     ]) {
       expect(w.get(`[data-testid="${selector}"]`).attributes('disabled')).toBeDefined()
     }
+    expect(aiTab(w, 'builtin').attributes('disabled')).toBeDefined()
+    expect(aiTab(w, 'own').attributes('disabled')).toBeDefined()
     expect(w.get('[data-testid="quick-add-row"] input').attributes('disabled')).toBeDefined()
     for (const combobox of w.findAll('[data-testid="quick-add-row"] [role="combobox"]')) {
       expect(combobox.attributes('disabled')).toBeDefined()
@@ -535,7 +564,7 @@ describe('Quick add collected batch processing', () => {
     await paused(w)
     expect(requests.parses).toHaveLength(2)
     expect(w.get('[data-testid="quick-add-batch-error"]').text()).toContain('Rate limit reached')
-    expect(w.get('[data-testid="quick-add-builtin"]').attributes('aria-pressed')).toBe('true')
+    expect(aiTab(w, 'builtin').attributes('aria-selected')).toBe('true')
     expect(w.get('[data-testid="quick-add-save"]').attributes('disabled')).toBeDefined()
     await w.get('[data-testid="quick-add-retry"]').trigger('click')
     await vi.waitFor(() => expect(requests.parses).toHaveLength(3))
@@ -557,7 +586,7 @@ describe('Quick add collected batch processing', () => {
       attempt === 1 ? { unknownModel: true } : { result: posting }
     )
     const w = await openCollected(JSON.stringify(manyJobs(2)))
-    await w.get('[data-testid="quick-add-builtin"]').trigger('click')
+    await chooseAi(w, 'builtin')
     await checkCollection(w)
     await w.get('[data-testid="quick-add-builtin-run"]').trigger('click')
     await paused(w)
@@ -669,7 +698,7 @@ describe('Quick add collected batch processing', () => {
     const requests = collectedApi(allEligible, () => ({ result: JSON.stringify([row(1)]) }))
     wrapper = await mountSuspended(QuickAddPage, { attachTo: document.body })
     await flushPromises()
-    await wrapper.get('[data-testid="quick-add-builtin"]').trigger('click')
+    await chooseAi(wrapper, 'builtin')
     await wrapper
       .get('[data-testid="quick-add-ad"]')
       .setValue('Two ads in unstructured pasted text')
@@ -678,6 +707,8 @@ describe('Quick add collected batch processing', () => {
       expect(wrapper!.findAll('[data-testid="quick-add-row"]')).toHaveLength(1)
     )
     expect(requests.parses).toEqual(['Two ads in unstructured pasted text'])
+    // A run that worked is the method the page (and every AI modal) opens on next time.
+    expect(useCookie('ai-method').value).toBe('builtin')
     // No per-run model: the server's own default applies.
     expect(requests.models).toEqual([undefined])
     expect(requests.checks).toEqual([])
@@ -727,28 +758,23 @@ describe('Quick add unsaved work protection', () => {
     expect(w.findAll('[data-testid="quick-add-row"]')).toHaveLength(0)
   })
 
-  it('protects prepared input and unload only while work exists, and cleans up the listener', async () => {
+  it('protects prepared input only while work exists', async () => {
     collectedApi(eligible)
-    const unloadPrevented = trackUnloadGuards()
-    const removeListener = vi.spyOn(window, 'removeEventListener')
     const w = await openCollected()
-    expect(unloadPrevented()).toBe(false)
+    expect(routing.guard!({ fullPath: '/listings' })).toBe(true)
     await checkCollection(w)
-    expect(unloadPrevented()).toBe(true)
+    expect(routing.guard!({ fullPath: '/listings' })).toBe(false)
+    await flushPromises()
+    await cancelModal()
     await w.get('[data-testid="quick-add-edit-collected"]').trigger('click')
     await cancelModal()
     expect(w.find('[data-testid="quick-add-check-summary"]').exists()).toBe(true)
     await w.get('[data-testid="quick-add-edit-collected"]').trigger('click')
     await confirmModal()
-    expect(unloadPrevented()).toBe(false)
     expect(routing.guard!({ fullPath: '/listings' })).toBe(true)
-    w.unmount()
-    wrapper = undefined
-    expect(removeListener).toHaveBeenCalledWith('beforeunload', expect.any(Function))
   })
 
   it('does not prompt after all collected drafts have been saved', async () => {
-    const unloadPrevented = trackUnloadGuards()
     collectedApi(allEligible)
     const w = await openCollected(JSON.stringify([row(1)]))
     await startCollected(w)
@@ -756,6 +782,5 @@ describe('Quick add unsaved work protection', () => {
     await save(w)
     expect(w.find('[data-testid="quick-add-view-listings"]').exists()).toBe(true)
     expect(routing.guard!({ fullPath: '/listings' })).toBe(true)
-    expect(unloadPrevented()).toBe(false)
   })
 })

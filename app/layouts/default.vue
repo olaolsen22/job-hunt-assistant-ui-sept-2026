@@ -40,6 +40,9 @@ const userItems = computed<DropdownMenuItem[][]>(() => [
   [{ label: 'Log out', icon: 'i-lucide-log-out', onSelect: logout }]
 ])
 
+// Asks before leaving any page while a built-in AI request is still running.
+const { open: aiLeaveOpen, leave: leaveDuringAi } = useAiLeaveGuard()
+
 const logout = async () => {
   await auth.logout()
   await navigateTo('/login')
@@ -102,5 +105,13 @@ const logout = async () => {
         </div>
       </template>
     </UDashboardPanel>
+
+    <AppConfirmModal
+      v-model:open="aiLeaveOpen"
+      title="Leave while the AI is working?"
+      description="Its answer will be lost, and the request may still count toward your daily AI limit."
+      confirm-label="Leave"
+      @confirm="leaveDuringAi"
+    />
   </UDashboardGroup>
 </template>

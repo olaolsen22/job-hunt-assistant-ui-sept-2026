@@ -899,6 +899,21 @@ describe('ProfilePage entry forms', () => {
     expect(document.body.querySelector('[data-testid="experience-title"]')).not.toBeNull()
     wrapper.unmount()
   })
+
+  it('asks before discarding a typed bullet that was not added yet', async () => {
+    const { wrapper } = await mountPage(filledProfile)
+    await chooseAction(wrapper, EXPERIENCE_ACTIONS, 'Edit')
+    setInput('profile-bullet-new', 'Shipped the app')
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="form-modal-cancel"]')!.click()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Discard changes?')
+    expect(
+      document.body.querySelector('[role="dialog"] [data-testid="profile-bullet-new"]')
+    ).toHaveProperty('value', 'Shipped the app')
+    wrapper.unmount()
+  })
 })
 
 describe('ProfilePage skills and languages', () => {
@@ -1186,6 +1201,49 @@ describe('ProfilePage translations', () => {
         requests.find((r) => r.query.includes('setProfileBulletTranslation('))!.variables.input
       ).toEqual({ bulletId: 100, language: 'ENGLISH', text: 'Led a team', isMachine: false })
     )
+    wrapper.unmount()
+  })
+
+  it('opens the next bullet without a translation after saving one', async () => {
+    const profile = {
+      ...filledProfile,
+      contentLanguage: 'NORWEGIAN',
+      experiences: [
+        {
+          ...filledProfile.experiences[0]!,
+          bullets: [
+            { ...bullet(100, 'Ledet et team', 0), translations: [] },
+            { ...bullet(101, 'Bygde appen', 1), translations: [tr({ id: 901, text: 'Built it' })] },
+            { ...bullet(102, 'Lanserte appen', 2), translations: [] }
+          ]
+        }
+      ]
+    }
+    const { wrapper } = await mountPage(profile, (body) =>
+      body.query.includes('setProfileBulletTranslation(')
+        ? { setProfileBulletTranslation: { profileBulletTranslation: { id: 1 }, errors: null } }
+        : undefined
+    )
+    await startTranslating(wrapper)
+
+    await wrapper.get('[data-testid="profile-bullet-translation-add"]').trigger('click')
+    setInputIn(wrapper, '[data-testid="profile-bullet-translation-input"]', 'Led a team')
+    await flushPromises()
+    await wrapper.get(`${bulletTr} form`).trigger('submit')
+
+    // The translated second bullet is skipped; the third opens, empty, for the next one.
+    await vi.waitFor(() =>
+      expect(
+        wrapper.get('[data-testid="profile-bullet-translation-input"]').attributes('aria-label')
+      ).toContain('Lanserte appen')
+    )
+    expect(wrapper.findAll('[data-testid="profile-bullet-translation-input"]')).toHaveLength(1)
+    expect(
+      (
+        wrapper.get('[data-testid="profile-bullet-translation-input"]')
+          .element as HTMLTextAreaElement
+      ).value
+    ).toBe('')
     wrapper.unmount()
   })
 

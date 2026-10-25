@@ -1,4 +1,3 @@
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { Ref } from 'vue'
 import type { ResultOf, VariablesOf } from 'gql.tada'
 import type { ProfileData } from '~/composables/useProfile'
@@ -225,13 +224,14 @@ export type TailoredCvAnalysis = NonNullable<
   ResultOf<typeof ANALYZE>['analyzeTailoredCvSection']['result']
 >
 
-// One shared key, so the listing card, the Apply modal and the editor read the same fetch.
+// One shared key, so the listing card, the Apply modal and the editor read the same fetch; `defer`
+// makes the ones that mount together (card, its reset, the Apply modal) share one request.
 // Null means no draft yet (the API also says null for someone else's listing).
 export const useTailoredCvDraftQuery = (listingId: number) =>
   useAsyncData(
     `tailored-cv-draft-${listingId}`,
     () => gql(DRAFT, { listingId }).then((r) => r.tailoredCvDraft),
-    { server: false }
+    { server: false, dedupe: 'defer' }
   )
 
 // Fallback for a saved draft that won't load: the API has no delete, so the draft is overwritten
@@ -280,14 +280,10 @@ export const useResetTailoredCvDraft = (listingId: number) => {
 }
 
 export const useCopyTailoredCv = () => {
-  const toast = useToast()
+  const { copy } = useCopyAsText('CV')
+  const toastSuccess = useSuccessToast()
   return async (cv: TailoredCv) => {
-    try {
-      await navigator.clipboard.writeText(tailoredCvToText(cv))
-      toast.add({ title: 'CV copied as text', color: 'success', icon: 'i-lucide-check' })
-    } catch {
-      toast.add({ title: 'Could not copy the CV. Try again.', color: 'error' })
-    }
+    if (await copy(tailoredCvToText(cv))) toastSuccess('CV copied as text')
   }
 }
 
@@ -388,7 +384,7 @@ export const useTailoredCvDraft = (
       sectionDetails.value = {}
       return null
     } catch (e) {
-      return `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
+      return genericError(e)
     } finally {
       resetting.value = false
     }
@@ -543,13 +539,13 @@ export const useTailoredCvDraft = (
       }
       return null
     } catch (e) {
-      return `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
+      return genericError(e)
     } finally {
       previewing.value = false
     }
   }
 
-  const toast = useToast()
+  const toastSuccess = useSuccessToast()
   const { run, loading: saving } = useMutation()
   const save = async () => {
     if (!cv.value) return false
@@ -565,12 +561,7 @@ export const useTailoredCvDraft = (
     // Back from the API in its normalized form (blank fields and empty bullets dropped).
     cv.value = tailoredCvFromContent((result as TailoredCvDraft).content)
     saved.value = seed.value = snapshot(cv.value)
-    toast.add({
-      title: 'Draft saved',
-      color: 'success',
-      duration: SUCCESS_TOAST_DURATION,
-      icon: 'i-lucide-check'
-    })
+    toastSuccess('Draft saved')
     return true
   }
 

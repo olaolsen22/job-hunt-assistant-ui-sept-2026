@@ -8,6 +8,7 @@ registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', r
 
 const listing = {
   id: 5,
+  kind: 'VACANCY',
   title: 'Frontend Developer',
   company: { id: 3, name: 'Acme', applicationCount: 0, avoidedAt: null as string | null },
   jobRole: { name: 'Developer' },
@@ -50,10 +51,15 @@ const listing = {
   contacts: [] as { contact: Record<string, unknown> }[]
 }
 
+const queries: string[] = []
 const mountPage = async (overrides: Partial<typeof listing> = {}) => {
+  queries.length = 0
   registerEndpoint('/graphql', {
     method: 'POST',
-    handler: () => ({ data: { listingById: { ...listing, ...overrides } } })
+    handler: async (event) => {
+      queries.push((await readBody(event)).query)
+      return { data: { listingById: { ...listing, ...overrides } } }
+    }
   })
   const wrapper = await mountSuspended(ListingPage, {
     route: '/listings/5',
@@ -65,6 +71,24 @@ const mountPage = async (overrides: Partial<typeof listing> = {}) => {
 }
 
 describe('Listing page', () => {
+  // The CV card, its reset and the Apply modal all read one draft; they used to fetch it each.
+  it('fetches the tailored CV draft once', async () => {
+    const wrapper = await mountPage()
+    await flushPromises()
+    expect(queries.filter((q) => q.includes('query TailoredCvDraft('))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('shows the listing type only when it is not a vacancy', async () => {
+    const vacancy = await mountPage()
+    expect(vacancy.find('[data-testid="listing-kind"]').exists()).toBe(false)
+    vacancy.unmount()
+
+    const invitation = await mountPage({ kind: 'OPEN_INVITATION' })
+    expect(invitation.get('[data-testid="listing-kind"]').text()).toBe('Open invitation')
+    invitation.unmount()
+  })
+
   it('shows the title and status badges in a header above the cards', async () => {
     const wrapper = await mountPage()
     const header = wrapper.get('[data-testid="listing-header"]')

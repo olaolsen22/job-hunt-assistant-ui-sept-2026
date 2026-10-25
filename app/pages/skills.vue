@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { CatalogSkill, SkillFilter } from '~/composables/useSkillsCatalog'
+import type { CategoryChoice } from '~/composables/useSkillCategories'
 
 definePageMeta({ title: 'Skills' })
 
@@ -18,7 +19,7 @@ const DELETE_SKILL = graphql(`
 `)
 
 const { data: skills, status, error, refresh } = useSkillsCatalog()
-const { categories, refresh: refreshCategories } = useSkillCategories()
+const { categories, items: categoryItems, refresh: refreshCategories } = useSkillCategories()
 const loading = computed(() => status.value === 'pending' || status.value === 'idle')
 
 // The category filter lives in the URL like the other list pages, so a reload keeps it.
@@ -67,10 +68,51 @@ const categorized = (skill: CatalogSkill, categoryId: number | null) => {
   refreshCategories()
 }
 
+// One category for every ticked skill. The API sets one skill per call, so they go out side by
+// side (an aliased batch of many could exceed the API's cost limit); the ones that fail stay
+// ticked, so Set category again retries just those.
+const toast = useToast()
+const toastSuccess = useSuccessToast()
+const bulkCategoryOpen = ref(false)
+const bulkCategory = ref<CategoryChoice>()
+const bulkSaving = ref(false)
+const openBulkCategory = () => {
+  bulkCategory.value = undefined
+  bulkCategoryOpen.value = true
+}
+const setBulkCategory = async () => {
+  if (bulkCategory.value === undefined) return
+  const categoryId = fromCategoryChoice(bulkCategory.value)
+  const ids = [...selected.value]
+  bulkSaving.value = true
+  const results = await Promise.allSettled(
+    ids.map(async (skillId) => {
+      const { setSkillCategory } = await gql(SET_SKILL_CATEGORY, { input: { skillId, categoryId } })
+      if (setSkillCategory.errors?.length) throw new Error(setSkillCategory.errors[0]!.message)
+    })
+  )
+  const failed = ids.filter((_, i) => results[i]!.status === 'rejected')
+  bulkSaving.value = false
+  bulkCategoryOpen.value = false
+  await reload()
+  selected.value = failed
+  if (!failed.length) {
+    toastSuccess(`Category set for ${ids.length} ${ids.length === 1 ? 'skill' : 'skills'}`)
+    return
+  }
+  toast.add({
+    title: `Updated ${ids.length - failed.length} of ${ids.length} skills; ${failed.length} failed.`,
+    description: 'They are still selected.',
+    color: 'error'
+  })
+}
+
 const categoriesOpen = ref(false)
 const cleanupOpen = ref(false)
+const cleanupOpened = useOpenedOnce(cleanupOpen)
 
 const mergeOpen = ref(false)
+const mergeOpened = useOpenedOnce(mergeOpen)
 const mergeIds = ref<number[]>([])
 const openMerge = (ids: number[]) => {
   mergeIds.value = ids
@@ -79,6 +121,7 @@ const openMerge = (ids: number[]) => {
 
 const renaming = ref<CatalogSkill | null>(null)
 const renameOpen = ref(false)
+const renameOpened = useOpenedOnce(renameOpen)
 const openRename = (skill: CatalogSkill) => {
   renaming.value = skill
   renameOpen.value = true
@@ -89,7 +132,6 @@ const deleting = ref<CatalogSkill | null>(null)
 const deleteOpen = ref(false)
 const inUse = ref<string>()
 const deleteBusy = ref(false)
-const toast = useToast()
 const openDelete = (skill: CatalogSkill) => {
   deleting.value = skill
   inUse.value = undefined
@@ -267,18 +309,33 @@ const confirmDelete = async () => {
         <!-- Sticky so the merge action stays in reach while ticking skills further down. -->
         <div
           v-if="selected.length"
-          class="sticky bottom-4 z-10 flex items-center justify-between gap-2 rounded-lg bg-default p-3 shadow-lg ring ring-default"
+          class="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-default p-3 shadow-lg ring ring-default"
           data-testid="skills-selection"
         >
-          <span class="text-sm">{{ selected.length }} selected</span>
-          <div class="flex gap-2">
-            <UButton color="neutral" variant="ghost" @click="selected = []">Clear</UButton>
+          <div class="flex items-center gap-2">
+            <span class="text-sm">{{ selected.length }} selected</span>
+            <UButton color="neutral" variant="ghost" size="sm" @click="selected = []"
+              >Clear</UButton
+            >
+          </div>
+          <!-- Phones: the two actions share their own row. -->
+          <div class="flex w-full gap-2 sm:w-auto">
             <UButton
               icon="i-lucide-merge"
+              color="neutral"
+              variant="outline"
+              class="flex-1 justify-center sm:flex-none"
               :disabled="selected.length < 2"
               data-testid="skills-merge"
               @click="openMerge(selected)"
               >Merge</UButton
+            >
+            <UButton
+              icon="i-lucide-tag"
+              class="flex-1 justify-center sm:flex-none"
+              data-testid="skills-set-category"
+              @click="openBulkCategory"
+              >Set category</UButton
             >
           </div>
         </div>
@@ -301,18 +358,44 @@ const confirmDelete = async () => {
     </USlideover>
 
     <LazySkillsMergeModal
+      v-if="mergeOpened"
       v-model:open="mergeOpen"
       :skills="skills"
       :initial-ids="mergeIds"
       @merged="reload"
     />
     <LazySkillsRenameModal
+      v-if="renameOpened"
       v-model:open="renameOpen"
       :skill="renaming"
       :skills="skills"
       @renamed="reload"
     />
-    <LazyProfileSkillCleanupModal v-model:open="cleanupOpen" @changed="reload" />
+    <LazyProfileSkillCleanupModal
+      v-if="cleanupOpened"
+      v-model:open="cleanupOpen"
+      @changed="reload"
+    />
+
+    <AppConfirmModal
+      v-model:open="bulkCategoryOpen"
+      :title="`Set category for ${selected.length} ${selected.length === 1 ? 'skill' : 'skills'}`"
+      description="Replaces the current category of every selected skill. Choose Uncategorized to clear it."
+      confirm-label="Set category"
+      :loading="bulkSaving"
+      :disabled="bulkCategory === undefined"
+      @confirm="setBulkCategory"
+    >
+      <UFormField label="Category">
+        <USelect
+          v-model="bulkCategory"
+          :items="categoryItems"
+          placeholder="Choose a category"
+          class="w-full"
+          data-testid="skills-bulk-category"
+        />
+      </UFormField>
+    </AppConfirmModal>
 
     <AppConfirmModal
       v-model:open="deleteOpen"

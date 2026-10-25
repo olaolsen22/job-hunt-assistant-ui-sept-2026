@@ -121,6 +121,7 @@ const submit = async () => {
     v-model:open="open"
     :title="experience ? 'Edit experience' : 'Add experience'"
     :state="state"
+    :unsaved="bullets?.hasDraft"
     :validate="validate"
     :loading="loading"
     @submit="submit"

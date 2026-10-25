@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { ListingDetail } from '~/composables/useListing'
 import {
   EMPLOYMENT_TYPE_OPTIONS,
   LANGUAGE_OPTIONS,
+  LISTING_KIND_OPTIONS,
   SCHEDULE_OPTIONS,
   SENIORITY_OPTIONS,
   WORK_MODE_OPTIONS
@@ -18,22 +18,6 @@ const id = Number(route.params.id)
 
 const { listing, loading, error, refresh } = await useListing(id)
 const listingsView = useListingsView()
-
-const UPDATE_LISTING = graphql(`
-  mutation UpdateListing($id: Int!, $listing: ListingInput!) {
-    updateListing(input: { id: $id, listing: $listing }) {
-      listing {
-        id
-      }
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
 
 const SET_ARCHIVED = graphql(`
   mutation SetListingArchived($input: SetListingArchivedInput!) {
@@ -51,41 +35,25 @@ const SET_ARCHIVED = graphql(`
   }
 `)
 
-const toast = useToast()
+const toastSuccess = useSuccessToast()
 const { state, toInput, fill } = useListingForm()
 const markOpen = ref(false)
 const applyOpen = ref(false)
-const marking = ref(false)
 
 // The API has no mutation for just this flag and updateListing replaces the whole listing,
 // so rebuild the full input from the loaded listing.
+const { run: runMark, loading: marking } = useMutation(refresh)
 const markAnalyzed = async () => {
   if (!listing.value) return
-  marking.value = true
-  try {
-    fill(listing.value)
-    state.isAnalyzed = true
-    const { updateListing } = await gql(UPDATE_LISTING, {
-      id,
-      listing: toInput()
-    })
-    if (updateListing.errors?.length) {
-      toast.add({ title: updateListing.errors[0]!.message, color: 'error' })
-      return
-    }
-    await refresh()
-    toast.add({
-      title: 'Marked as analyzed',
-      color: 'success',
-      duration: SUCCESS_TOAST_DURATION,
-      icon: 'i-lucide-check'
-    })
-  } catch {
-    toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
-  } finally {
-    marking.value = false
-    markOpen.value = false
-  }
+  fill(listing.value)
+  state.isAnalyzed = true
+  const ok = await runMark(
+    async () => (await gql(UPDATE_LISTING, { id, listing: toInput() })).updateListing.errors
+  )
+  markOpen.value = false
+  if (!ok) return
+  await refresh()
+  toastSuccess('Marked as analyzed')
 }
 
 const { run: runArchive, loading: archiving } = useMutation(refresh)
@@ -100,11 +68,7 @@ const toggleArchived = async () => {
   })
   if (!ok) return
   await refresh()
-  toast.add({
-    title: isArchived ? 'Archived' : 'Unarchived',
-    color: 'success',
-    duration: SUCCESS_TOAST_DURATION
-  })
+  toastSuccess(isArchived ? 'Archived' : 'Unarchived')
 }
 
 // Infrequent actions live in the menu so Edit is the one obvious primary button.
@@ -238,8 +202,9 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
             <h1 class="min-w-0 break-words text-xl font-semibold text-highlighted">
               {{ listing.title }}
             </h1>
-            <ListingsFavoriteButton
+            <AppFavoriteButton
               :id="listing.id"
+              target="listing"
               :favorited-at="listing.favoritedAt"
               size="md"
               class="shrink-0"
@@ -248,6 +213,16 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
 
           <div class="flex flex-wrap gap-2">
             <ListingsStatusBadge :status="listing.status" prominent />
+            <!-- Most listings are vacancies, so only the exceptions get a badge. -->
+            <UBadge
+              v-if="listing.kind !== 'VACANCY'"
+              color="neutral"
+              variant="subtle"
+              size="lg"
+              icon="i-lucide-mail-open"
+              data-testid="listing-kind"
+              >{{ labelOf(LISTING_KIND_OPTIONS, listing.kind) }}</UBadge
+            >
             <ListingsAnalyzedBadge
               :analyzed-at="listing.analyzedAt"
               :reanalyzed-at="listing.reanalyzedAt"

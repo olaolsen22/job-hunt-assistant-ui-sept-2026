@@ -1,25 +1,10 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { TailoredCvSectionKey } from '~/utils/tailoredCv'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { VueDraggable } from 'vue-draggable-plus'
 import { PROFICIENCY_OPTIONS, projectKindLabel } from '~/constants/listing'
 
 definePageMeta({ title: 'Tailored CV' })
-
-const DELETE_DOCUMENT = graphql(`
-  mutation DeleteDocument($input: DeleteDocumentInput!) {
-    deleteDocument(input: $input) {
-      id
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
 
 const SECTION_ORDER_OPTIONS = [
   { label: 'Standard', value: 'STANDARD' },
@@ -48,18 +33,20 @@ type ContentStyle = 'BULLETS' | 'PARAGRAPH'
 const route = useRoute()
 const id = Number(route.params.id)
 
+// The listing, profile and draft requests start together; only the listing is waited for.
+const listingQuery = useListing(id)
+const { profile, error: profileError } = useProfile()
+const state = useTailoredCvDraft(
+  id,
+  profile,
+  computed(() => listingQuery.listing.value?.postingLanguage)
+)
 const {
   listing,
   loading: listingLoading,
   error: listingError,
   refresh: refreshListing
-} = await useListing(id)
-const { profile, error: profileError } = useProfile()
-const state = useTailoredCvDraft(
-  id,
-  profile,
-  computed(() => listing.value?.postingLanguage)
-)
+} = await listingQuery
 const { cv, dirty, suggestions, sectionErrors, sectionDetails, analyzing, analyzingKey, progress } =
   state
 const copy = useCopyTailoredCv()
@@ -89,18 +76,31 @@ const loadError = computed(
 )
 const busy = computed(() => analyzing.value || !!analyzingKey.value || state.previewing.value)
 
+// A failed delete refetches (the PDF may be gone or sent already); a deleted one drops the
+// just-generated copy too.
+const {
+  confirmOpen: deletePdfOpen,
+  target: pdfToDelete,
+  deleting: deletingPdf,
+  ask: askDeletePdf,
+  confirm: deletePdf,
+  isDeleted
+} = useDeleteDocument(async (deletedId) => {
+  if (deletedId === null) return refreshListing()
+  if (state.generated.value?.id === deletedId) state.generated.value = undefined
+  await refreshDocuments()
+})
 // The PDF to preview and apply with: the one just generated, else the listing's newest unsent CV.
 // It's current when created after the last save and nothing is edited since, so Generate has
 // nothing new to make (server timestamps on both sides).
-const deletedPdfIds = ref<number[]>([])
 const pdf = computed(
   () =>
-    (state.generated.value && !deletedPdfIds.value.includes(state.generated.value.id)
+    (state.generated.value && !isDeleted(state.generated.value.id)
       ? state.generated.value
       : undefined) ??
     (listing.value &&
       latestUnsentDocument(
-        listing.value.documents.filter((document) => !deletedPdfIds.value.includes(document.id)),
+        listing.value.documents.filter((document) => !isDeleted(document.id)),
         'CV'
       ))
 )
@@ -120,38 +120,7 @@ const refreshDocuments = async () => {
   await refreshListing()
   refreshFailed.value = !!listingError.value
 }
-const deletePdfOpen = ref(false)
-const pdfToDelete = ref<{ id: number; fileName: string } | null>(null)
-const selectPdfForDeletion = () => {
-  if (!pdf.value || pdf.value.sentAt) return
-  pdfToDelete.value = { id: pdf.value.id, fileName: pdf.value.fileName }
-  deletePdfOpen.value = true
-}
-const { run: runDeleteDocument, loading: deletingPdf } = useMutation(refreshListing)
 const toast = useToast()
-const deletePdf = async () => {
-  const target = pdfToDelete.value
-  if (!target) return
-  const ok = await runDeleteDocument(async () => {
-    const { deleteDocument } = await gql(DELETE_DOCUMENT, { input: { id: target.id } })
-    return deleteDocument.errors
-  })
-  deletePdfOpen.value = false
-  pdfToDelete.value = null
-  if (!ok) {
-    await refreshListing()
-    return
-  }
-  deletedPdfIds.value = [...deletedPdfIds.value, target.id]
-  if (state.generated.value?.id === target.id) state.generated.value = undefined
-  toast.add({
-    title: 'PDF deleted',
-    color: 'success',
-    duration: SUCCESS_TOAST_DURATION,
-    icon: 'i-lucide-check'
-  })
-  await refreshDocuments()
-}
 const generatePdf = async () => {
   refreshFailed.value = false
   if (!(await state.generate())) return
@@ -282,27 +251,9 @@ const setContentStyle = (style: ContentStyle) => {
 
 const addLanguage = () => cv.value!.languages.push({ name: '', spoken: null, written: null })
 
-// Leaving with unsaved work asks first; closing or reloading the tab gets the browser's own warning.
-const leaveOpen = ref(false)
-const leaveTo = ref('')
-let leaving = false
-const unsaved = () => dirty.value || analyzing.value
-onBeforeRouteLeave((to) => {
-  if (leaving || !unsaved()) return true
-  leaveTo.value = to.fullPath
-  leaveOpen.value = true
-  return false
-})
-const leave = () => {
-  leaving = true
-  leaveOpen.value = false
-  navigateTo(leaveTo.value)
-}
-const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-  if (unsaved()) event.preventDefault()
-}
-onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
-onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
+// Leaving with unsaved work asks first. Analysis counts too: between its section requests no AI
+// call is in flight for the layout's guard to see.
+const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzing.value)
 </script>
 
 <template>
@@ -489,7 +440,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 size="sm"
                 aria-label="Delete unsent PDF"
                 data-testid="tailored-cv-delete-pdf"
-                @click="selectPdfForDeletion"
+                @click="askDeletePdf(pdf)"
               />
             </div>
           </AppCard>

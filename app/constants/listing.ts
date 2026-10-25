@@ -33,6 +33,14 @@ export const DEADLINE_TYPE_OPTIONS = [
   { label: 'Not stated', value: 'UNSPECIFIED' }
 ] as const
 
+// The form offers the first two. UNSOLICITED (an application with no ad) is made through the API
+// only; a listing that has it keeps it.
+export const LISTING_KIND_OPTIONS = [
+  { label: 'Vacancy', value: 'VACANCY' },
+  { label: 'Open invitation', value: 'OPEN_INVITATION' },
+  { label: 'Unsolicited', value: 'UNSOLICITED' }
+] as const
+
 export const LANGUAGE_OPTIONS = [
   { label: 'English', value: 'ENGLISH' },
   { label: 'Norwegian', value: 'NORWEGIAN' }
@@ -69,6 +77,7 @@ export type EmploymentType = (typeof EMPLOYMENT_TYPE_OPTIONS)[number]['value']
 export type Schedule = (typeof SCHEDULE_OPTIONS)[number]['value']
 export type WorkMode = (typeof WORK_MODE_OPTIONS)[number]['value']
 export type DeadlineType = (typeof DEADLINE_TYPE_OPTIONS)[number]['value']
+export type ListingKind = (typeof LISTING_KIND_OPTIONS)[number]['value']
 export type Language = (typeof LANGUAGE_OPTIONS)[number]['value']
 export type CefrLevel = (typeof CEFR_LEVELS)[number]
 export type Proficiency = (typeof PROFICIENCY_OPTIONS)[number]['value']

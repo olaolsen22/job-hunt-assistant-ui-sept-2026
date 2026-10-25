@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { ProfileData } from '~/composables/useProfile'
 import {
   createCvDraft,
@@ -20,16 +19,14 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ saved: [profile: ProfileData] }>()
 const api = useProfileCvImport()
 const { busy, needsConfirm, safetyMessage } = api
-const method = useAiMethod()
-const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
-const usage = computed(() => usageData.value?.llmUsageToday)
-const toast = useToast()
-const tab = ref<'paste' | 'own'>('paste')
+// The built-in tab is "paste"; Back from a review returns to the tab that produced it.
+const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState<'paste' | 'own'>(
+  open,
+  { tabFor: (m) => (m === 'own' ? 'own' : 'paste'), onOpen: () => api.loadPrompt() }
+)
+const toastSuccess = useSuccessToast()
 const cv = ref('')
 const json = ref('')
-const error = ref('')
-// The API's AiSafetyError code for the error shown, if any.
-const errorCode = ref<string>()
 const attempted = ref(false)
 const reviewComponent = useTemplateRef('reviewComponent')
 const serverIssues = ref<CvIssue[]>([])
@@ -95,23 +92,8 @@ const requestClose = () => {
     confirmOpen.value = true
   } else open.value = false
 }
-watch(
-  open,
-  (isOpen) => {
-    if (!isOpen) return
-    // Not mid-review: Back from the review returns to the tab that produced it.
-    if (!draft.value) tab.value = method.value === 'own' ? 'own' : 'paste'
-    api.loadPrompt()
-    refreshUsage()
-    error.value = ''
-  },
-  { immediate: true }
-)
 watch([cv, json, tab], () => {
   error.value = ''
-})
-watch(error, (value) => {
-  if (!value) errorCode.value = undefined
 })
 const runParse = async () => {
   if (locked.value || !canParse.value) return
@@ -209,7 +191,7 @@ const save = async () => {
     return
   }
   emit('saved', result.value)
-  toast.add({ title: 'CV import saved', color: 'success', duration: SUCCESS_TOAST_DURATION })
+  toastSuccess('CV import saved')
   draft.value = undefined
   reviewing.value = false
   cv.value = json.value = ''

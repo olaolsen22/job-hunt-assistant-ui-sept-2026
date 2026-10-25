@@ -59,10 +59,12 @@ const seniority = computed(
   () => SENIORITY_OPTIONS.find((o) => o.value === listing.seniority)?.label ?? null
 )
 
-const daysSincePosted = computed(() => -daysFromToday(listing.postedOn))
-const postedLabel = computed(() =>
-  daysSincePosted.value <= 0 ? 'Today' : `${daysSincePosted.value}d ago`
-)
+// An unsolicited application has no posting date, so no posted badge.
+const posted = computed(() => {
+  if (!listing.postedOn) return null
+  const days = -daysFromToday(listing.postedOn)
+  return { on: listing.postedOn, days, label: days <= 0 ? 'Today' : `${days}d ago` }
+})
 </script>
 
 <template>
@@ -77,8 +79,9 @@ const postedLabel = computed(() =>
     class="group relative flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-default p-3 hover:bg-elevated/50 md:gap-x-4 md:gap-y-1 md:rounded-none md:border-0 md:px-4 lg:min-h-16 lg:flex-nowrap"
     data-testid="listing-row"
   >
-    <ListingsFavoriteButton
+    <AppFavoriteButton
       :id="listing.id"
+      target="listing"
       :favorited-at="listing.favoritedAt"
       size="md"
       class="relative z-10 order-2 md:order-1 lg:w-8 lg:shrink-0"
@@ -135,13 +138,14 @@ const postedLabel = computed(() =>
       <!-- Wrapper keeps the badge from stretching in its fixed-width column. -->
       <div class="relative z-10 lg:order-5 lg:w-20 lg:shrink-0">
         <UBadge
-          :color="URGENCY_BADGE_COLOR[postedLevel(daysSincePosted)]"
+          v-if="posted"
+          :color="URGENCY_BADGE_COLOR[postedLevel(posted.days)]"
           variant="subtle"
           data-testid="listing-posted"
         >
           <UIcon name="i-lucide-calendar-plus" class="size-4 shrink-0 lg:hidden" />
-          <time :datetime="listing.postedOn" :title="`Posted ${formatDate(listing.postedOn)}`"
-            ><span class="lg:hidden">Posted </span>{{ postedLabel }}</time
+          <time :datetime="posted.on" :title="`Posted ${formatDate(posted.on)}`"
+            ><span class="lg:hidden">Posted </span>{{ posted.label }}</time
           >
         </UBadge>
       </div>

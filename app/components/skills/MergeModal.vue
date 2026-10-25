@@ -24,12 +24,17 @@ const bestTarget = (list: readonly CatalogSkill[]) =>
     (a, b) => (b.profileLevel ?? 0) - (a.profileLevel ?? 0) || b.listingCount - a.listingCount
   )[0]
 
-watch(open, (isOpen) => {
-  if (!isOpen) return
-  ids.value = [...initialIds]
-  targetId.value = bestTarget(picked.value)?.id
-  name.value = byId.value.get(targetId.value!)?.name ?? ''
-})
+watch(
+  open,
+  (isOpen) => {
+    if (!isOpen) return
+    ids.value = [...initialIds]
+    targetId.value = bestTarget(picked.value)?.id
+    name.value = byId.value.get(targetId.value!)?.name ?? ''
+  },
+  // Mounted on first open (already open), so the first open needs the reset too.
+  { immediate: true }
+)
 
 // Keep the kept skill among the picked ones, and its name in the field until the owner edits it.
 watch(ids, () => {

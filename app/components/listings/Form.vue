@@ -4,6 +4,7 @@ import {
   DEADLINE_TYPE_OPTIONS,
   EMPLOYMENT_TYPE_OPTIONS,
   LANGUAGE_OPTIONS,
+  LISTING_KIND_OPTIONS,
   SCHEDULE_OPTIONS,
   SENIORITY_OPTIONS,
   WORK_MODE_OPTIONS
@@ -24,6 +25,11 @@ defineEmits<{ submit: [] }>()
 const form = useTemplateRef('form')
 // Lets the add page show every field's error right after filling the form from a parsed ad.
 defineExpose({ validate: () => form.value?.validate({ silent: true }) })
+
+// Unsolicited is offered only to a listing that already is one (made through the API).
+const kindItems = computed(() =>
+  LISTING_KIND_OPTIONS.filter((o) => o.value !== 'UNSOLICITED' || state.value.kind === o.value)
+)
 </script>
 
 <template>
@@ -114,6 +120,19 @@ defineExpose({ validate: () => form.value?.validate({ silent: true }) })
             clear
             placeholder="Not stated"
             class="w-full"
+          />
+        </UFormField>
+
+        <UFormField
+          label="Listing type"
+          help="Open invitation: the company welcomes applications but names no specific opening."
+          name="kind"
+        >
+          <USelect
+            v-model="state.kind"
+            :items="kindItems"
+            class="w-full"
+            data-testid="listing-kind"
           />
         </UFormField>
 

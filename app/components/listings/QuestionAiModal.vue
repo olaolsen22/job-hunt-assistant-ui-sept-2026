@@ -12,16 +12,14 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ use: [answer: string] }>()
 
 const ai = useApplicationAnswerAi(() => questionId)
-const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
 const json = ref('')
 const candidate = ref<AnswerCandidate>()
 const draft = ref('')
-const { method, tab, error } = useAiModalState(open, {
+const { method, tab, error, usage, refreshUsage } = useAiModalState(open, {
   onOpen: () => {
     json.value = ''
     candidate.value = undefined
     draft.value = ''
-    refreshUsage()
     if (!ai.instructions.value) ai.loadPrompt()
   }
 })
@@ -36,10 +34,10 @@ const submit = async () => {
   const outcome = builtin ? await ai.generate() : await ai.preview(json.value)
   if (builtin) refreshUsage()
   error.value = outcome.error ?? ''
-  if (!outcome.candidate) return
+  if (outcome.error !== undefined) return
   method.value = tab.value
-  candidate.value = outcome.candidate
-  draft.value = outcome.candidate.answer
+  candidate.value = outcome.value
+  draft.value = outcome.value.answer
 }
 const retry = () => {
   ai.confirmRetry()
@@ -111,7 +109,7 @@ const use = () => {
           the question, limit and notes, your profile and your other saved answers. Save each answer
           before drafting the next.
         </p>
-        <AppAiCostNotice :usage="usageData?.llmUsageToday" />
+        <AppAiCostNotice :usage="usage" />
         <AppAiRetryConfirm
           v-if="ai.needsConfirm.value"
           :message="ai.safetyMessage.value"

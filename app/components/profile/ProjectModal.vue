@@ -119,6 +119,7 @@ const submit = async () => {
     v-model:open="open"
     :title="project ? 'Edit project' : 'Add project'"
     :state="state"
+    :unsaved="bullets?.hasDraft"
     :validate="validate"
     :loading="loading"
     @submit="submit"

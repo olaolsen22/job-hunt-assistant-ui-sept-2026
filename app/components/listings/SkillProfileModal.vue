@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { SKILL_LEVELS } from '~/constants/listing'
 import type { ListingDetail } from '~/composables/useListing'
 
@@ -93,7 +92,7 @@ const validate = () =>
   })
 
 const { run, loading } = useMutation(refreshProfile)
-const toast = useToast()
+const toastSuccess = useSuccessToast()
 
 const submit = async () => {
   const ok = await run(
@@ -111,13 +110,9 @@ const submit = async () => {
   )
   if (!ok) return
   open.value = false
-  toast.add({
-    title: isOwned.value
-      ? `Updated ${skill.name} on your profile`
-      : `Added ${skill.name} to your profile`,
-    color: 'success',
-    duration: SUCCESS_TOAST_DURATION
-  })
+  toastSuccess(
+    isOwned.value ? `Updated ${skill.name} on your profile` : `Added ${skill.name} to your profile`
+  )
   await refreshProfile()
   emit('changed')
 }

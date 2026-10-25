@@ -7,14 +7,15 @@ import type { useCoverLetterDraft } from '~/composables/useCoverLetterDraft'
 const { editor } = defineProps<{ editor: ReturnType<typeof useCoverLetterDraft> }>()
 const open = defineModel<boolean>('open', { required: true })
 
-const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
 const pasted = ref('')
-const { method, tab, error } = useAiModalState<'builtin' | 'own' | 'letter'>(open, {
-  onOpen: (openTab) => {
-    pasted.value = ''
-    if (openTab.value === 'builtin') refreshUsage()
+const { method, tab, error, usage, refreshUsage } = useAiModalState<'builtin' | 'own' | 'letter'>(
+  open,
+  {
+    onOpen: () => {
+      pasted.value = ''
+    }
   }
-})
+)
 // The prompt is loaded before the copy button can be used: a clipboard write after an await can fail.
 watch(
   [open, tab],
@@ -65,7 +66,7 @@ const retry = () => {
         Uses the listing, your profile, your story, your writing samples and your notes for the AI.
         <template v-if="editor.dirty.value">Your edits are saved first.</template>
       </p>
-      <AppAiCostNotice :usage="usageData?.llmUsageToday" />
+      <AppAiCostNotice :usage="usage" />
       <AppAiRetryConfirm
         v-if="editor.needsConfirm.value"
         :message="editor.safetyMessage.value"

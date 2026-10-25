@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { PreparedJobs } from '~/utils/collectedJobs'
 import { collectedJobsPosting, prepareCollectedJobs } from '~/utils/collectedJobs'
 import { useCollectedJobProcessing } from '~/composables/useCollectedJobProcessing'
@@ -7,10 +6,9 @@ import type { FormError } from '@nuxt/ui'
 import { print } from '@0no-co/graphql.web'
 import type { ResultOf } from 'gql.tada'
 import type { ListingLocation } from '~/composables/useListingForm'
-import { COUNTRY_CODES } from '~/constants/countries'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { DEADLINE_TYPE_OPTIONS } from '~/constants/listing'
-import type { DeadlineType } from '~/constants/listing'
+import type { DeadlineType, ListingKind } from '~/constants/listing'
 
 definePageMeta({ title: 'Quick add listings' })
 
@@ -49,6 +47,8 @@ type PreviousAttempt = NonNullable<CreateListingResult['previousAttempts']>[numb
 
 interface Row {
   key: number
+  // Carried from the parse without a control: the row only shows the basics.
+  kind: ListingKind
   title: string
   companyName?: string
   jobRoleName?: string
@@ -92,6 +92,7 @@ const DELETE_LISTING = graphql(`
 let nextKey = 0
 const newRow = (): Row => ({
   key: nextKey++,
+  kind: 'VACANCY',
   title: '',
   url: '',
   postedOn: todayIso(),
@@ -120,27 +121,11 @@ const addedOpen = ref(false)
 
 // Field names use the row key, not the index, so errors stay on the right row after a removal.
 const validate = (s: typeof state): FormError[] =>
-  toSave(s.rows).flatMap((r) => {
-    const errors: FormError[] = []
-    if (!r.title.trim()) errors.push({ name: `${r.key}.title`, message: 'Required' })
-    if (!r.companyName) errors.push({ name: `${r.key}.companyName`, message: 'Required' })
-    if (!r.jobRoleName) errors.push({ name: `${r.key}.jobRoleName`, message: 'Required' })
-    if (!/^https?:\/\/\S+$/i.test(r.url.trim())) {
-      errors.push({ name: `${r.key}.url`, message: 'Enter an http(s) link' })
-    }
-    if (!r.postedOn) {
-      errors.push({ name: `${r.key}.postedOn`, message: 'Required' })
-    } else if (r.postedOn > todayIso()) {
-      errors.push({ name: `${r.key}.postedOn`, message: 'Can’t be in the future' })
-    }
-    if (r.deadlineType === 'DATE' && !r.deadlineOn) {
-      errors.push({ name: `${r.key}.deadlineOn`, message: 'Pick a date' })
-    }
-    return errors
-  })
+  toSave(s.rows).flatMap((r) => listingBasicsErrors(r, (field) => `${r.key}.${field}`))
 
 // Skills and languages are filled in later on the edit page.
 const toInput = (r: Row) => ({
+  kind: r.kind,
   title: r.title.trim(),
   companyName: r.companyName,
   jobRoleName: r.jobRoleName,
@@ -154,28 +139,25 @@ const toInput = (r: Row) => ({
   languages: []
 })
 
-// The reply is an external AI's JSON, so keep only values a row can hold.
-const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
-const isoDate = (v: unknown) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : '')
-const list = (v: unknown) => (Array.isArray(v) ? v : [])
-
-const toRow = (d: Record<string, unknown>): Row => ({
-  ...newRow(),
-  title: text(d?.title),
-  companyName: text(d?.companyName) || undefined,
-  jobRoleName: text(d?.jobRoleName) || undefined,
-  url: text(d?.url),
-  postedOn: isoDate(d?.postedOn) || todayIso(),
-  // Parse results saved before the backend merged ROLLING into ASAP can still say ROLLING.
-  deadlineType:
-    DEADLINE_TYPE_OPTIONS.find(
-      (o) => o.value === (d?.deadlineType === 'ROLLING' ? 'ASAP' : d?.deadlineType)
-    )?.value ?? 'UNSPECIFIED',
-  deadlineOn: isoDate(d?.deadlineOn),
-  locations: list(d?.locations)
-    .filter((l) => COUNTRY_CODES.find((c) => c === l?.countryCode))
-    .map((l) => ({ countryCode: l.countryCode, city: text(l.city) }))
-})
+// The reply is an external AI's JSON: the listing form's cleaning keeps only values a row can
+// hold. The quick parse also returns each ad's link, which the full draft has no field for.
+const toRow = (item: unknown): Row => {
+  // A stray null or text item in the reply becomes an empty row to fill in or remove.
+  const d = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>
+  const draft = cleanListingDraft(d)
+  return {
+    ...newRow(),
+    kind: draft.kind ?? 'VACANCY',
+    title: draft.title,
+    companyName: draft.companyName,
+    jobRoleName: draft.jobRoleName,
+    url: typeof d.url === 'string' ? d.url.trim() : '',
+    postedOn: draft.postedOn || todayIso(),
+    deadlineType: draft.deadlineType,
+    deadlineOn: draft.deadlineOn,
+    locations: draft.locations
+  }
+}
 
 const {
   instructions,
@@ -198,7 +180,10 @@ const ad = ref('')
 const json = ref('')
 const jsonError = ref('')
 const pastedCount = ref(0)
-const builtIn = ref(false)
+// Opens on the AI used last, like the AI modals; only a run that worked remembers a choice.
+const aiMethod = useAiMethod()
+const aiTab = ref<string>(aiMethod.value ?? 'builtin')
+const builtIn = computed(() => aiTab.value === 'builtin')
 watch(json, () => (jsonError.value = ''))
 
 const inputMode = ref('text')
@@ -276,7 +261,7 @@ const decodeRows = (reply: string) => {
     jsonError.value = 'That doesn’t look like a valid JSON array.'
     return false
   }
-  const rows = list(items).map(toRow)
+  const rows = (Array.isArray(items) ? items : []).map(toRow)
   if (!rows.length) {
     jsonError.value = 'No listings found in that reply.'
     return false
@@ -318,7 +303,11 @@ const parseBuiltIn = async () => {
   if (needsConfirm.value) return
   if ('error' in reply) toastError(reply)
   // Failed: show the copy-paste steps, with the ads still filled in.
-  if ('error' in reply || !(await addRows(reply.result))) builtIn.value = false
+  if ('error' in reply || !(await addRows(reply.result))) aiTab.value = 'own'
+  else aiMethod.value = 'builtin'
+}
+const addOwnRows = async () => {
+  if (await addRows(json.value)) aiMethod.value = 'own'
 }
 
 // The last run may have been billed without a result; only this explicit choice sends another.
@@ -343,13 +332,16 @@ const publishBatchResults = async () => {
   if (!['finished', 'stopped'].includes(batchRun.status.value) || !batchRun.markPublished()) return
   const rows = batchRun.accepted.value.map(toRow)
   publishedKeys.value = rows.map((row) => row.key)
-  if (await appendRows(rows)) pasteOpen.value = false
+  if (!(await appendRows(rows))) return
+  pasteOpen.value = false
+  aiMethod.value = 'builtin'
 }
 watch(batchRun.status, (status) => {
   if (status === 'finished' || status === 'stopped') void publishBatchResults()
 })
 
 const toast = useToast()
+const toastSuccess = useSuccessToast()
 const saving = ref(false)
 const saveError = ref('')
 
@@ -377,12 +369,7 @@ const onSave = async () => {
     const savedCount = rows.filter((r) => r.saved).length
     if (savedCount) {
       clearNuxtState('name-lookups')
-      toast.add({
-        title: `${savedCount} ${savedCount === 1 ? 'listing' : 'listings'} added`,
-        color: 'success',
-        duration: SUCCESS_TOAST_DURATION,
-        icon: 'i-lucide-check'
-      })
+      toastSuccess(`${savedCount} ${savedCount === 1 ? 'listing' : 'listings'} added`)
       // A lone, unflagged listing has nothing left to review here, so open it.
       const [only] = state.rows
       if (state.rows.length === 1 && only?.saved && !isFlagged(only)) {
@@ -438,30 +425,12 @@ const confirmDiscard = async () => {
   batchRun.invalidate()
   allowRouteLeave = true
   try {
-    await navigateTo(leaveDestination.value)
+    await navigateAfterConfirm(leaveDestination.value)
   } finally {
     allowRouteLeave = false
   }
 }
-const beforeUnload = (event: BeforeUnloadEvent) => {
-  if (!hasUnsavedWork.value) return
-  event.preventDefault()
-  event.returnValue = ''
-}
-onMounted(() => {
-  watch(
-    hasUnsavedWork,
-    (unsaved) => {
-      if (unsaved) window.addEventListener('beforeunload', beforeUnload)
-      else window.removeEventListener('beforeunload', beforeUnload)
-    },
-    { immediate: true }
-  )
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('beforeunload', beforeUnload)
-  batchRun.invalidate()
-})
+onBeforeUnmount(() => batchRun.invalidate())
 
 const removeRow = (row: Row) => state.rows.splice(state.rows.indexOf(row), 1)
 
@@ -487,12 +456,7 @@ const openCompare = (row: Row, id: number) => {
 const onCompareKeep = () => {
   compareOpen.value = false
   compareRow.value!.duplicates = undefined
-  toast.add({
-    title: 'Kept both listings',
-    color: 'success',
-    duration: SUCCESS_TOAST_DURATION,
-    icon: 'i-lucide-check'
-  })
+  toastSuccess('Kept both listings')
 }
 
 // The compare modal confirms in its own footer; it unmounts when the row is removed.
@@ -513,12 +477,7 @@ const onConfirmRemove = async () => {
       return
     }
     removeRow(row)
-    toast.add({
-      title: 'Listing removed',
-      color: 'success',
-      duration: SUCCESS_TOAST_DURATION,
-      icon: 'i-lucide-check'
-    })
+    toastSuccess('Listing removed')
   } catch {
     toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
   } finally {
@@ -559,30 +518,10 @@ const onConfirmRemove = async () => {
               />
             </UFieldGroup>
           </UFormField>
-          <UFormField label="AI method">
-            <UFieldGroup class="w-full">
-              <UButton
-                label="Built-in AI"
-                color="neutral"
-                :variant="builtIn ? 'solid' : 'outline'"
-                :aria-pressed="builtIn"
-                :disabled="checking || parsing || processing || saving"
-                class="flex-1"
-                data-testid="quick-add-builtin"
-                @click="builtIn = true"
-              />
-              <UButton
-                label="Use your own AI"
-                color="neutral"
-                :variant="!builtIn ? 'solid' : 'outline'"
-                :aria-pressed="!builtIn"
-                :disabled="checking || parsing || processing || saving"
-                class="flex-1"
-                data-testid="quick-add-external"
-                @click="builtIn = false"
-              />
-            </UFieldGroup>
-          </UFormField>
+          <AppAiMethodTabs
+            v-model="aiTab"
+            :disabled="checking || parsing || processing || saving"
+          />
           <UFormField
             v-if="!collectedMode"
             :label="
@@ -725,7 +664,7 @@ const onConfirmRemove = async () => {
               !json.trim() || processing || saving || (collectedMode && runStatus !== 'idle')
             "
             data-testid="quick-add-parse"
-            @click="addRows(json)"
+            @click="addOwnRows"
             >Parse into rows</UButton
           >
         </div>

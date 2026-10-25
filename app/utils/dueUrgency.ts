@@ -37,8 +37,10 @@ export const URGENCY_BADGE_COLOR = {
 } as const satisfies Record<UrgencyLevel, string>
 
 // Short label for a list row. The server owns dueOn (DATE: the deadline, ASAP: posted + 14,
-// otherwise posted + 30), so ASAP/unstated deadlines are estimates and say so with "~".
-export const dueSummary = (listing: { deadlineType: string; dueOn: string }) => {
+// otherwise posted + 30), so ASAP/unstated deadlines are estimates and say so with "~". An
+// unsolicited application has no due date, so null.
+export const dueSummary = (listing: { deadlineType: string; dueOn: string | null }) => {
+  if (!listing.dueOn) return null
   const daysLeft = daysFromToday(listing.dueOn)
   const exact = listing.deadlineType === 'DATE'
   const prefix = listing.deadlineType === 'ASAP' ? 'ASAP · ' : ''

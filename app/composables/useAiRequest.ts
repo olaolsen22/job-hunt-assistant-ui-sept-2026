@@ -1,3 +1,6 @@
+import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import type { AiOutcome } from '~/utils/aiOutcome'
+
 type PayloadErrors =
   readonly { __typename: string; message?: string; code?: string }[] | null | undefined
 
@@ -18,11 +21,17 @@ const newRequestId = () => {
 // The last attempt may have run (and been billed) without a result reaching us.
 const CONFIRM_CODES = ['operation-interrupted', 'result-unavailable']
 
+// How many built-in AI requests are waiting for an answer, app-wide. The layout's leave guard asks
+// before navigating away from one: its answer would be lost, and it may still count as a run.
+export const useAiInFlight = () => useState('ai-in-flight', () => 0)
+
 // One per AI action (a modal, a page). Every user action gets a new requestId so the API can tell
 // a double submit from a new run; the id is kept only when the request got no usable answer and
 // the user sends the same input again, so the API can answer the retry from the first attempt.
 // Nothing here retries on its own.
 export const useAiRequest = () => {
+  const llm = useLlmModels()
+  const inFlight = useAiInFlight()
   let kept: { input: string; id: string } | undefined
   const safetyCode = ref<string>()
   // Kept until the user confirms, so the warning survives closing and reopening the modal.
@@ -36,7 +45,13 @@ export const useAiRequest = () => {
     const key = JSON.stringify(input)
     const id = kept?.input === key ? kept.id : newRequestId()
     kept = { input: key, id }
-    const payload = await request(id)
+    inFlight.value++
+    let payload: T
+    try {
+      payload = await request(id)
+    } finally {
+      inFlight.value--
+    }
     kept = undefined
     const error = safetyError(payload.errors)
     safetyCode.value = error?.code
@@ -51,5 +66,33 @@ export const useAiRequest = () => {
     safetyMessage.value = ''
   }
 
-  return { attempt, safetyCode, safetyMessage, needsConfirm, confirmRetry }
+  // The usual built-in call: busy while it runs, then the API's first error (with its safety code),
+  // else `read` turns the answer into a value or a message. A saved default model that went away on
+  // the server refetches the list, so Settings and the cost notice show the new default.
+  const run = async <P extends { errors?: PayloadErrors }, V>(
+    busy: Ref<boolean>,
+    input: unknown,
+    request: (requestId: string) => Promise<P>,
+    read: (payload: P) => AiOutcome<V>
+  ): Promise<AiOutcome<V>> => {
+    busy.value = true
+    try {
+      const payload = await attempt(input, request)
+      if (isUnknownModel(payload.errors)) await llm.refresh()
+      const first = payload.errors?.[0]
+      if (first) {
+        return {
+          error: first.message ?? ERROR_MESSAGES.generic,
+          code: aiSafetyCode(payload.errors)
+        }
+      }
+      return read(payload)
+    } catch (e) {
+      return { error: genericError(e) }
+    } finally {
+      busy.value = false
+    }
+  }
+
+  return { attempt, run, safetyCode, safetyMessage, needsConfirm, confirmRetry }
 }

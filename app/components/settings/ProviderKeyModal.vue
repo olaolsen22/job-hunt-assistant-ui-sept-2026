@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 // Sets or replaces one provider's API key. The key lives only in this field while the modal is
 // open: it goes up as a mutation variable and is cleared on close, saved or not.
 // save returns the API's message, or nothing once saved.
@@ -15,7 +14,7 @@ const {
   saving?: boolean
 }>()
 const open = defineModel<boolean>('open', { required: true })
-const toast = useToast()
+const toastSuccess = useSuccessToast()
 
 const state = reactive({ apiKey: '' })
 const error = ref('')
@@ -35,11 +34,7 @@ const submit = async () => {
   const message = await save(provider, state.apiKey.trim())
   if (message) return void (error.value = message)
   open.value = false
-  toast.add({
-    title: `${providerLabel(provider)} key saved`,
-    color: 'success',
-    duration: SUCCESS_TOAST_DURATION
-  })
+  toastSuccess(`${providerLabel(provider)} key saved`)
 }
 </script>
 

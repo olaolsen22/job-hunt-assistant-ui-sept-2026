@@ -79,12 +79,11 @@ const search = async (q: string) => {
   }
 }
 
-let timer: ReturnType<typeof setTimeout> | undefined
-watch(searchTerm, (q) => {
-  clearTimeout(timer)
-  // Closing the menu clears the search term; that must not trigger a fetch.
-  timer = setTimeout(() => open.value && search(q), 200)
-})
+// Closing the menu clears the search term; that must not trigger a fetch.
+watch(
+  searchTerm,
+  useDebounce((q: string) => open.value && search(q), 200)
+)
 watch(open, (isOpen) => {
   if (isOpen) search(searchTerm.value)
 })

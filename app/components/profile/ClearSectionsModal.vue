@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { VariablesOf } from 'gql.tada'
 import { PROFILE_FIELDS, type ProfileData } from '~/composables/useProfile'
 import { STORY_FIELDS } from '~/constants/profileStory'
@@ -131,7 +130,7 @@ const open = computed({
 })
 
 const { run, loading } = useMutation(() => emit('changed'))
-const toast = useToast()
+const toastSuccess = useSuccessToast()
 
 const clear = async () => {
   const all = !section.value
@@ -145,11 +144,7 @@ const clear = async () => {
   })
   // On failure the modal stays open; the clear is all-or-nothing, so nothing changed.
   if (!ok || !saved) return
-  toast.add({
-    title: all ? 'CV content cleared' : `${section.value!.label} cleared`,
-    color: 'success',
-    duration: SUCCESS_TOAST_DURATION
-  })
+  toastSuccess(all ? 'CV content cleared' : `${section.value!.label} cleared`)
   target.value = null
   emit('saved', saved)
 }

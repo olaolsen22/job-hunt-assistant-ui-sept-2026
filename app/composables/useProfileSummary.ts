@@ -1,4 +1,5 @@
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import type { AiOutcome } from '~/utils/aiOutcome'
 
 const PROMPT = graphql(`
   query ProfileSummaryPrompt {
@@ -28,9 +29,6 @@ const SUGGEST = graphql(`
   }
 `)
 
-// value null: the profile has too little content for a summary.
-type Outcome<T> = { value: T; error?: never; code?: never } | { error: string; code?: string }
-
 // Pasted replies: {"summary": "..."}. Returns undefined when the reply isn't that shape.
 export const parseSummaryReply = (reply: string): string | null | undefined => {
   const summary = parseDraft(reply)?.summary
@@ -40,32 +38,23 @@ export const parseSummaryReply = (reply: string): string | null | undefined => {
 
 // Only suggests: the caller puts the text in the summary field, and the owner saves it.
 export const useProfileSummary = () => {
-  const { attempt, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
-  const llm = useLlmModels()
+  const { run, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
   const busy = ref(false)
   const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
     async () => (await gql(PROMPT)).profileSummaryPrompt.instructions
   )
 
-  const suggest = async (): Promise<Outcome<string | null>> => {
-    busy.value = true
-    try {
-      const payload = await attempt(
-        {},
-        async (requestId) => (await gql(SUGGEST, { requestId })).suggestProfileSummary
-      )
-      if (isUnknownModel(payload.errors)) await llm.refresh()
-      if (payload.errors?.length)
-        return { error: payload.errors[0]!.message, code: aiSafetyCode(payload.errors) }
-      const { status, summary, error } = payload.result ?? {}
-      if (status === 'SUCCEEDED') return { value: summary?.trim() || null }
-      return { error: error ?? ERROR_MESSAGES.generic }
-    } catch (e) {
-      return { error: `${ERROR_MESSAGES.generic} (${errorDetail(e)})` }
-    } finally {
-      busy.value = false
-    }
-  }
+  // value null: the profile has too little content for a summary.
+  const suggest = () =>
+    run(
+      busy,
+      {},
+      async (requestId) => (await gql(SUGGEST, { requestId })).suggestProfileSummary,
+      ({ result }): AiOutcome<string | null> =>
+        result?.status === 'SUCCEEDED'
+          ? { value: result.summary?.trim() || null }
+          : { error: result?.error ?? ERROR_MESSAGES.generic }
+    )
 
   return {
     busy,

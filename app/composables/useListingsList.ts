@@ -374,11 +374,10 @@ export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) 
   const search = ref(initial.search)
   // Typing shouldn't refetch on every keystroke, so the query only sees the settled value.
   const settledSearch = ref(initial.search)
-  let timer: ReturnType<typeof setTimeout> | undefined
-  watch(search, (value) => {
-    clearTimeout(timer)
-    timer = setTimeout(() => (settledSearch.value = value.trim()), 300)
-  })
+  watch(
+    search,
+    useDebounce((value: string) => (settledSearch.value = value.trim()), 300)
+  )
   const sort = ref<ListingsSort>(initial.sort)
   const facets = reactive(initial.facets)
   // A different filter, search, sort or facet has different pages. Watchers don't fire for the

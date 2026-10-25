@@ -5,6 +5,7 @@ const LISTING = graphql(
     query ListingById($id: Int!) {
       listingById(id: $id) {
         id
+        kind
         title
         company {
           id
@@ -91,16 +92,19 @@ const LISTING = graphql(
 
 export type ListingDetail = NonNullable<ResultOf<typeof LISTING>['listingById']>
 
-// Client-only (`server: false`) since it needs the session cookie.
-export const useListing = async (id: number) => {
-  const { data, status, error, refresh } = await useAsyncData(
-    `listing-${id}`,
-    () => gql(LISTING, { id }),
-    { server: false }
+// Client-only (`server: false`) since it needs the session cookie. Awaitable like useAsyncData:
+// `await useListing(id)` waits for the first load, while the refs are usable at once, so a page can
+// start its other requests before waiting.
+export const useListing = (id: number) => {
+  const asyncData = useAsyncData(`listing-${id}`, () => gql(LISTING, { id }), { server: false })
+  const result = {
+    listing: computed(() => asyncData.data.value?.listingById ?? null),
+    loading: computed(() => asyncData.status.value === 'pending'),
+    error: asyncData.error,
+    refresh: asyncData.refresh
+  }
+  return Object.assign(
+    asyncData.then(() => result),
+    result
   )
-
-  const listing = computed(() => data.value?.listingById ?? null)
-  const loading = computed(() => status.value === 'pending')
-
-  return { listing, loading, error, refresh }
 }

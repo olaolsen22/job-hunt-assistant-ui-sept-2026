@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 // The model every built-in AI action runs on. Saves on change: it is the section's only field.
 const { models, defaultModel, status, error, label, setDefault, saving } = useLlmModels()
-const toast = useToast()
+const toastSuccess = useSuccessToast()
 
 // A sentinel stands for "no model" because USelect values can't be null; it maps back to null on save.
 const APP_DEFAULT = 'app-default'
@@ -26,11 +25,7 @@ const save = async (value: string) => {
   // A failed save already toasted its error; put the select back on what is actually saved.
   if (!ok) return void (choice.value = defaultModel.value)
   choice.value = defaultModel.value
-  toast.add({
-    title: value === APP_DEFAULT ? 'Using the app default model' : `Now using ${label(value)}`,
-    color: 'success',
-    duration: SUCCESS_TOAST_DURATION
-  })
+  toastSuccess(value === APP_DEFAULT ? 'Using the app default model' : `Now using ${label(value)}`)
 }
 </script>
 

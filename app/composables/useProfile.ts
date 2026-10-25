@@ -206,7 +206,6 @@ export type ProfileLanguage = ProfileData['languages'][number]
 export type ProfileReference = ProfileData['references'][number]
 export type ProfileLink = ProfileData['links'][number]
 export type ProfileBullet = ProfileExperience['bullets'][number]
-export type ProfileTranslation = ProfileData['translations'][number]
 export type ProfileBulletTranslation = ProfileBullet['translations'][number]
 
 const UPDATE_PROFILE = graphql(
