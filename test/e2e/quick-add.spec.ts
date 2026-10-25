@@ -61,6 +61,7 @@ test('parses an AI reply into rows and saves them independently', async ({ page 
     },
     { title: 'Backend Developer', companyName: 'Acme', jobRoleName: 'Developer', url: null }
   ]
+  await page.getByRole('tab', { name: 'Your own AI' }).click()
   // AIs often wrap the JSON in a code fence.
   await page.getByTestId('quick-add-json').fill('```json\n' + JSON.stringify(reply) + '\n```')
   await page.getByTestId('quick-add-parse').click()
