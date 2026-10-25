@@ -1,6 +1,7 @@
 import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 import type { ResultOf } from 'gql.tada'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import type { AiOutcome } from '~/utils/aiOutcome'
 
 const PROMPT = graphql(`
   query SkillCleanupPrompt {
@@ -88,13 +89,6 @@ export const CLEAN_UP_SKILLS = graphql(`
   }
 `)
 
-// The generic text alone hides why a request failed, so append what the API or network said.
-const failure = (message: string, e: unknown) => {
-  const err = e as { data?: { errors?: { message: string }[] }; message?: string }
-  const detail = err.data?.errors?.[0]?.message ?? err.message
-  return detail ? `${message} (${detail})` : message
-}
-
 export type CleanupOperation = { skillIds: number[]; names: string[] }
 export type CleanupTranslation = { skillName: string; language: Language; name: string }
 export type CleanupCategory = { skillName: string; categoryName: string }
@@ -105,7 +99,6 @@ export type CleanupPlan = {
   categories: CleanupCategory[]
   removals: CleanupRemoval[]
 }
-type Outcome<T> = { value: T; error?: never; code?: never } | { error: string; code?: string }
 
 const isOperation = (value: unknown): value is CleanupOperation => {
   const op = value as CleanupOperation | null
@@ -166,15 +159,14 @@ export const parseCleanupReply = (reply: string): CleanupPlan | null => {
 }
 
 export const useSkillCleanup = () => {
-  const { attempt, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
-  const llm = useLlmModels()
+  const { run, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
   const busy = ref(false)
   const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
     async () => (await gql(PROMPT)).skillCleanupPrompt.instructions
   )
 
   // Every skill id → name, so a plan can show what it would change. Paged until the end.
-  const loadSkillNames = async (): Promise<Outcome<Map<number, string>>> => {
+  const loadSkillNames = async (): Promise<AiOutcome<Map<number, string>>> => {
     try {
       const names = new Map<number, string>()
       let after: string | null | undefined
@@ -185,40 +177,30 @@ export const useSkillCleanup = () => {
       } while (after)
       return { value: names }
     } catch (e) {
-      return { error: failure('Could not load your skills.', e) }
+      return { error: `Could not load your skills. (${errorDetail(e)})` }
     }
   }
 
-  const suggest = async (): Promise<Outcome<CleanupPlan>> => {
-    busy.value = true
-    try {
-      const payload = await attempt(
-        {},
-        async (requestId) => (await gql(SUGGEST, { requestId })).suggestSkillCleanup
-      )
-      // The saved default model is gone: show the message and fetch the list again.
-      if (isUnknownModel(payload.errors)) await llm.refresh()
-      if (payload.errors?.length)
-        return { error: payload.errors[0]!.message, code: aiSafetyCode(payload.errors) }
-      if (payload.result?.status === 'SUCCEEDED')
-        return {
-          value: {
-            operations: (payload.result.operations ?? []).map(({ skillIds, names }) => ({
-              skillIds: [...skillIds],
-              names: [...names]
-            })),
-            translations: (payload.result.translations ?? []).map((t) => ({ ...t })),
-            categories: (payload.result.categories ?? []).map((c) => ({ ...c })),
-            removals: (payload.result.removals ?? []).map((x) => ({ ...x }))
-          }
-        }
-      return { error: payload.result?.error ?? ERROR_MESSAGES.generic }
-    } catch (e) {
-      return { error: failure(ERROR_MESSAGES.generic, e) }
-    } finally {
-      busy.value = false
-    }
-  }
+  const suggest = () =>
+    run(
+      busy,
+      {},
+      async (requestId) => (await gql(SUGGEST, { requestId })).suggestSkillCleanup,
+      ({ result }): AiOutcome<CleanupPlan> =>
+        result?.status === 'SUCCEEDED'
+          ? {
+              value: {
+                operations: (result.operations ?? []).map(({ skillIds, names }) => ({
+                  skillIds: [...skillIds],
+                  names: [...names]
+                })),
+                translations: (result.translations ?? []).map((t) => ({ ...t })),
+                categories: (result.categories ?? []).map((c) => ({ ...c })),
+                removals: (result.removals ?? []).map((x) => ({ ...x }))
+              }
+            }
+          : { error: result?.error ?? ERROR_MESSAGES.generic }
+    )
 
   // All-or-nothing on the server: any error means nothing changed. `removals` are the ticked ones.
   const apply = async ({ removals, ...plan }: CleanupPlan): Promise<{ error?: string }> => {
@@ -230,7 +212,7 @@ export const useSkillCleanup = () => {
       })
       return payload.errors?.length ? { error: payload.errors[0]!.message } : {}
     } catch (e) {
-      return { error: failure(ERROR_MESSAGES.generic, e) }
+      return { error: genericError(e) }
     } finally {
       busy.value = false
     }

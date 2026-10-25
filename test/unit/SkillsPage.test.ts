@@ -67,7 +67,7 @@ registerEndpoint('/graphql', {
       return { data: { moveSkillCategory: { skillCategories: categories, errors: null } } }
     }
     if (q.includes('mutation UpdateSkillCategory')) return { data: { updateSkillCategory: ok } }
-    if (q.includes('mutation SetSkillCategoryInline'))
+    if (q.includes('mutation SetSkillCategory('))
       return {
         data: {
           setSkillCategory: {
@@ -163,10 +163,33 @@ describe('Skills page', () => {
     rowSelect(wrapper, 0).vm.$emit('update:modelValue', 'NONE')
     await flushPromises()
 
-    expect(callsOf('mutation SetSkillCategoryInline')[0]!.variables!.input).toEqual({
+    expect(callsOf('mutation SetSkillCategory(')[0]!.variables!.input).toEqual({
       skillId: 10,
       categoryId: null
     })
+  })
+
+  it('sets one category on every ticked skill and clears the ticks', async () => {
+    const wrapper = await mountPage()
+    // Alphabetical as loaded: TypeScript, Vue, Vue.js, Fortran → tick Vue and Vue.js.
+    const boxes = queryAll('skills-select')
+    await click(boxes[1]!.querySelector('button') ?? boxes[1]!)
+    await click(boxes[2]!.querySelector('button') ?? boxes[2]!)
+    await click(query('skills-set-category'))
+    await vi.waitFor(() => expect(query('skills-bulk-category')).not.toBeNull())
+    const picker = wrapper
+      .findAllComponents(USelect)
+      .find((c) => c.props('placeholder') === 'Choose a category')!
+    picker.vm.$emit('update:modelValue', 2)
+    await flushPromises()
+    await click(query('confirm-modal-confirm'))
+
+    await vi.waitFor(() => expect(callsOf('mutation SetSkillCategory(')).toHaveLength(2))
+    expect(callsOf('mutation SetSkillCategory(').map((c) => c.variables!.input)).toEqual([
+      { skillId: 11, categoryId: 2 },
+      { skillId: 12, categoryId: 2 }
+    ])
+    await vi.waitFor(() => expect(query('skills-selection')).toBeNull())
   })
 
   it('merges ticked skills into the one kept, under the chosen name', async () => {
@@ -176,7 +199,7 @@ describe('Skills page', () => {
     await click(boxes[1]!.querySelector('button') ?? boxes[1]!)
     await click(boxes[2]!.querySelector('button') ?? boxes[2]!)
     await click(query('skills-merge'))
-    await vi.waitFor(() => expect(query('merge-name')).not.toBeNull())
+    await vi.waitFor(() => expect(query('merge-name')).not.toBeNull(), { timeout: 5000 })
     await click(query('form-modal-save'))
 
     await vi.waitFor(() => expect(callsOf('mutation CleanUpSkills')).toHaveLength(1))
@@ -194,6 +217,8 @@ describe('Skills page', () => {
       (el) => el.textContent?.includes('Rename')
     )
     await click(rename!)
+    // The modal's code loads on its first open, which takes a while under a full test run.
+    await vi.waitFor(() => expect(query('rename-name')).not.toBeNull(), { timeout: 5000 })
     const input = query('rename-name')!.querySelector('input') ?? query('rename-name')!
     ;(input as HTMLInputElement).value = 'vue'
     input.dispatchEvent(new Event('input'))

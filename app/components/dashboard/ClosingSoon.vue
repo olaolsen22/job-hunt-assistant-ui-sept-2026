@@ -22,7 +22,10 @@ const { data, status, error, refresh } = useAsyncData(
     server: false
   }
 )
-const items = computed(() => data.value?.listings?.items ?? [])
+// dueWithinDays only returns listings with a due date.
+const items = computed(() =>
+  (data.value?.listings?.items ?? []).map((l) => ({ ...l, dueOn: l.dueOn! }))
+)
 const total = computed(() => data.value?.listings?.totalCount ?? 0)
 
 // The next two days are the part worth a color and words; the rest is just a date.

@@ -1,5 +1,3 @@
-import { ERROR_MESSAGES } from '~/constants/errorMessages'
-
 // The "use your own AI" prompt: fetched once, shown, and copied. Call loadPrompt() before the copy
 // button is usable: browsers can refuse a clipboard write that follows an await.
 // transform: adds something the prompt query can't take (e.g. the cover letter's unsaved notes).
@@ -19,7 +17,7 @@ export const useAiPrompt = (
     try {
       raw.value = await fetchInstructions()
     } catch (e) {
-      promptError.value = `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
+      promptError.value = genericError(e)
     } finally {
       promptLoading.value = false
     }

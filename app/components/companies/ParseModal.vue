@@ -38,8 +38,6 @@ const prompt = useParsePrompt('companyParsePrompt')
 const { loadPrompt, copy, parsing, parse, needsConfirm, safetyMessage, confirmRetry } = prompt
 
 // Fetched on open and after each parse, so the counter shows what this parse just used.
-const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
-const usage = computed(() => usageData.value?.llmUsageToday)
 
 // What the AI is given, shared by both methods so a failed parse keeps it when the user switches.
 const text = ref('')
@@ -47,13 +45,12 @@ const json = ref('')
 // The technical reason behind a generic error, shown small below it.
 const errorDetail = ref('')
 
-const { method, tab, error, errorCode } = useAiModalState(open, {
+const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(open, {
   onOpen: () => {
     // Only into an empty field, so text kept after a failed parse is still there on reopening.
     const start = companyName ?? initialText
     if (start && !text.value.trim()) text.value = start
     loadPrompt()
-    refreshUsage()
   }
 })
 

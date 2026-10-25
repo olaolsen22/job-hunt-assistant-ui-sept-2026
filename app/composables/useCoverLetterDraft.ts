@@ -1,4 +1,3 @@
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { ResultOf } from 'gql.tada'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { CoverLetter } from '~/utils/coverLetter'
@@ -176,7 +175,7 @@ export const useCoverLetterDraftQuery = (listingId: number) =>
   useAsyncData(
     `cover-letter-draft-${listingId}`,
     () => gql(DRAFT, { listingId }).then((r) => r.coverLetterDraft),
-    { server: false }
+    { server: false, dedupe: 'defer' }
   )
 
 const snapshot = (letter: CoverLetter) => JSON.stringify(letter)
@@ -189,6 +188,7 @@ export const useCoverLetterDraft = (listingId: number) => {
   const llm = useLlmModels()
   const { attempt, safetyCode, safetyMessage, needsConfirm, confirmRetry } = useAiRequest()
   const toast = useToast()
+  const toastSuccess = useSuccessToast()
   const draft = query.data
   const letter = ref<CoverLetter>()
   // The last saved state; null until the first save, so the profile prefill counts as unsaved.
@@ -227,7 +227,7 @@ export const useCoverLetterDraft = (listingId: number) => {
       letter.value = coverLetterFromContent(prefill)
       seed.value = snapshot(letter.value)
     } catch (e) {
-      initError.value = `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
+      initError.value = genericError(e)
     }
   }
 
@@ -277,12 +277,7 @@ export const useCoverLetterDraft = (listingId: number) => {
     letter.value = coverLetterFromContent(savedDraft.content, savedDraft.brief)
     saved.value = seed.value = snapshot(letter.value)
     beforeCandidate.value = undefined
-    toast.add({
-      title: 'Cover letter saved',
-      color: 'success',
-      duration: SUCCESS_TOAST_DURATION,
-      icon: 'i-lucide-check'
-    })
+    toastSuccess('Cover letter saved')
     return true
   }
 
@@ -309,7 +304,7 @@ export const useCoverLetterDraft = (listingId: number) => {
       load(result.content)
       return null
     } catch (e) {
-      return `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
+      return genericError(e)
     } finally {
       generating.value = false
     }
@@ -341,7 +336,7 @@ export const useCoverLetterDraft = (listingId: number) => {
       load(payload.candidate)
       return null
     } catch (e) {
-      return `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
+      return genericError(e)
     } finally {
       previewing.value = false
     }

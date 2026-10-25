@@ -12,22 +12,6 @@ const emit = defineEmits<{
   delete: [skill: CatalogSkill]
 }>()
 
-const SET_CATEGORY = graphql(`
-  mutation SetSkillCategoryInline($input: SetSkillCategoryInput!) {
-    setSkillCategory(input: $input) {
-      skill {
-        categoryId
-      }
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
-
 const { items: categoryItems } = useSkillCategories()
 const { run } = useMutation()
 const saving = ref<number>()
@@ -36,7 +20,7 @@ const setCategory = async (skill: CatalogSkill, choice: CategoryChoice) => {
   saving.value = skill.id
   const ok = await run(
     async () =>
-      (await gql(SET_CATEGORY, { input: { skillId: skill.id, categoryId } })).setSkillCategory
+      (await gql(SET_SKILL_CATEGORY, { input: { skillId: skill.id, categoryId } })).setSkillCategory
         .errors
   )
   saving.value = undefined

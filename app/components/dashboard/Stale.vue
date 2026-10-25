@@ -51,7 +51,8 @@ const total = computed(() => data.value?.listings?.totalCount ?? 0)
     <ul class="divide-y divide-default">
       <li v-for="l in items" :key="l.id">
         <DashboardRow :id="l.id" :title="l.title" :subtitle="l.company.name">
-          {{ -daysFromToday(l.postedOn) }} days old
+          <!-- The postedOn range filter only returns listings with a posting date. -->
+          {{ -daysFromToday(l.postedOn!) }} days old
         </DashboardRow>
       </li>
     </ul>

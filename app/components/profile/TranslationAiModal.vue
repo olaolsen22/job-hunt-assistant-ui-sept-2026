@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { INVALID_DRAFT_JSON } from '~/utils/parseDraft'
 import type { ProfileData } from '~/composables/useProfile'
 import type { ProfileTranslationDraft } from '~/composables/useProfileTranslationAi'
+import type { RewriteRow } from '~/composables/useTextRewriteReview'
 import type { WritingSample } from '~/components/profile/WritingSampleList.vue'
 
 // AI translation of an English profile into Norwegian. The API returns only what is missing or
@@ -14,9 +14,7 @@ const emit = defineEmits<{ changed: [] }>()
 
 const api = useProfileTranslationAi()
 const { busy, needsConfirm, safetyMessage } = api
-const { data: usageData, refresh: refreshUsage } = useLlmUsage(false)
-const usage = computed(() => usageData.value?.llmUsageToday)
-const toast = useToast()
+const toastSuccess = useSuccessToast()
 
 // The writing sample list on the profile page has already fetched them; null until it has.
 const { data: samples } = useNuxtData<WritingSample[]>('writing-samples')
@@ -24,21 +22,25 @@ const noNorwegianSamples = computed(
   () => !!samples.value && !samples.value.some((s) => s.language === 'NORWEGIAN')
 )
 
-type Row = {
-  key: string
-  label: string
-  bulletId?: number
-  field?: 'headline' | 'summary'
-  source?: string
-  existing: boolean
-  text: string
-  include: boolean
-}
+// existing: replaces a saved Norwegian translation.
+type Row = RewriteRow & { existing: boolean }
 
 const reply = ref('')
-const applyError = ref('')
-const rows = ref<Row[]>()
-const confirmOpen = ref(false)
+const {
+  rows,
+  applyError,
+  confirmOpen,
+  included,
+  blank,
+  canApply,
+  applicable,
+  setAll,
+  start,
+  discard,
+  back,
+  requestClose,
+  apply: applyRows
+} = useTextRewriteReview<Row>(open, reply)
 
 // Bullet id → English text, whether it already has a Norwegian translation, and its entry's name
 // so rows say where they belong.
@@ -72,20 +74,10 @@ const savedTranslation = computed(() =>
   profile.translations.find((t) => t.language === 'NORWEGIAN')
 )
 
-const included = computed(() => rows.value?.filter((r) => r.include) ?? [])
-const blank = computed(() => included.value.filter((r) => !r.text.trim()).length)
-const canApply = computed(() => !!included.value.length && !blank.value)
-
-const { method, tab, error, errorCode } = useAiModalState(open, {
-  onOpen: () => {
-    api.loadPrompt()
-    refreshUsage()
-  }
+const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(open, {
+  onOpen: () => api.loadPrompt()
 })
 watch([reply, tab], () => (error.value = ''))
-const { dirty, mark, clear } = useReviewDirty(() => rows.value?.map((r) => [r.include, r.text]))
-const setAll = (include: boolean) =>
-  rows.value?.forEach((r) => r.source != null && (r.include = include))
 
 const fieldRow = (field: 'headline' | 'summary', label: string, text: string | null): Row[] =>
   text == null
@@ -95,15 +87,15 @@ const fieldRow = (field: 'headline' | 'summary', label: string, text: string | n
           key: field,
           label,
           field,
-          source: profile[field] ?? undefined,
+          current: profile[field] ?? undefined,
           existing: !!savedTranslation.value?.[field],
           text,
           include: true
         }
       ]
 
-const startReview = ({ bullets, headline, summary }: ProfileTranslationDraft) => {
-  rows.value = [
+const startReview = ({ bullets, headline, summary }: ProfileTranslationDraft) =>
+  start([
     ...fieldRow('headline', 'Headline', headline),
     ...fieldRow('summary', 'Summary', summary),
     // An id that isn't on the profile can't be applied, so it starts unticked and stays that way.
@@ -113,16 +105,13 @@ const startReview = ({ bullets, headline, summary }: ProfileTranslationDraft) =>
         key: `bullet-${b.id}`,
         label: info?.name ? `Bullet · ${info.name}` : 'Bullet',
         bulletId: b.id,
-        source: info?.text,
+        current: info?.text,
         existing: !!info?.existing,
         text: b.text,
         include: !!info
       }
     })
-  ]
-  applyError.value = ''
-  mark()
-}
+  ])
 const suggest = async () => {
   error.value = ''
   const result = await api.suggest()
@@ -149,42 +138,13 @@ const preview = () => {
   startReview(draft)
 }
 
-const apply = async () => {
-  if (!canApply.value || busy.value) return
-  applyError.value = ''
-  const pick = (field: Row['field']) => {
-    const row = included.value.find((r) => r.field === field)
-    return row ? row.text.trim() : null
-  }
-  const result = await api.apply({
-    bullets: included.value
-      .filter((r) => r.bulletId != null)
-      .map((r) => ({ id: r.bulletId!, text: r.text.trim() })),
-    headline: pick('headline'),
-    summary: pick('summary')
+const apply = () => {
+  if (busy.value) return
+  return applyRows(api.apply, () => {
+    emit('changed')
+    toastSuccess('Translations saved')
   })
-  if (result.error !== undefined) {
-    applyError.value = result.error
-    return
-  }
-  emit('changed')
-  toast.add({ title: 'Translations saved', color: 'success', duration: SUCCESS_TOAST_DURATION })
-  discard()
 }
-
-// Closing a review that was edited asks first; an untouched one just goes.
-const discard = () => {
-  confirmOpen.value = false
-  rows.value = undefined
-  reply.value = ''
-  clear()
-  open.value = false
-}
-const back = () => {
-  rows.value = undefined
-  clear()
-}
-const requestClose = () => (dirty.value ? (confirmOpen.value = true) : discard())
 
 const goToSamples = () => {
   open.value = false
@@ -207,7 +167,6 @@ const goToSamples = () => {
   >
     <fieldset :disabled="busy" class="min-w-0 space-y-4">
       <template v-if="rows">
-        <AppAiErrorAlert v-if="error" :title="error" data-testid="translation-ai-error" />
         <AppAiReviewEmpty
           v-if="!rows.length"
           icon="i-lucide-languages"
@@ -218,7 +177,7 @@ const goToSamples = () => {
           <p class="text-sm text-muted">Applied translations are marked as machine translated.</p>
           <AppAiReviewSelectAll
             :selected="included.length"
-            :total="rows.filter((r) => r.source != null).length"
+            :total="applicable"
             @all="setAll(true)"
             @none="setAll(false)"
           />
@@ -228,15 +187,15 @@ const goToSamples = () => {
               :key="row.key"
               v-model:include="row.include"
               :label="row.label"
-              :disabled="row.source == null"
+              :disabled="row.current == null"
               :description="
-                row.source == null
+                row.current == null
                   ? 'Not on your profile, so it can’t be applied.'
                   : row.existing
                     ? 'Replaces your current Norwegian translation.'
                     : undefined
               "
-              :current="row.source"
+              :current="row.current"
               testid-prefix="translation-ai"
             >
               <template #suggested>

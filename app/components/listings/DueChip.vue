@@ -8,6 +8,7 @@ const summary = computed(() => dueSummary(listing))
 
 <template>
   <UBadge
+    v-if="summary && listing.dueOn"
     :color="URGENCY_BADGE_COLOR[deadlineLevel(summary.daysLeft)]"
     variant="subtle"
     :icon="summary.daysLeft < 0 ? 'i-lucide-calendar-x' : 'i-lucide-hourglass'"

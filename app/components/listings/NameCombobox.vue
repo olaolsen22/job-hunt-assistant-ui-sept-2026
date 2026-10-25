@@ -118,13 +118,11 @@ const cache = useState<Record<string, { names: string[]; complete: boolean }>>(
 )
 const cacheKey = computed(() => `${props.lookup}:${props.countryCode ?? ''}`)
 
-let timer: ReturnType<typeof setTimeout> | undefined
-
-watch(query, (q) => {
-  clearTimeout(timer)
-  // Closing the menu clears the search term; that must not trigger a fetch.
-  timer = setTimeout(() => open.value && search(q), 200)
-})
+// Closing the menu clears the search term; that must not trigger a fetch.
+watch(
+  query,
+  useDebounce((q: string) => open.value && search(q), 200)
+)
 
 watch(open, (isOpen) => {
   if (isOpen) search(query.value)

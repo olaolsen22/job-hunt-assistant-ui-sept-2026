@@ -26,19 +26,6 @@ const SET_SKILL = graphql(`
   }
 `)
 
-const SET_CATEGORY = graphql(`
-  mutation SetSkillCategory($input: SetSkillCategoryInput!) {
-    setSkillCategory(input: $input) {
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
-
 const { items: categoryItems } = useSkillCategories()
 
 const name = ref<string>()
@@ -65,7 +52,8 @@ const submit = async () => {
     const categoryId = fromCategoryChoice(category.value)
     if (setProfileSkill.errors?.length || skillId == null) return setProfileSkill.errors
     if (categoryId === (skill?.skill.categoryId ?? null)) return null
-    return (await gql(SET_CATEGORY, { input: { skillId, categoryId } })).setSkillCategory.errors
+    return (await gql(SET_SKILL_CATEGORY, { input: { skillId, categoryId } })).setSkillCategory
+      .errors
   })
   if (!ok) return
   // A new skill is a new name, so the cached suggestions are stale.

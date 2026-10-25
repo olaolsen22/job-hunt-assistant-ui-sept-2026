@@ -11,6 +11,8 @@ const props = defineProps<{
   loading?: boolean
   state: T
   validate?: (state: Partial<T>) => FormError[]
+  // Changes kept outside `state` that closing would also lose (an entry form's typed bullet).
+  unsaved?: boolean
 }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ submit: [] }>()
@@ -27,7 +29,7 @@ watch(
   },
   { flush: 'post', immediate: true }
 )
-const dirty = computed(() => JSON.stringify(props.state) !== snapshot.value)
+const dirty = computed(() => props.unsaved || JSON.stringify(props.state) !== snapshot.value)
 
 const discardOpen = ref(false)
 const modalOpen = computed({

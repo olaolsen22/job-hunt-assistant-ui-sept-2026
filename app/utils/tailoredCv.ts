@@ -90,16 +90,16 @@ const linkLabel = (link: ProfileData['links'][number]) =>
 type EntrySkill = ProfileData['experiences'][number]['skills'][number]
 
 // Like the API prefill: the entry's own skills, higher profile level first (unknown level last), then
-// by name, in the draft language. The API sorts names culture-aware; ties differing only in case or
-// accents may order differently, which only matters for the "matches the profile" check.
+// by name, culture-aware like the API, in the draft language.
 const technologiesFromProfile = (
   skills: readonly EntrySkill[],
   profile: ProfileData,
   language: Language
 ) => {
-  const level = (s: EntrySkill) => profile.skills.find((p) => p.skill.id === s.id)?.level ?? 0
+  const levels = new Map(profile.skills.map((p) => [p.skill.id, p.level]))
+  const level = (s: EntrySkill) => levels.get(s.id) ?? 0
   return [...skills]
-    .sort((a, b) => level(b) - level(a) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .sort((a, b) => level(b) - level(a) || a.name.localeCompare(b.name))
     .map((s) => s.translations.find((t) => t.language === language)?.name ?? s.name)
 }
 

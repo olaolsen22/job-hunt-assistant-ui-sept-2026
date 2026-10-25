@@ -10,6 +10,8 @@ const addOpen = ref(false)
 const editOpen = ref(false)
 const cleanupOpen = ref(false)
 const wordingOpen = ref(false)
+const cleanupOpened = useOpenedOnce(cleanupOpen)
+const wordingOpened = useOpenedOnce(wordingOpen)
 
 const { target } = useProfileTranslation()
 const translated = (s: ProfileSkill) =>
@@ -112,8 +114,13 @@ const translated = (s: ProfileSkill) =>
 
   <!-- Outside the section: its body isn't rendered while the section is empty. -->
   <ProfileSkillModal v-model:open="addOpen" :skill="null" @changed="emit('changed')" />
-  <LazyProfileSkillCleanupModal v-model:open="cleanupOpen" @changed="emit('changed')" />
+  <LazyProfileSkillCleanupModal
+    v-if="cleanupOpened"
+    v-model:open="cleanupOpen"
+    @changed="emit('changed')"
+  />
   <LazyProfileSkillWordingModal
+    v-if="wordingOpened"
     v-model:open="wordingOpen"
     :profile="profile"
     @changed="emit('changed')"

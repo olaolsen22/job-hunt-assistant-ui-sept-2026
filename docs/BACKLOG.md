@@ -3,27 +3,25 @@
 Known bugs, refactors and deferred features that are not part of the current branch. Remove an
 item once it ships; feature status lives in `STATUS.md`.
 
-## Bugs
+## API features the UI doesn't use yet
 
-- Lazy modals mounted with `v-if="xOpen"` (CV import, profile AI translation) unmount on close, so
-  the closing animation is cut off.
+Checked against the schema on 2026-10-24. Omitted fields keep their saved values, so none of these
+is changed by a UI save.
 
-## Refactoring (app-wide, own branch)
-
-- One helper for the AI suggest/run boilerplate (busy flag, `attempt`, refresh models on an unknown
-  model, map the first payload error, catch). Repeated in useParsePrompt, useCoverLetterDraft,
-  useTailoredCvDraft, useProfileCvImport, useSkillCleanup, useSkillWording, useProfileSummary and
-  useProfileTranslationAi.
-- Fold the AI modal setup into `useAiModalState`: `useLlmUsage(false)` + `usage` computed (9 places)
-  and `retryConfirmed` (6 modals).
-- One `genericError(e)` for `${ERROR_MESSAGES.generic} (${errorDetail(e)})` (9 places).
-- Use `useAiModalState` in the CV import modal.
+- Training programs: `Listing.trainingProgram` and `ListingInput.trainingProgram`, plus the
+  `listings(isTrainingProgram:)` filter.
+- Job-role categories: `jobRoleCategories` and create, update and set mutations. The parse prompts
+  also suggest `jobRoleCategoryName`, which the form drops. The listings "IT" toggle already filters
+  by category name.
+- Usage history: `usageDaily(days, credentialId)`. The dashboard shows today only.
+- Unsolicited applications (`ListingKind.UNSOLICITED`: no ad link, posting date or due date). The UI
+  shows them and keeps the kind on save, but can't create one: the form requires an ad link.
 
 ## Features / UX
 
-- Discard prompt on Cancel when an entry form has unsaved bullet drafts.
 - Retry-confirm checkbox; revisit the "Use reply" label.
 - Group review rows in the CV import review.
-- Bulk "set category" for ticked skills on the skills page.
-- Profile translation mode: move to the next untranslated bullet after saving one.
 - Bulk manual translation: the API now has `applyProfileTranslation`, so this is no longer blocked.
+- Listing page: the tailored CV and cover letter cards fetch their drafts only after the listing
+  loads (one round trip later). Starting them earlier needs the cards to reuse a finished fetch,
+  which the current cache options can't do safely.

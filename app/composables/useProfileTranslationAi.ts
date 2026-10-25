@@ -1,4 +1,5 @@
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import type { AiOutcome } from '~/utils/aiOutcome'
 import type { SkillWording } from '~/composables/useSkillWording'
 
 const PROMPT = graphql(`
@@ -59,49 +60,34 @@ const APPLY = graphql(`
 
 // Same shape as a skill wording draft: only missing or out-of-date items, null = nothing to change.
 export type ProfileTranslationDraft = SkillWording
-type Outcome<T> = { value: T; error?: never; code?: never } | { error: string; code?: string }
-
-const failure = (e: unknown) => `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
-
 // Pasted replies use the wording reply's JSON shape; the server validates on apply.
 export const parseTranslationReply = (reply: string): ProfileTranslationDraft | null =>
   parseWordingReply(reply)
 
 // English → Norwegian only; the API rejects translating into the profile's own language.
 export const useProfileTranslationAi = () => {
-  const { attempt, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
-  const llm = useLlmModels()
+  const { run, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
   const busy = ref(false)
   const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
     async () => (await gql(PROMPT)).profileTranslationPrompt.instructions
   )
 
-  const suggest = async (): Promise<Outcome<ProfileTranslationDraft>> => {
-    busy.value = true
-    try {
-      const payload = await attempt(
-        {},
-        async (requestId) => (await gql(SUGGEST, { requestId })).suggestProfileTranslation
-      )
-      if (isUnknownModel(payload.errors)) await llm.refresh()
-      if (payload.errors?.length)
-        return { error: payload.errors[0]!.message, code: aiSafetyCode(payload.errors) }
-      const { status, error, translation } = payload.result ?? {}
-      if (status === 'SUCCEEDED' && translation)
-        return {
-          value: {
-            bullets: translation.bullets.map(({ id, text }) => ({ id, text })),
-            headline: translation.headline ?? null,
-            summary: translation.summary ?? null
-          }
-        }
-      return { error: error ?? ERROR_MESSAGES.generic }
-    } catch (e) {
-      return { error: failure(e) }
-    } finally {
-      busy.value = false
-    }
-  }
+  const suggest = () =>
+    run(
+      busy,
+      {},
+      async (requestId) => (await gql(SUGGEST, { requestId })).suggestProfileTranslation,
+      ({ result }): AiOutcome<ProfileTranslationDraft> =>
+        result?.status === 'SUCCEEDED' && result.translation
+          ? {
+              value: {
+                bullets: result.translation.bullets.map(({ id, text }) => ({ id, text })),
+                headline: result.translation.headline ?? null,
+                summary: result.translation.summary ?? null
+              }
+            }
+          : { error: result?.error ?? ERROR_MESSAGES.generic }
+    )
 
   const apply = async (draft: ProfileTranslationDraft): Promise<{ error?: string }> => {
     busy.value = true
@@ -109,7 +95,7 @@ export const useProfileTranslationAi = () => {
       const { applyProfileTranslation: payload } = await gql(APPLY, draft)
       return payload.errors?.length ? { error: payload.errors[0]!.message } : {}
     } catch (e) {
-      return { error: failure(e) }
+      return { error: genericError(e) }
     } finally {
       busy.value = false
     }

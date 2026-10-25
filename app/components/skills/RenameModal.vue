@@ -10,9 +10,14 @@ const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ renamed: [] }>()
 
 const name = ref('')
-watch(open, (isOpen) => {
-  if (isOpen) name.value = skill?.name ?? ''
-})
+watch(
+  open,
+  (isOpen) => {
+    if (isOpen) name.value = skill?.name ?? ''
+  },
+  // Mounted on first open (already open), so the first open needs the reset too.
+  { immediate: true }
+)
 
 // The API merges into a skill that already has the new name, so the button says that instead.
 const clash = computed(() => {

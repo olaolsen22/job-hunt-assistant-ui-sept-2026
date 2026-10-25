@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { ListingDetail } from '~/composables/useListing'
 
@@ -8,29 +7,22 @@ import type { ListingDetail } from '~/composables/useListing'
 const { listing } = defineProps<{ listing: ListingDetail }>()
 const emit = defineEmits<{ changed: [] }>()
 
-const DELETE_DOCUMENT = graphql(`
-  mutation DeleteDocument($input: DeleteDocumentInput!) {
-    deleteDocument(input: $input) {
-      id
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
-
 const { data: draft, status, error } = useTailoredCvDraftQuery(listing.id)
 const copy = useCopyTailoredCv()
 const { reset, resetting, error: resetError } = useResetTailoredCvDraft(listing.id)
 const resetOpen = ref(false)
 const editorPath = computed(() => `/listings/${listing.id}/cv`)
-const deletedPdfIds = ref<number[]>([])
+const {
+  confirmOpen: deleteOpen,
+  target: pdfToDelete,
+  deleting,
+  ask: confirmDeletePdf,
+  confirm: deletePdf,
+  isDeleted
+} = useDeleteDocument(() => emit('changed'))
 const pdf = computed(() =>
   latestUnsentDocument(
-    listing.documents.filter((document) => !deletedPdfIds.value.includes(document.id)),
+    listing.documents.filter((document) => !isDeleted(document.id)),
     'CV'
   )
 )
@@ -38,37 +30,9 @@ const canApply = computed(() => listing.status === 'SAVED')
 
 const pdfOpen = ref(false)
 const applyOpen = ref(false)
-const deleteOpen = ref(false)
-const pdfToDelete = ref<{ id: number; fileName: string } | null>(null)
-const { run: runDelete, loading: deleting } = useMutation()
-const toast = useToast()
 const openApply = () => {
   pdfOpen.value = false
   applyOpen.value = true
-}
-const confirmDeletePdf = () => {
-  if (!pdf.value || pdf.value.sentAt) return
-  pdfToDelete.value = { id: pdf.value.id, fileName: pdf.value.fileName }
-  deleteOpen.value = true
-}
-const deletePdf = async () => {
-  const target = pdfToDelete.value
-  if (!target) return
-  const ok = await runDelete(async () => {
-    const { deleteDocument } = await gql(DELETE_DOCUMENT, { input: { id: target.id } })
-    return deleteDocument.errors
-  })
-  deleteOpen.value = false
-  pdfToDelete.value = null
-  emit('changed')
-  if (!ok) return
-  deletedPdfIds.value = [...deletedPdfIds.value, target.id]
-  toast.add({
-    title: 'PDF deleted',
-    color: 'success',
-    duration: SUCCESS_TOAST_DURATION,
-    icon: 'i-lucide-check'
-  })
 }
 </script>
 
@@ -171,7 +135,7 @@ const deletePdf = async () => {
             class="ml-auto"
             aria-label="Delete unsent CV PDF"
             data-testid="tailored-cv-card-delete-pdf"
-            @click="confirmDeletePdf"
+            @click="confirmDeletePdf(pdf)"
             >Delete PDF</UButton
           >
         </div>

@@ -31,6 +31,23 @@ const CATEGORIES = graphql(
 
 export type SkillCategory = ResultOf<typeof SKILL_CATEGORY_FIELDS>
 
+// One skill at a time: the inline select on a skill row, and the skills page's bulk change.
+export const SET_SKILL_CATEGORY = graphql(`
+  mutation SetSkillCategory($input: SetSkillCategoryInput!) {
+    setSkillCategory(input: $input) {
+      skill {
+        categoryId
+      }
+      errors {
+        __typename
+        ... on Error {
+          message
+        }
+      }
+    }
+  }
+`)
+
 // A select can't hold null, so "uncategorized" is a sentinel that is sent as null.
 export const NO_CATEGORY = 'NONE'
 export type CategoryChoice = number | typeof NO_CATEGORY

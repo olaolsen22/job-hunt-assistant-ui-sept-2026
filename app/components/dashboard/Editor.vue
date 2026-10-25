@@ -2,7 +2,6 @@
 import { VueDraggable } from 'vue-draggable-plus'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { DASHBOARD_WIDGETS } from '~/constants/dashboard'
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { DashboardLayout, DashboardWidgetKind } from '~/composables/useDashboardLayout'
 
 const props = defineProps<{ layout: DashboardLayout }>()
@@ -26,7 +25,7 @@ const SAVE_LAYOUT = graphql(`
   }
 `)
 
-const toast = useToast()
+const toastSuccess = useSuccessToast()
 
 // Edits happen on a copy, so closing just drops it and the dashboard only changes after a save.
 const copy = () => props.layout.map((w) => ({ ...w }))
@@ -80,12 +79,7 @@ const save = async () => {
       return
     }
     emit('saved', saveDashboardLayout.layout)
-    toast.add({
-      title: 'Dashboard saved',
-      color: 'success',
-      icon: 'i-lucide-check',
-      duration: SUCCESS_TOAST_DURATION
-    })
+    toastSuccess('Dashboard saved')
   } catch {
     errorMessage.value = ERROR_MESSAGES.generic
   } finally {

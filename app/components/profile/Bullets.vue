@@ -145,7 +145,15 @@ const flush = async () => {
   if (editingId.value !== undefined && !(await saveEdit())) return false
   return add()
 }
-defineExpose({ flush })
+// Typed but not saved: a new bullet, or an edit that changed the text. The entry form asks before
+// closing over these, as it does over its own fields.
+const hasDraft = computed(
+  () =>
+    !!newText.value.trim() ||
+    (editingId.value !== undefined &&
+      editText.value.trim() !== items.value.find((b) => b.id === editingId.value)?.text)
+)
+defineExpose({ flush, hasDraft })
 
 const remove = async () => {
   const id = deleting.value!.id

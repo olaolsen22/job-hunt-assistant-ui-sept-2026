@@ -27,9 +27,9 @@ remove it when you delete one.
 - `<AppConfirmModal v-model:open title description? confirm-label? loading? disabled? color? @confirm>` — confirm
   dialog with Cancel / confirm buttons; not dismissible while `loading`; `color="error"` for bulk, undo-less deletes. The default slot is the
   body, so form modals (`<ListingsApplyModal>` etc.) wrap it too.
-- `<AppFormModal v-model:open title description? save-label? loading? :state validate? @submit>` — form
+- `<AppFormModal v-model:open title description? save-label? loading? :state validate? unsaved? @submit>` — form
   modal on `UForm`: Enter or Save submits, `validate` errors show inline and focus the first one, closing
-  with `state` changed since opening asks "Discard changes?", full screen on phones. `after` slot holds
+  with `state` changed since opening (or `unsaved`, e.g. an entry form's typed bullet) asks "Discard changes?", full screen on phones. `after` slot holds
   content that saves on its own (bullets), outside the form. Used by the profile forms. Exposes
   `validate()` (inline errors + focus, returns ok) and `markClean()` for forms that save without
   closing (the application question's AI draft).
@@ -49,11 +49,11 @@ remove it when you delete one.
   up/down buttons and show/hide per widget, Save off until changed, "Reset to default" (draft only), Save sends the whole list (`saveDashboardLayout`), shows the API message and keeps the edits on failure.
 - `DASHBOARD_WIDGETS` (`constants/dashboard.ts`) — per `DashboardWidgetKind`: label, icon, component, `span?: 'full' | 2`. A `Record`, so a new
   kind from the API fails typecheck. `useDashboardLayout()` — `{ layout, loading, error, refresh }` for `dashboardLayout`.
-- `<CompaniesFavoriteButton id favoritedAt size?>` — star toggle for a company; same optimistic behavior as the listing one.
+- `<AppFavoriteButton target id favoritedAt size?>` — star toggle for a company or listing (`target`), flipped
+  optimistically and rolled back on an API error; `size` `xs` default, `md` in detail headers and list rows. Test id `${target}-favorite`.
 - `<CompaniesAvoidedBadge label?>` — warning badge for an avoided company; "Avoided" on company surfaces, `label="Avoided company"` on listing ones.
 - `<CompaniesNotesModal v-model:open companyId notes @saved>` — edits a company's Markdown notes; shows the API error inline.
 - `<CompaniesContactList contacts editable? @edit @delete>` — contact rows (title, mailto/tel/link buttons, Markdown notes); edit/delete only when `editable`. Used on the company and listing pages.
-- `<ListingsContactsField v-model>` — listing form rows for linked contacts (name, title, email, phone, link).
 - `<CompaniesContactModal v-model:open companyId contact @changed>` — add (`contact: null`) or replace a contact via `addContact`/`updateContact`; API errors as toasts.
   Uses `@click.prevent.stop`, so it can sit inside a link row.
 - `<ListingsNameCombobox v-model lookup placeholder? countryCode? clear? disabled?>` — debounced search over
@@ -89,8 +89,6 @@ remove it when you delete one.
   card led by the due chip on phones. The title link is stretched over the row.
 - `<ListingsDueChip listing>` — compact due badge ("3 days left", "ASAP · ~12 days left", "Expired", "Likely filled");
   urgency from `utils/dueUrgency.ts`, shared with `<ListingsDates>`.
-- `<ListingsFavoriteButton id favoritedAt size?>` — star toggle button (`size` `xs` default, `md` in the detail header);
-  owns its optimistic state and the `setListingFavorite` mutation. Used by `<ListingsRow>` and the listing detail page.
 - `<ListingsAnalyzedBadge analyzedAt>` — "Analyzed" / "To analyze" badge. Used by `<ListingsRow>`
   and the listing detail page.
 - `<ListingsStatusBadge status>` — application status badge (colors in `APPLICATION_STATUS_OPTIONS`).
@@ -130,31 +128,38 @@ remove it when you delete one.
 
 ## Composables (`app/composables/`)
 
-- `useAiRequest()` → `{ attempt(input, request), safetyCode, safetyMessage, needsConfirm, confirmRetry }` — one per AI action. `attempt` passes a `requestId` to `request`: a new one per action, the same one only when the previous attempt got no answer and `input` is unchanged. It records the `AiSafetyError` code/message of the answer; `needsConfirm` is true after `operation-interrupted` / `result-unavailable` until `confirmRetry()`. `aiSafetyCode(errors)` reads the code. Used by `useParsePrompt`, `useProfileCvImport`, `useTailoredCvDraft` and `useCoverLetterDraft`, which also return `needsConfirm`, `safetyMessage` and `confirmRetry`.
+- `useAiRequest()` → `{ attempt(input, request), run(busy, input, request, read), safetyCode, safetyMessage, needsConfirm, confirmRetry }` — one per AI action. `run` is the usual built-in call: `busy` while it runs, the first payload error as `{ error, code }`, a refetch of the models on `UnknownLlmModelError`, a network failure as `genericError(e)`, else `read(payload)` → `AiOutcome<T>` (`utils/aiOutcome.ts`: `{ value }` or `{ error, code? }`). `useAiInFlight()` (key `ai-in-flight`) counts requests still waiting, for the layout's leave guard. `attempt` passes a `requestId` to `request`: a new one per action, the same one only when the previous attempt got no answer and `input` is unchanged. It records the `AiSafetyError` code/message of the answer; `needsConfirm` is true after `operation-interrupted` / `result-unavailable` until `confirmRetry()`. `aiSafetyCode(errors)` reads the code. Used by `useParsePrompt`, `useProfileCvImport`, `useTailoredCvDraft` and `useCoverLetterDraft`, which also return `needsConfirm`, `safetyMessage` and `confirmRetry`.
 - `useProviderKeys()` → `{ keys, status, error, saving, setKey(provider, apiKey), removing, removeKey(provider) }` — Owner only; `providerKeys` under key `provider-keys`. `setKey` returns the API's message or nothing; both mutations patch the row and refresh the models, limits and usage. `useLlmCallLimits(immediate = true)` → `{ limits, status, error, refresh, execute, saving, setLimit(provider, limit | null) }` — `llmCallLimits` under key `llm-call-limits` (null = no limit, 0 = paused). Types `ProviderKey`, `LlmCallLimit`.
 - `useCollectedJobProcessing(parse)` — page-local sequential runner. `start`, `retry`, `skip`, `stop`, and `invalidate` control `idle`/`running`/`paused`/`finished`/`stopped`; `accepted` holds validated raw drafts in order. `completed`, `skipped`, `unprocessed`, `currentBatch`, `total`, `error`, `errorCode` (the failed batch's `AiSafetyError` code), and `busy` support progress and recovery UI. `markPublished()` is a one-shot guard for appending drafts.
 
 - `LISTING_COMPARE_FIELDS` fragment + `ComparedListing` type (`composables/listingCompareFields.ts`) — fields the compare modal needs.
 - `CONTACT_FIELDS` fragment + `CompanyContact` type (`composables/contactFields.ts`) — contact shape for company and listing queries.
 - `useListing(id)` → `{ listing, loading, error, refresh }` — client-only `listingById` query with every
-  field (key `listing-${id}`), incl. application status, history, interviews and documents, for the
-  detail and edit pages. Also exports `ListingDetail`.
+  field (key `listing-${id}`), incl. kind, application status, history, interviews and documents, for the
+  detail and edit pages. Usable at once and awaitable (`await useListing(id)` waits for the first load), so a
+  page can start its other requests first. Also exports `ListingDetail`.
 - `useLlmModels()` → `{ models, defaultModel, status, error, refresh, label(id), modelToSend(pick), setDefault(model | null), saving }` — `llmModels` under key `llm-models`; `dedupe: 'defer'` plus `getCachedData` make every caller on a page share one request, and only `refresh()` refetches. `modelToSend` turns the default into `undefined` so the server's default applies. `setDefault` (via `useMutation`) writes the returned list and refreshes `dashboard-llm-usage`. `isUnknownModel(errors)` checks for `UnknownLlmModelError`; the parse composables refetch on it and return `unknownModel: true`.
 - `useMutation(onStale?)` → `{ run, loading }` — `run(async () => payload.errors)` toasts the API's
   error message (or a generic one on a network error) and resolves `true` on success; a
   `*NotFoundError` calls `onStale` to refetch.
-- `useListingForm()` → `{ state, validate, toInput, fill, fillDraft, mergeDraft }` — listing form state, `UForm` validator,
+- `useListingForm()` → `{ state, validate, toInput, fill, fillDraft, mergeDraft }` — listing form state (incl. `kind`, sent on
+  every save since `updateListing` is a full replace), `UForm` validator,
   mapping to the API's `ListingInput`, `fill(listing: ListingDetail)` to load an existing one, and
   `fillDraft(json)` to load a parsed draft (keeps only valid values, leaves `url`), and
   `mergeDraft(json)` to merge one into a filled form (parsed values win, saved ones stay where the parse is empty). Also exports `ListingLocation`, `ListingLanguage`,
-  `ListingSkill` types.
+  `ListingSkill` types, `UPDATE_LISTING`, `cleanListingDraft(json)` (the draft cleaning quick-add reuses) and
+  `listingBasicsErrors(values, name?)` (title/company/role, http(s) link and posting date unless UNSOLICITED, deadline date; quick-add prefixes `name` per row).
 - `provideNewNames()` → `{ checkNewNames(state) }` / `useIsNewName()` → `(lookup, name, countryCode?) => boolean`
   — the add page checks a filled form's names in one aliased query and provides the result;
   `NameCombobox` and `SkillsField` inject it to flag names the API doesn't know. No provider = nothing
   flagged. Also exports `NameLookup`.
 - `useAiPrompt(fetchInstructions, transform?)` → `{ instructions, promptLoading, promptError, copied, loadPrompt, copyText(text), copyPrompt() }` — the own-AI prompt every AI composable uses; `transform` appends what the query can't take (cover letter notes). `AiPromptState` is what `AppAiOwnSteps` takes.
-- `useAiModalState(open, { tabFor?, onOpen? })` → `{ method, tab, error, errorCode }` — the open/reset boilerplate of every AI modal: tab from the remembered method (`tabFor` maps it), error cleared on open, `errorCode` forgotten with its error; `onOpen(tab)` runs on each open (also when mounted open). `useReviewDirty(state)` → `{ dirty, mark, clear }` — whether a review changed since `mark()`, so closing asks to discard only after an edit.
-- `useAiMethod()` → cookie `ai-method` (`builtin | own | null`): AI modals open on it and write it after a successful run.
+- `useAiModalState(open, { tabFor?, onOpen? })` → `{ method, tab, error, errorCode, usage, refreshUsage }` — the open/reset boilerplate of every AI modal: tab from the remembered method (`tabFor` maps it), error cleared and today's usage fetched on open, `errorCode` forgotten with its error; `onOpen(tab)` runs on each open (also when mounted open); call `refreshUsage()` after a run. `useTextRewriteReview(open, reply)` — the review step of the skill wording and translation modals: `rows` (`RewriteRow`: `current`, `text`, `include`), `included`/`blank`/`canApply`/`applicable`, `setAll`, `start(rows)`, `apply(save, done)`, `back`, `discard`, `requestClose`, `applyError`, `confirmOpen`. `useReviewDirty(state)` → `{ dirty, mark, clear }` — whether a review changed since `mark()`, so closing asks to discard only after an edit.
+- `useAiMethod()` → cookie `ai-method` (`builtin | own | null`): AI modals and quick-add open on it and write it after a successful run.
+- `useLeaveConfirm(unsaved)` → `{ open, leave }` — a page's in-app "Leave without saving?" (route-leave guard + confirm state); `useAiLeaveGuard()` → `{ open, leave }` — used once by the default layout: any navigation to another path while a built-in AI request is in flight asks first; `navigateAfterConfirm(to)` navigates past it after a page already asked. Reload/close is `plugins/leave-guard.client.ts`.
+- `useDeleteDocument(done)` → `{ target, confirmOpen, deleting, ask(pdf), confirm, isDeleted(id) }` — confirmed delete of a listing's unsent PDF; deleted ids stay hidden until the documents refetch; `done(deletedId | null)` after every attempt.
+- `useSuccessToast()` → `(title, description?)` — the green check toast with `SUCCESS_TOAST_DURATION`. `useCopyAsText(noun)` → `{ copied, copy(text) }` — clipboard write with an error toast; `copied` flips for 2 s.
+- `useDebounce(fn, ms)` — debounced `fn`, dropped on unmount (search fields). `useOpenedOnce(open)` — latch for `<LazyX v-if="opened">`: loads a modal on its first open and keeps it mounted so the close animation plays.
 - `useParsePrompt(name)` → `{ instructions, promptLoading, promptError, copied, load (toasts on failure), loadPrompt, copy(posting), parsing, parse(posting), parsingUrl, parseFromUrl(listingId), parsingNewUrl, parseNewUrl(url) }` — fetches
   `listingParsePrompt`, `listingQuickParsePrompt` or `companyParsePrompt` and copies it + `<posting>` text
   for an external AI. `parse()` runs the built-in parser (`parseListing`, FULL, QUICK or COMPANIES by `name`) and returns
@@ -212,7 +217,7 @@ remove it when you delete one.
 ## Constants (`app/constants/`, import explicitly)
 
 - `countries.ts` — `COUNTRY_CODES`, `COUNTRY_OPTIONS` (`{ label, value }`, sorted by English name).
-- `listing.ts` — `*_OPTIONS` for the listing enums (`APPLICATION_STATUS_OPTIONS` also carries each
+- `listing.ts` — `*_OPTIONS` for the listing enums (`LISTING_KIND_OPTIONS`: the form offers Vacancy and Open invitation; Unsolicited is API-only) (`APPLICATION_STATUS_OPTIONS` also carries each
   status's badge color; `Outcome` is `OUTCOME_OPTIONS`' value type), `CEFR_LEVELS`, `SKILL_LEVELS` (`{ label: 'Level n', value: n }`), `LINK_KIND_OPTIONS` (profile link kinds with icon), `PROJECT_KIND_OPTIONS` + `projectKindLabel(kind)`, and their value types.
 - `company.ts` — `COMPANY_KIND_OPTIONS`, `COMPANY_SIZE_OPTIONS` (`label` with the range for selects, short `range` for badges), `companyKindLabel(kind)`, `companySizeRange(size)`, `CompanyKind`/`CompanySize`, and the research limits `DESCRIPTION_MAX`, `SKILLS_MAX`, `FOUNDED_MIN`.
 - `errorMessages.ts` — `ERROR_MESSAGES` for user-facing errors.

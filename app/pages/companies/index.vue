@@ -64,16 +64,15 @@ const cursors = ref<(string | null)[]>([null])
 const walking = ref(false)
 const after = computed(() => cursors.value[page.value - 1] ?? null)
 
-let timer: ReturnType<typeof setTimeout> | undefined
-watch(search, (value) => {
-  clearTimeout(timer)
-  timer = setTimeout(() => {
+watch(
+  search,
+  useDebounce((value: string) => {
     settledSearch.value = value.trim()
     // Reset in the same tick, or the refetch would pair the new search with an old cursor.
     cursors.value = [null]
     page.value = 1
   }, 300)
-})
+)
 
 // Same tick as the toggle, or the refetch would pair the filter with an old cursor.
 watch(hideAvoided, () => {
@@ -313,8 +312,9 @@ const researchSelected = () => {
               </p>
               <div class="flex shrink-0 items-center gap-2">
                 <CompaniesAvoidedBadge v-if="c.avoidedAt" />
-                <CompaniesFavoriteButton
+                <AppFavoriteButton
                   :id="c.id"
+                  target="company"
                   :favorited-at="c.favoritedAt"
                   class="relative z-10"
                 />

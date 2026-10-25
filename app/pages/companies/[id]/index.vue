@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { ResultOf } from 'gql.tada'
 import type { CompanyContact } from '~/composables/contactFields'
@@ -17,6 +16,24 @@ const companiesView = useCompaniesView()
 // the same request to avoid a waterfall; archived ones need their own field (`archived: true`).
 // `take: 50` is a literal like the other lists (the cost check rejects a variable), and far more
 // than one company ever gets.
+// Open and archived listings come from two fields, so both read the same selection.
+const COMPANY_POSITION = graphql(`
+  fragment CompanyPosition on Listing {
+    id
+    title
+    status
+    archivedAt
+    jobRole {
+      name
+    }
+    locations {
+      location {
+        id
+      }
+    }
+  }
+`)
+
 const COMPANY_PAGE = graphql(
   `
     query CompanyPage($id: Int!) {
@@ -63,39 +80,17 @@ const COMPANY_PAGE = graphql(
       }
       open: listings(take: 50, where: { companyId: { eq: $id } }) {
         items {
-          id
-          title
-          status
-          archivedAt
-          jobRole {
-            name
-          }
-          locations {
-            location {
-              id
-            }
-          }
+          ...CompanyPosition
         }
       }
       archived: listings(take: 50, archived: true, where: { companyId: { eq: $id } }) {
         items {
-          id
-          title
-          status
-          archivedAt
-          jobRole {
-            name
-          }
-          locations {
-            location {
-              id
-            }
-          }
+          ...CompanyPosition
         }
       }
     }
   `,
-  [CONTACT_FIELDS]
+  [CONTACT_FIELDS, COMPANY_POSITION]
 )
 
 const DELETE_CONTACT = graphql(`
@@ -142,7 +137,7 @@ const IN_PROGRESS = ['APPLIED', 'INTERVIEWING', 'OFFER']
 const rank = (p: Position) =>
   p.archivedAt ? 3 : IN_PROGRESS.includes(p.status) ? 0 : p.status === 'SAVED' ? 1 : 2
 
-type Position = NonNullable<NonNullable<ResultOf<typeof COMPANY_PAGE>['open']>['items']>[number]
+type Position = ResultOf<typeof COMPANY_POSITION>
 const positions = computed(() =>
   [...(data.value?.open?.items ?? []), ...(data.value?.archived?.items ?? [])].sort(
     (a, b) => rank(a) - rank(b)
@@ -212,7 +207,7 @@ const links = computed(() =>
 
 const hasResearch = computed(() => !!company.value && hasCompanyResearch(company.value))
 
-const toast = useToast()
+const toastSuccess = useSuccessToast()
 const notesOpen = ref(false)
 const avoidOpen = ref(false)
 const { run: runAvoid, loading: avoiding } = useMutation(refresh)
@@ -225,11 +220,7 @@ const setAvoided = async (isAvoided: boolean) => {
   avoidOpen.value = false
   if (!ok) return
   await refresh()
-  toast.add({
-    title: isAvoided ? 'Company avoided' : 'No longer avoided',
-    color: 'success',
-    duration: SUCCESS_TOAST_DURATION
-  })
+  toastSuccess(isAvoided ? 'Company avoided' : 'No longer avoided')
 }
 
 const contacts = computed(() =>
@@ -361,8 +352,9 @@ const moreItems = computed<DropdownMenuItem[]>(() =>
             <h1 class="min-w-0 break-words text-xl font-semibold text-highlighted">
               {{ company.name }}
             </h1>
-            <CompaniesFavoriteButton
+            <AppFavoriteButton
               :id="company.id"
+              target="company"
               :favorited-at="company.favoritedAt"
               size="md"
               class="shrink-0"

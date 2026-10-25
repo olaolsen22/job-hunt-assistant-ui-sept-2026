@@ -1,38 +1,24 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LANGUAGE_OPTIONS } from '~/constants/listing'
 
 definePageMeta({ title: 'Cover letter' })
 
-const DELETE_DOCUMENT = graphql(`
-  mutation DeleteDocument($input: DeleteDocumentInput!) {
-    deleteDocument(input: $input) {
-      id
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
-
 // The API prints line 1 as the street and line 2 as postcode and town, splitting one line at a comma.
 const ADDRESS_HELP = 'Street and number on line 1, postcode and town on line 2.'
 
-const toast = useToast()
 const route = useRoute()
 const id = Number(route.params.id)
 
+// The draft request starts alongside the listing's; only the listing is waited for.
+const listingQuery = useListing(id)
+const editor = useCoverLetterDraft(id)
 const {
   listing,
   loading: listingLoading,
   error: listingError,
   refresh: refreshListing
-} = await useListing(id)
-const editor = useCoverLetterDraft(id)
+} = await listingQuery
 const { letter, dirty } = editor
 
 watch(editor.query.status, () => editor.init(), { immediate: true })
@@ -71,15 +57,22 @@ const saveStatus = computed(() =>
 )
 
 // The PDF to preview: the one just generated, else the listing's newest unsent cover letter.
-const deletedPdfIds = ref<number[]>([])
+const {
+  confirmOpen: deletePdfOpen,
+  target: pdfToDelete,
+  deleting: deletingPdf,
+  ask: askDeletePdf,
+  confirm: deletePdf,
+  isDeleted
+} = useDeleteDocument(() => refreshListing())
 const pdf = computed(
   () =>
-    (editor.generated.value && !deletedPdfIds.value.includes(editor.generated.value.id)
+    (editor.generated.value && !isDeleted(editor.generated.value.id)
       ? editor.generated.value
       : undefined) ??
     (listing.value &&
       latestUnsentDocument(
-        listing.value.documents.filter((d) => !deletedPdfIds.value.includes(d.id)),
+        listing.value.documents.filter((d) => !isDeleted(d.id)),
         'COVER_LETTER'
       ))
 )
@@ -101,16 +94,8 @@ const hasBody = computed(() => !!letter.value?.paragraphs.some((p) => p.trim()))
 const letterText = computed(() =>
   letter.value && hasBody.value ? coverLetterToText(letter.value, includeHeader.value) : ''
 )
-const textCopied = ref(false)
-const copyText = async () => {
-  try {
-    await navigator.clipboard.writeText(letterText.value)
-    textCopied.value = true
-    setTimeout(() => (textCopied.value = false), 2000)
-  } catch {
-    toast.add({ title: 'Could not copy the cover letter. Try again.', color: 'error' })
-  }
-}
+const { copied: textCopied, copy } = useCopyAsText('cover letter')
+const copyText = () => copy(letterText.value)
 
 const pdfOpen = ref(false)
 const generatePdf = async () => {
@@ -119,56 +104,8 @@ const generatePdf = async () => {
   await refreshListing()
 }
 
-const deletePdfOpen = ref(false)
-const pdfToDelete = ref<{ id: number; fileName: string } | null>(null)
-const selectPdfForDeletion = () => {
-  if (!pdf.value || pdf.value.sentAt) return
-  pdfToDelete.value = { id: pdf.value.id, fileName: pdf.value.fileName }
-  deletePdfOpen.value = true
-}
-const { run: runDeleteDocument, loading: deletingPdf } = useMutation(refreshListing)
-const deletePdf = async () => {
-  const target = pdfToDelete.value
-  if (!target) return
-  const ok = await runDeleteDocument(async () => {
-    const { deleteDocument } = await gql(DELETE_DOCUMENT, { input: { id: target.id } })
-    return deleteDocument.errors
-  })
-  deletePdfOpen.value = false
-  pdfToDelete.value = null
-  if (ok) {
-    deletedPdfIds.value = [...deletedPdfIds.value, target.id]
-    toast.add({
-      title: 'PDF deleted',
-      color: 'success',
-      duration: SUCCESS_TOAST_DURATION,
-      icon: 'i-lucide-check'
-    })
-  }
-  await refreshListing()
-}
-
-// Leaving with unsaved work asks first; closing or reloading the tab gets the browser's own warning.
-const leaveOpen = ref(false)
-const leaveTo = ref('')
-let leaving = false
-const unsaved = () => dirty.value && !editor.pristine.value
-onBeforeRouteLeave((to) => {
-  if (leaving || !unsaved()) return true
-  leaveTo.value = to.fullPath
-  leaveOpen.value = true
-  return false
-})
-const leave = () => {
-  leaving = true
-  leaveOpen.value = false
-  navigateTo(leaveTo.value)
-}
-const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-  if (unsaved()) event.preventDefault()
-}
-onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
-onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
+// Leaving with unsaved work asks first.
+const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value && !editor.pristine.value)
 </script>
 
 <template>
@@ -513,7 +450,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnloa
                 size="sm"
                 aria-label="Delete unsent PDF"
                 data-testid="cover-letter-delete-pdf"
-                @click="selectPdfForDeletion"
+                @click="askDeletePdf(pdf)"
               />
             </div>
           </div>

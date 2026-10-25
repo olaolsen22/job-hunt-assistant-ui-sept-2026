@@ -18,6 +18,8 @@ const storyOpen = ref(false)
 const addressOpen = ref(false)
 const cvImportOpen = ref(false)
 const translateAiOpen = ref(false)
+const cvImportOpened = useOpenedOnce(cvImportOpen)
+const translateAiOpened = useOpenedOnce(translateAiOpen)
 const clearTarget = ref<ProfileSectionName | 'ALL' | null>(null)
 
 const hasAddress = computed(() => !!(profile.value?.streetAddress || profile.value?.postalCode))
@@ -54,17 +56,31 @@ const target = computed<Language>(() =>
 )
 // en-GB for English: day-month order and 24-hour habits match a Norwegian reader.
 const locale = computed(() => (profile.value?.contentLanguage === 'ENGLISH' ? 'en-GB' : 'nb-NO'))
-provideProfileTranslation({ translating, target, locale })
 const targetLabel = computed(() => LANGUAGE_OPTIONS.find((o) => o.value === target.value)!.label)
 // The API only translates English profiles, into Norwegian.
 const aiTranslateAvailable = computed(() => target.value === 'NORWEGIAN')
 
+// In the order the sections are shown.
 const bulletsOf = (p: ProfileData) => [
   ...p.experiences.flatMap((e) => e.bullets),
+  ...p.projects.flatMap((e) => e.bullets),
   ...p.educations.flatMap((e) => e.bullets),
-  ...p.certifications.flatMap((e) => e.bullets),
-  ...p.projects.flatMap((e) => e.bullets)
+  ...p.certifications.flatMap((e) => e.bullets)
 ]
+
+// Saving one bullet's translation opens the next one still missing, so translating is a run of
+// Enter presses down the page.
+const editingBulletId = ref<number | null>(null)
+watch(translating, () => (editingBulletId.value = null))
+const nextUntranslated = (bulletId: number) => {
+  const bullets = profile.value ? bulletsOf(profile.value) : []
+  const after = bullets.findIndex((b) => b.id === bulletId)
+  return (
+    bullets.slice(after + 1).find((b) => !b.translations.some((t) => t.language === target.value))
+      ?.id ?? null
+  )
+}
+provideProfileTranslation({ translating, target, locale, editingBulletId, nextUntranslated })
 const hasTranslations = computed(
   () =>
     !!profile.value &&
@@ -519,14 +535,14 @@ const contact = computed(() => {
           @changed="refresh"
         />
         <LazyProfileCvImportModal
-          v-if="cvImportOpen"
+          v-if="cvImportOpened"
           v-model:open="cvImportOpen"
           :profile="profile"
           :refresh-profile="refreshCvProfile"
           @saved="onSaved"
         />
         <LazyProfileTranslationAiModal
-          v-if="translateAiOpen"
+          v-if="translateAiOpened"
           v-model:open="translateAiOpen"
           :profile="profile"
           @changed="refresh"

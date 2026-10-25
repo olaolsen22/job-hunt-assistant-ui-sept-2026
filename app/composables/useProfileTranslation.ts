@@ -6,6 +6,10 @@ type ProfileTranslationState = {
   translating: Ref<boolean>
   target: Ref<Language>
   locale: Ref<string>
+  // The one bullet whose translation is open for editing, if any.
+  editingBulletId: Ref<number | null>
+  // The next bullet after this one, in page order, with no translation yet; null at the end.
+  nextUntranslated: (bulletId: number) => number | null
 }
 
 // provide/inject (same as Vue 2): the page owns the mode, and bullets and entry lists deep inside

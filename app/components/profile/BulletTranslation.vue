@@ -35,7 +35,7 @@ const DELETE_TRANSLATION = graphql(`
   }
 `)
 
-const { target } = useProfileTranslation()
+const { target, editingBulletId, nextUntranslated } = useProfileTranslation()
 const targetLabel = computed(() => LANGUAGE_OPTIONS.find((o) => o.value === target.value)!.label)
 // A visible tag tells the translation from its original without relying on an icon.
 const targetCode = computed(() => (target.value === 'ENGLISH' ? 'EN' : 'NO'))
@@ -43,17 +43,26 @@ const translation = computed(() =>
   props.bullet.translations.find((t) => t.language === target.value)
 )
 
-const editing = ref(false)
+// One bullet at a time, page-wide, so a save can hand editing on to the next bullet.
+const editing = computed({
+  get: () => editingBulletId.value === props.bullet.id,
+  set: (on: boolean) => (editingBulletId.value = on ? props.bullet.id : null)
+})
 const text = ref('')
 const showChanges = ref(false)
 const deleteOpen = ref(false)
 
 const { run, loading } = useMutation(() => emit('changed'))
 
-const startEdit = () => {
-  text.value = translation.value?.text ?? ''
-  editing.value = true
-}
+// Opened here or handed on by the previous bullet's save: start from the saved translation.
+watch(
+  editing,
+  (on) => {
+    if (on) text.value = translation.value?.text ?? ''
+  },
+  { immediate: true }
+)
+const startEdit = () => (editing.value = true)
 
 const save = async () => {
   const ok = await run(async () => {
@@ -69,7 +78,7 @@ const save = async () => {
     return setProfileBulletTranslation.errors
   })
   if (!ok) return
-  editing.value = false
+  editingBulletId.value = nextUntranslated(props.bullet.id)
   emit('changed')
 }
 
@@ -101,6 +110,7 @@ const remove = async () => {
         :rows="2"
         :maxlength="500"
         :aria-label="`${targetLabel} translation of ${bullet.text}`"
+        autofocus
         class="w-full"
         data-testid="profile-bullet-translation-input"
         @keydown.enter.exact.prevent="save"

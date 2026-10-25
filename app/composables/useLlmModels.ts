@@ -1,5 +1,3 @@
-import type { ResultOf } from 'gql.tada'
-
 const MODELS = graphql(`
   query LlmModels {
     llmModels {
@@ -35,8 +33,6 @@ const SET_DEFAULT = graphql(`
     }
   }
 `)
-
-export type LlmModel = ResultOf<typeof MODELS>['llmModels']['models'][number]
 
 // The model went away on the server (config changed): no AI call was made, so callers refresh
 // the list and fall back to the new default.
