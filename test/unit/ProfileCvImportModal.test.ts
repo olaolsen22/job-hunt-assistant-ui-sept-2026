@@ -238,6 +238,21 @@ describe('CV import modal', () => {
     expect((query('cv-text') as HTMLTextAreaElement).value).toBe('Keep this CV')
   })
 
+  it('keeps a read CV when the profile refresh fails, so trying again only refreshes', async () => {
+    const { refreshProfile } = await mountOpen()
+    refreshProfile.mockRejectedValueOnce(new Error('offline'))
+    await setText('cv-text', 'English CV text')
+    await click('cv-parse')
+    await vi.waitFor(() => expect(query('cv-error').textContent).toContain('only reloads'))
+
+    await click('cv-parse')
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('[data-testid="cv-review"]')).not.toBeNull()
+    )
+    expect(requests.filter((r) => r.query.includes('mutation ParseProfileCv'))).toHaveLength(1)
+    expect(refreshProfile).toHaveBeenCalledTimes(2)
+  })
+
   it('asks before another parse after an interrupted one and sends a new request id', async () => {
     parseSafetyCode = 'operation-interrupted'
     await mountOpen()

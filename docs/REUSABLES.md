@@ -22,7 +22,7 @@ remove it when you delete one.
 - `<AppAiMethodTabs v-model builtin? extra? disabled?>` — "Built-in AI" then "Your own AI" (`own`); `builtin` items replace the first tab (CV import: Paste CV); `extra` adds non-AI tabs after them (cover letter: Paste a letter).
 - `<AppAiOwnSteps :ai v-model:reply testid-prefix copy? copy-disabled? note? reply-help? reply-error? start-step?>` — the own-AI steps: copy prompt, prompt-load error with retry, "View prompt / copy manually", paste the reply. `#before` holds a feature's own first step (set `start-step` after it). Test ids `${prefix}-copy-prompt`, `-prompt-error`, `-json`.
 - `<AppAiErrorAlert :title code? detail?>` — AI failure alert with icon, small technical detail, and the Settings link for `daily-limit-reached`; default slot for a feature action, `#description` replaces the detail.
-- `<AppAiRetryConfirm :message loading? @retry>` — warning shown instead of the usual error after an AI call returned `operation-interrupted` or `result-unavailable`; its "Try again (may be charged)" button is the only way to send another attempt (`useAiRequest().needsConfirm`).
+- `<AppAiRetryConfirm :message loading? disabled? @retry>` — warning shown instead of the usual error after an AI call returned `operation-interrupted` or `result-unavailable`; its "Try again (may be charged)" button is the only way to send another attempt (`useAiRequest().needsConfirm`). `disabled` while the input that attempt needs is missing (parse modals).
 - `<AppAiLimitLink>` — "Daily limits in Settings" button for a `daily-limit-reached` AI error, placed in the error alert's `actions` slot.
 - `<AppConfirmModal v-model:open title description? confirm-label? loading? disabled? color? @confirm>` — confirm
   dialog with Cancel / confirm buttons; not dismissible while `loading`; `color="error"` for bulk, undo-less deletes. The default slot is the
@@ -74,9 +74,9 @@ remove it when you delete one.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
   active option clears it. Generic over the option value type. Rule in the form: 3 or fewer options use this, more use a
   clearable `USelectMenu` (`USelect` can't go back to empty).
-- `<ListingsFilterPanel :facets v-model:sort v-model:search>` — the `/listings` toolbar (search, sort, "Filters (n)",
+- `<ListingsFilterPanel :facets v-model:sort v-model:search :quick-counts>` — the `/listings` toolbar (search, sort, "Filters (n)",
   Favorites toggle), a removable chip per active facet (plus `companyId`, labelled by the optional `company-name` prop) + Clear all, and the facet sheet (`USlideover`, right from `md`,
-  bottom on phones); edits `facets` in place.
+  bottom on phones; quick toggles as switches with `quick-counts` on top); edits `facets` in place.
 - `<ListingsFilterCombobox v-model lookup="skills" | "locations" placeholder?>` — multi-select search over
   existing skills (by name) or locations (by id, labelled `City, Country`); no create option.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
@@ -119,7 +119,7 @@ remove it when you delete one.
   Education, Certification, Project), `<ProfileSkillList>`/`<ProfileSkillModal>`, `<ProfileLanguageList>` (inline
   levels), `<ProfilePreferencesCard>` (+ target locations via `saveLocation`) and `<ProfileBasicsModal>`.
   Translations mode: the page provides `{ translating, target }` (`provideProfileTranslation`); `<ProfileBullets>` then
-  renders `<ProfileBulletTranslation :bullet>` per bullet and the Summary card shows `<ProfileTranslationBlock :profile>`
+  renders `<ProfileBulletTranslation :bullet>` per bullet, Experience/Education lists put `<ProfileEntryTranslation :experience|:education>` in Entry's `#translation` slot, and the Summary card shows `<ProfileTranslationBlock :profile>`
   (headline + summary in the language that isn't `contentLanguage`; stale/machine badges). While translating, a sticky
   bottom bar shows bullet progress and Done; translation rows use `<ProfileRowActions>` with a confirmed delete.
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
@@ -154,7 +154,7 @@ remove it when you delete one.
   `NameCombobox` and `SkillsField` inject it to flag names the API doesn't know. No provider = nothing
   flagged. Also exports `NameLookup`.
 - `useAiPrompt(fetchInstructions, transform?)` → `{ instructions, promptLoading, promptError, copied, loadPrompt, copyText(text), copyPrompt() }` — the own-AI prompt every AI composable uses; `transform` appends what the query can't take (cover letter notes). `AiPromptState` is what `AppAiOwnSteps` takes.
-- `useAiModalState(open, { tabFor?, onOpen? })` → `{ method, tab, error, errorCode, usage, refreshUsage }` — the open/reset boilerplate of every AI modal: tab from the remembered method (`tabFor` maps it), error cleared and today's usage fetched on open, `errorCode` forgotten with its error; `onOpen(tab)` runs on each open (also when mounted open); call `refreshUsage()` after a run. `useTextRewriteReview(open, reply)` — the review step of the skill wording and translation modals: `rows` (`RewriteRow`: `current`, `text`, `include`), `included`/`blank`/`canApply`/`applicable`, `setAll`, `start(rows)`, `apply(save, done)`, `back`, `discard`, `requestClose`, `applyError`, `confirmOpen`. `useReviewDirty(state)` → `{ dirty, mark, clear }` — whether a review changed since `mark()`, so closing asks to discard only after an edit.
+- `useAiModalState(open, { tabFor?, onOpen? })` → `{ method, tab, error, errorCode, usage, refreshUsage }` — the open/reset boilerplate of every AI modal: tab from the remembered method (`tabFor` maps it), error cleared on open and on a tab switch, today's usage fetched on open, `errorCode` forgotten with its error; `onOpen(tab)` runs on each open (also when mounted open); call `refreshUsage()` after a run. `useTextRewriteReview(open, reply)` — the review step of the skill wording and translation modals: `rows` (`RewriteRow`: `current`, `text`, `include`), `included`/`blank`/`canApply`/`applicable`, `setAll`, `start(rows)`, `apply(save, done)`, `back`, `discard`, `requestClose`, `applyError`, `confirmOpen`. `useReviewDirty(state)` → `{ dirty, mark, clear }` — whether a review changed since `mark()`, so closing asks to discard only after an edit.
 - `useAiMethod()` → cookie `ai-method` (`builtin | own | null`): AI modals and quick-add open on it and write it after a successful run.
 - `useLeaveConfirm(unsaved)` → `{ open, leave }` — a page's in-app "Leave without saving?" (route-leave guard + confirm state); `useAiLeaveGuard()` → `{ open, leave }` — used once by the default layout: any navigation to another path while a built-in AI request is in flight asks first; `navigateAfterConfirm(to)` navigates past it after a page already asked. Reload/close is `plugins/leave-guard.client.ts`.
 - `useDeleteDocument(done)` → `{ target, confirmOpen, deleting, ask(pdf), confirm, isDeleted(id) }` — confirmed delete of a listing's unsent PDF; deleted ids stay hidden until the documents refetch; `done(deletedId | null)` after every attempt.

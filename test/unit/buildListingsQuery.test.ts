@@ -16,6 +16,11 @@ describe('buildListingsQuery', () => {
     expect(variables.order).toBeUndefined()
   })
 
+  it('orders by posted date, newest first, for the posted sort', () => {
+    const { variables } = buildListingsQuery(null, emptyFacets(), 'posted')
+    expect(variables.order).toEqual([{ postedOn: 'DESC' }])
+  })
+
   it('drops the expiry clause when statuses are picked', () => {
     const { text, variables } = build({ statuses: ['APPLIED'] })
     expect(text).toContain('status: {in: $statuses}')
@@ -51,8 +56,8 @@ describe('preferred locations', () => {
 
   it('narrows the list and every count when on, without repeating the clause', () => {
     const { text } = build({ preferredLocations: true })
-    // The list, its four preset counts and the four quick-toggle counts.
-    expect(text.match(/isTarget/g)).toHaveLength(9)
+    // The list, its five preset counts and the four quick-toggle counts.
+    expect(text.match(/isTarget/g)).toHaveLength(10)
     expect(text).not.toContain(`${clause}}, {${clause}`)
   })
 })
@@ -74,7 +79,7 @@ describe('IT and English toggles', () => {
 
   it('narrows the list and every count to IT roles when on', () => {
     const { text } = build({ itRoles: true })
-    expect(text.match(/category:/g)).toHaveLength(9)
+    expect(text.match(/category:/g)).toHaveLength(10)
     expect(text).not.toContain(`${itClause}}, {${itClause}`)
   })
 })
@@ -88,6 +93,18 @@ describe('all count', () => {
     expect(args).toContain('deadlineOn: {gte: $today}')
     expect(args).toContain('favoritedAt: {neq: null}')
     expect(args).not.toContain('archived: true')
+  })
+})
+
+describe('incl. expired preset', () => {
+  it('lists non-archived listings without the expiry clause, still applying facets', () => {
+    const facets = { ...emptyFacets(), favorites: true }
+    const text = print(buildListingsQuery('withExpired', facets, 'due').document)
+    const args = text.split('query Listings')[1]!.split('listings(')[1]!.split(')')[0]
+    expect(args).not.toContain('deadlineOn')
+    expect(args).not.toContain('archived')
+    expect(args).toContain('favoritedAt: {neq: null}')
+    expect(text).toContain('withExpired: listings(')
   })
 })
 
@@ -108,7 +125,7 @@ describe('date facets', () => {
   it('adds dueWithinDays to the list and the counts, narrowing closing soon', () => {
     const { text } = build({ dueWithinDays: 3 })
     expect(text).toContain('closingSoon: listings(take: 1, search: $search, dueWithinDays: 3')
-    expect(text.match(/dueWithinDays: 3/g)).toHaveLength(9)
+    expect(text.match(/dueWithinDays: 3/g)).toHaveLength(10)
     expect(build({ dueWithinDays: 14 }).text).toContain(
       'closingSoon: listings(take: 1, search: $search, dueWithinDays: 7'
     )

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { TailoredCvSectionKey } from '~/utils/tailoredCv'
+import type { DropdownMenuItem } from '@nuxt/ui'
+import type { CvProfileList, TailoredCv, TailoredCvSectionKey } from '~/utils/tailoredCv'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { VueDraggable } from 'vue-draggable-plus'
-import { PROFICIENCY_OPTIONS, projectKindLabel } from '~/constants/listing'
+import { LANGUAGE_OPTIONS, PROFICIENCY_OPTIONS, projectKindLabel } from '~/constants/listing'
 
 definePageMeta({ title: 'Tailored CV' })
 
@@ -11,10 +12,9 @@ const SECTION_ORDER_OPTIONS = [
   { label: 'Developer', value: 'DEVELOPER' }
 ]
 const SECTION_ORDER_HINTS = {
-  STANDARD:
-    'Standard order; skills print on one line, in the order shown, and technologies are not printed. Only changes the generated PDF, not the text you edit.',
+  STANDARD: 'Standard order; skills on one line in the order shown; technologies not printed.',
   DEVELOPER:
-    'Links under the contact lines; skills and projects moved up, skills grouped by category, and technologies listed under experience and projects. Only changes the generated PDF, not the text you edit.'
+    'Links under the contact lines, skills and projects moved up, skills grouped by category, technologies under entries.'
 } as const
 
 // The owner's categories (edited on the skills page); a deleted one shows as uncategorized.
@@ -23,6 +23,15 @@ const moveSkill = (from: number, to: number) => {
   const skills = cv.value!.skills
   skills.splice(to, 0, ...skills.splice(from, 1))
 }
+
+const TEMPLATE_OPTIONS = [
+  { label: 'Detailed', value: 'DETAILED' },
+  { label: 'Concise', value: 'CONCISE' }
+]
+const TEMPLATE_HINTS = {
+  DETAILED: 'Full bullets or paragraphs with the context behind each role.',
+  CONCISE: 'Shorter bullets, aiming for a tighter, shorter CV.'
+} as const
 
 const CONTENT_STYLE_OPTIONS = [
   { label: 'Bullets', value: 'BULLETS' },
@@ -66,6 +75,10 @@ const technologiesHint = computed(() =>
   cv.value?.sectionOrder === 'DEVELOPER'
     ? 'Printed under this entry in the PDF.'
     : 'Only printed with the Developer PDF layout.'
+)
+// The headings are English whatever the draft is written in, so the page names its language.
+const languageLabel = computed(
+  () => LANGUAGE_OPTIONS.find((option) => option.value === cv.value?.language)?.label
 )
 // Loaded up front, so "Copy prompt" is a direct write (browsers can refuse one after an await).
 onMounted(() => state.loadPrompt())
@@ -164,6 +177,16 @@ const requestReset = () => {
   if (state.pristine.value && !suggestions.value.length) resetToProfile()
   else resetOpen.value = true
 }
+// A menu keeps the header narrow on phones; the disabled item says why instead of a tooltip.
+const moreItems = computed<DropdownMenuItem[]>(() => [
+  {
+    label: state.matchesProfile.value ? 'Matches your profile' : 'Reset to profile…',
+    icon: 'i-lucide-rotate-ccw',
+    color: 'error',
+    disabled: busy.value || state.resetting.value || state.matchesProfile.value,
+    onSelect: requestReset
+  }
+])
 
 // Applying from here returns to the listing, refreshed so it shows Applied.
 const applyOpen = ref(false)
@@ -176,62 +199,69 @@ const onApplied = async () => {
   await navigateTo(`/listings/${id}`)
 }
 
-// Pending AI suggestions in page order; Next walks through them and wraps around.
+// Pending AI suggestions in page order.
 const pendingLabel = computed(() => {
   const n = suggestions.value.length
   return `${n} ${n === 1 ? 'suggestion' : 'suggestions'}`
 })
 const acceptAll = () => suggestions.value.map((s) => s.key).forEach(state.accept)
 const dismissAll = () => suggestions.value.map((s) => s.key).forEach(state.dismiss)
-let nextSuggestion = 0
+// Next goes to the first suggestion below the middle of the screen, wrapping to the top, so it
+// keeps its place as suggestions are accepted or dismissed.
 const showNextSuggestion = () => {
-  const items = document.querySelectorAll('[data-testid="tailored-cv-suggestion"]')
-  if (!items.length) return
-  nextSuggestion %= items.length
-  items[nextSuggestion]!.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  nextSuggestion++
+  const items = [
+    ...document.querySelectorAll<HTMLElement>('[data-testid="tailored-cv-suggestion"]')
+  ]
+  const middle = window.innerHeight / 2
+  const next = items.find((item) => item.getBoundingClientRect().top > middle) ?? items[0]
+  next?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
-// One AI choice modal for the whole CV (no scope) or a section.
+// One AI choice modal for the whole CV (no scope) or a section. While a possibly charged run
+// waits for its confirm, the modal keeps that run's scope, so the retry repeats it.
 const aiOpen = ref(false)
 const aiScope = ref<TailoredCvSectionKey>()
 const aiScopeLabel = ref('')
 const openAi = (scope?: TailoredCvSectionKey, label = 'your CV') => {
-  aiScope.value = scope
-  aiScopeLabel.value = label
+  if (!state.needsConfirm.value) {
+    aiScope.value = scope
+    aiScopeLabel.value = label
+  }
   aiOpen.value = true
 }
+// Runs on the page, so progress and suggestions show live. When the API's safeguards stop it
+// (a possibly charged run, the daily limit), the modal reopens with the retry or limit link.
 const runBuiltIn = async () => {
   if (aiScope.value) await state.analyzeSection(aiScope.value)
   else await state.analyzeAll()
   refreshUsage()
-}
-// The last run may have been billed without a result; only this explicit choice repeats it.
-const {
-  needsConfirm: aiNeedsConfirm,
-  safetyCode: aiErrorCode,
-  safetyMessage: aiErrorMessage
-} = state
-const retryConfirmed = () => {
-  state.confirmRetry()
-  void runBuiltIn()
+  if (state.safetyCode.value) aiOpen.value = true
 }
 
-const suggestionsFor = (match: (key: TailoredCvSectionKey) => boolean) =>
+// Entry keys hold the profile entry id, so an entry without one matches no suggestion.
+const suggestionsFor = (key: string) =>
   suggestions.value
-    .filter((s) => match(s.key))
+    .filter((s) => s.key === key)
     .map((s) => ({
       ...s,
-      current: cvSectionText(
-        s.key,
-        cv.value && getCvSection(cv.value, s.key),
-        cv.value?.contentStyle
-      ),
-      suggested: cvSectionText(s.key, s.value, cv.value?.contentStyle)
+      current: cvSectionText(s.key, cv.value && getCvSection(cv.value, s.key), entryStyle.value),
+      suggested: cvSectionText(s.key, s.value, entryStyle.value)
     }))
+
+// Concise always prints bullets; the stored choice and paragraphs stay for switching back.
+const entryStyle = computed<ContentStyle>(() =>
+  cv.value?.template === 'CONCISE' ? 'BULLETS' : (cv.value?.contentStyle ?? 'BULLETS')
+)
+// Switching template rewrites nothing by itself; the entries follow it after the next whole-CV run.
+const templateChanged = computed(
+  () =>
+    !!cv.value && !!state.writtenTemplate.value && cv.value.template !== state.writtenTemplate.value
+)
 
 const dates = (start?: string | null, end?: string | null, open?: string) =>
   formatMonthRange(start, end, open, 'en-GB')
+const experienceName = (e: { title: string; employer: string }) =>
+  [e.title, e.employer].filter(Boolean).join(' at ')
 
 // One format for the whole CV. Entries with no paragraph yet start from their bullets joined;
 // bullets stay in the draft either way, since they carry the source ids.
@@ -250,6 +280,52 @@ const setContentStyle = (style: ContentStyle) => {
 }
 
 const addLanguage = () => cv.value!.languages.push({ name: '', spoken: null, written: null })
+
+// Removing is instant, with Undo right after; later, the section's Add menu (or Reset to profile)
+// brings a profile item back.
+const removeItem = (list: CvProfileList, index: number, name: string) => {
+  const [item] = (cv.value![list] as unknown[]).splice(index, 1)
+  toast.add({
+    title: name.trim() ? `Removed ${name} from this CV` : 'Removed from this CV',
+    icon: 'i-lucide-trash-2',
+    actions: [
+      {
+        label: 'Undo',
+        color: 'neutral',
+        variant: 'outline',
+        onClick: () => {
+          const items = cv.value![list] as unknown[]
+          items.splice(Math.min(index, items.length), 0, item)
+        }
+      }
+    ]
+  })
+}
+
+const PROFILE_LISTS = ['experiences', 'educations', 'certifications', 'projects', 'skills'] as const
+type ProfileListItem = TailoredCv[CvProfileList][number]
+// Recomputed only when a list's items or the draft language change, not on every keystroke.
+const missing = computed(() => {
+  const draft = cv.value
+  const source = profile.value
+  if (!draft || !source) return undefined
+  return Object.fromEntries(
+    PROFILE_LISTS.map((list) => [list, missingFromProfile(draft, source, list)])
+  ) as Record<CvProfileList, ProfileListItem[]>
+})
+const addItems = (list: CvProfileList): DropdownMenuItem[] => {
+  const items = missing.value?.[list] ?? []
+  if (!items.length)
+    return [{ label: 'Everything from your profile is already here', disabled: true }]
+  return items.map((item) => ({
+    label: 'employer' in item ? experienceName(item) : 'school' in item ? item.school : item.name,
+    onSelect: () => addFromProfile(cv.value!, profile.value!, list, item)
+  }))
+}
+const emptyMessage = (list: CvProfileList, none: string) => {
+  if (cv.value![list].length) return undefined
+  return missing.value?.[list].length ? `${none} Use Add to bring it back from your profile.` : none
+}
 
 // Leaving with unsaved work asks first. Analysis counts too: between its section requests no AI
 // call is in flight for the layout's guard to see.
@@ -280,19 +356,25 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
               >
                 {{ listing.title }} · {{ listing.company.name }}
               </p>
+              <UBadge
+                v-if="cv && languageLabel"
+                color="neutral"
+                variant="subtle"
+                class="mt-1"
+                data-testid="tailored-cv-language"
+                >Written in {{ languageLabel }}</UBadge
+              >
             </div>
-            <UButton
-              v-if="cv"
-              icon="i-lucide-rotate-ccw"
-              color="neutral"
-              variant="ghost"
-              :disabled="busy || analyzing || state.resetting.value || state.matchesProfile.value"
-              :loading="state.resetting.value"
-              :title="state.matchesProfile.value ? 'Already matches your profile' : undefined"
-              data-testid="tailored-cv-reset"
-              @click="requestReset"
-              >Reset to profile</UButton
-            >
+            <UDropdownMenu v-if="cv" :items="moreItems" :content="{ align: 'end' }">
+              <UButton
+                icon="i-lucide-ellipsis-vertical"
+                color="neutral"
+                variant="ghost"
+                :loading="state.resetting.value"
+                aria-label="More CV actions"
+                data-testid="tailored-cv-more"
+              />
+            </UDropdownMenu>
           </div>
         </div>
 
@@ -309,6 +391,10 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
         <UAlert v-else-if="loadError" color="error" data-testid="tailored-cv-load-error">
           <template #description>
             {{ ERROR_MESSAGES.generic }}
+            <template v-if="state.query.error.value">
+              The saved draft can’t be opened. Resetting replaces it with a fresh copy of your
+              profile.
+            </template>
             <span
               class="mt-1 block text-xs break-words"
               data-testid="tailored-cv-load-error-detail"
@@ -324,7 +410,7 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
               :loading="replacing"
               data-testid="tailored-cv-load-error-reset"
               @click="replaceDraft"
-              >Replace with profile CV</UButton
+              >Reset to profile</UButton
             >
           </template>
         </UAlert>
@@ -339,109 +425,63 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
           <AppCard>
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p class="text-sm text-muted">
-                Prefilled from your profile. Let AI tailor the whole CV to this listing, or use the
-                AI button on a section.
+                Prefilled from your profile. Tailor the whole CV to this listing with AI, or one
+                section or entry at a time. Edits here change this CV only, not your profile.
               </p>
               <UButton
                 icon="i-lucide-sparkles"
-                class="justify-center"
+                class="shrink-0 justify-center"
                 :loading="analyzing"
                 :disabled="busy"
                 data-testid="tailored-cv-optimize"
                 @click="openAi()"
-                >Whole CV</UButton
+                >Tailor CV with AI</UButton
               >
             </div>
-            <UFormField
-              label="PDF layout"
-              :description="SECTION_ORDER_HINTS[cv.sectionOrder]"
-              class="mt-3 border-t border-default pt-3"
-            >
-              <USelect
-                v-model="cv.sectionOrder"
-                :items="SECTION_ORDER_OPTIONS"
-                :disabled="analyzing"
-                class="w-full sm:w-56"
-                data-testid="tailored-cv-section-order"
-              />
-            </UFormField>
-            <UFormField
-              label="Entry format"
-              description="Experience, education, certifications and projects are all written as bullets or as paragraphs."
-              class="mt-3"
-            >
-              <USelect
-                :model-value="cv.contentStyle"
-                :items="CONTENT_STYLE_OPTIONS"
-                :disabled="analyzing"
-                class="w-full sm:w-56"
-                data-testid="tailored-cv-content-style"
-                @update:model-value="setContentStyle($event as ContentStyle)"
-              />
-            </UFormField>
-            <AppAiRetryConfirm
-              v-if="aiNeedsConfirm && !analyzing"
-              :message="aiErrorMessage"
-              class="mt-3"
-              @retry="retryConfirmed"
-            />
             <UAlert
-              v-else-if="aiErrorCode && !analyzing"
-              color="error"
+              v-if="templateChanged && !analyzing"
+              color="warning"
               variant="subtle"
-              icon="i-lucide-circle-alert"
-              :title="aiErrorMessage"
+              icon="i-lucide-sparkles"
+              title="CV style changed. Tailor the CV again to rewrite entries in this style."
+              :actions="[
+                {
+                  label: 'Tailor CV with AI',
+                  color: 'neutral',
+                  variant: 'outline',
+                  onClick: () => openAi()
+                }
+              ]"
               class="mt-3"
-              data-testid="tailored-cv-ai-error"
-            >
-              <template v-if="aiErrorCode === 'daily-limit-reached'" #actions>
-                <AppAiLimitLink />
-              </template>
-            </UAlert>
-            <div
-              v-if="analyzing"
-              class="mt-3 flex flex-wrap items-center gap-x-2 text-sm"
-              role="status"
-              aria-live="polite"
-              data-testid="tailored-cv-progress"
-            >
-              <span class="font-medium text-highlighted">{{ progress?.label ?? 'Analyzing' }}</span>
-              <span v-if="progress" class="text-muted"
-                >Step {{ progress.step }} of {{ progress.total }} · Nothing is saved yet</span
+              data-testid="tailored-cv-template-changed"
+            />
+            <div class="mt-3 grid gap-3 border-t border-default pt-3 md:grid-cols-2">
+              <UFormField label="CV style" :description="TEMPLATE_HINTS[cv.template]">
+                <USelect
+                  v-model="cv.template"
+                  :items="TEMPLATE_OPTIONS"
+                  :disabled="analyzing"
+                  class="w-full"
+                  data-testid="tailored-cv-template"
+                />
+              </UFormField>
+              <UFormField
+                label="Entry format"
+                :description="
+                  cv.template === 'CONCISE'
+                    ? 'Concise CVs always use bullets. Your paragraph choice is kept if you switch back.'
+                    : 'Experience, education, certifications and projects are all written as bullets or as paragraphs.'
+                "
               >
-            </div>
-            <div
-              v-if="pdf"
-              class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-default pt-3"
-              data-testid="tailored-cv-latest-pdf"
-            >
-              <p class="flex min-w-0 items-center gap-2 text-sm">
-                <UIcon name="i-lucide-file-text" class="size-4 shrink-0 text-muted" />
-                <span class="truncate">{{ pdf.fileName }}</span>
-                <span class="shrink-0 text-muted"
-                  >{{ formatDateTime(pdf.createdAt)
-                  }}{{ pdfCurrent ? '' : ' · older than the draft' }}</span
-                >
-              </p>
-              <UButton
-                icon="i-lucide-eye"
-                color="neutral"
-                variant="subtle"
-                size="sm"
-                data-testid="tailored-cv-latest-pdf-preview"
-                @click="pdfOpen = true"
-                >Preview</UButton
-              >
-              <UButton
-                v-if="!pdf.sentAt"
-                icon="i-lucide-trash-2"
-                color="error"
-                variant="ghost"
-                size="sm"
-                aria-label="Delete unsent PDF"
-                data-testid="tailored-cv-delete-pdf"
-                @click="askDeletePdf(pdf)"
-              />
+                <USelect
+                  :model-value="entryStyle"
+                  :items="CONTENT_STYLE_OPTIONS"
+                  :disabled="analyzing || cv.template === 'CONCISE'"
+                  class="w-full"
+                  data-testid="tailored-cv-content-style"
+                  @update:model-value="setContentStyle($event as ContentStyle)"
+                />
+              </UFormField>
             </div>
           </AppCard>
 
@@ -450,7 +490,7 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
           <fieldset :disabled="analyzing" class="min-w-0 space-y-4 sm:space-y-6">
             <UAlert
               v-if="suggestions.length"
-              color="info"
+              color="primary"
               variant="subtle"
               icon="i-lucide-sparkles"
               :title="`${pendingLabel} to review`"
@@ -469,20 +509,13 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
             />
 
             <ListingsTailoredCvSection
-              title="Kontaktinformasjon og overskrift (Contact and headline)"
+              title="Contact and headline"
               testid="tailored-cv-contact"
+              :suggestions="suggestionsFor('headline')"
+              suggestion-label="Headline"
+              @accept="state.accept"
+              @dismiss="state.dismiss"
             >
-              <template #suggestions>
-                <ListingsTailoredCvSuggestion
-                  v-for="s in suggestionsFor((k) => k === 'headline')"
-                  :key="s.key"
-                  label="Headline"
-                  :current="s.current"
-                  :suggested="s.suggested"
-                  @accept="state.accept(s.key)"
-                  @dismiss="state.dismiss(s.key)"
-                />
-              </template>
               <div class="grid gap-3 sm:grid-cols-2">
                 <UFormField label="Full name">
                   <UInput v-model="cv.fullName" class="w-full" autocomplete="name" />
@@ -500,7 +533,18 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                   <UInput v-model="cv.address" class="w-full" autocomplete="street-address" />
                 </UFormField>
                 <UFormField label="Date of birth">
-                  <UInput v-model="cv.dateOfBirth" type="date" class="w-full" />
+                  <UFieldGroup class="w-full">
+                    <UInput v-model="cv.dateOfBirth" type="date" class="w-full" />
+                    <UButton
+                      color="neutral"
+                      variant="outline"
+                      icon="i-lucide-x"
+                      aria-label="Clear date of birth"
+                      data-testid="cv-dob-clear"
+                      :disabled="!cv.dateOfBirth"
+                      @click="cv.dateOfBirth = ''"
+                    />
+                  </UFieldGroup>
                 </UFormField>
                 <UFormField label="References" class="self-end">
                   <USwitch v-model="cv.referencesOnRequest" label="Available on request" />
@@ -548,25 +592,18 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
             </ListingsTailoredCvSection>
 
             <ListingsTailoredCvSection
-              title="Sammendrag (Summary)"
+              title="Summary"
               testid="tailored-cv-summary"
               analyzable
               :analyzing="analyzingKey === 'summary'"
               :disabled="busy"
               :error="sectionErrors.summary"
               :error-detail="sectionDetails.summary"
+              :suggestions="suggestionsFor('summary')"
               @analyze="openAi('summary', 'the summary')"
+              @accept="state.accept"
+              @dismiss="state.dismiss"
             >
-              <template #suggestions>
-                <ListingsTailoredCvSuggestion
-                  v-for="s in suggestionsFor((k) => k === 'summary')"
-                  :key="s.key"
-                  :current="s.current"
-                  :suggested="s.suggested"
-                  @accept="state.accept(s.key)"
-                  @dismiss="state.dismiss(s.key)"
-                />
-              </template>
               <UTextarea
                 v-model="cv.summary"
                 :rows="4"
@@ -578,28 +615,23 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
             </ListingsTailoredCvSection>
 
             <ListingsTailoredCvSection
-              title="Arbeidserfaring (Experience)"
+              title="Experience"
               testid="tailored-cv-experience"
-              :empty-message="cv.experiences.length ? undefined : 'No experience in this CV.'"
+              :empty-message="emptyMessage('experiences', 'No experience in this CV.')"
+              :suggestions="suggestionsFor('experiences')"
+              suggestion-label="All experience"
+              :add-items="addItems('experiences')"
+              add-label="Add experience from your profile"
+              @accept="state.accept"
+              @dismiss="state.dismiss"
             >
-              <template #suggestions>
-                <ListingsTailoredCvSuggestion
-                  v-for="s in suggestionsFor((k) => k === 'experiences')"
-                  :key="s.key"
-                  label="All experience"
-                  :current="s.current"
-                  :suggested="s.suggested"
-                  @accept="state.accept(s.key)"
-                  @dismiss="state.dismiss(s.key)"
-                />
-              </template>
               <ul class="divide-y divide-default">
                 <ListingsTailoredCvEntry
                   v-for="(e, i) in cv.experiences"
                   :key="e.sourceEntryId ?? `new-${i}`"
                   v-model:bullets="e.bullets"
                   v-model:paragraph="e.paragraph"
-                  :content-style="cv.contentStyle"
+                  :content-style="entryStyle"
                   :title="e.title"
                   :subtitle="e.employer"
                   :dates="dates(e.startMonth, e.endMonth, 'Present')"
@@ -608,27 +640,14 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                   :analyzable="e.sourceEntryId != null"
                   :analyzing="analyzingKey === `experience:${e.sourceEntryId}`"
                   :disabled="busy"
-                  @analyze="openAi(`experience:${e.sourceEntryId!}`, e.title)"
-                  @remove="cv.experiences.splice(i, 1)"
+                  :error="sectionErrors[`experience:${e.sourceEntryId!}`]"
+                  :error-detail="sectionDetails[`experience:${e.sourceEntryId!}`]"
+                  :suggestions="suggestionsFor(`experience:${e.sourceEntryId}`)"
+                  @analyze="openAi(`experience:${e.sourceEntryId!}`, experienceName(e))"
+                  @remove="removeItem('experiences', i, e.title)"
+                  @accept="state.accept"
+                  @dismiss="state.dismiss"
                 >
-                  <UAlert
-                    v-if="sectionErrors[`experience:${e.sourceEntryId!}`]"
-                    color="error"
-                    variant="subtle"
-                    icon="i-lucide-circle-alert"
-                    :title="sectionErrors[`experience:${e.sourceEntryId!}`]"
-                    :description="sectionDetails[`experience:${e.sourceEntryId!}`]"
-                    :ui="{ description: 'text-xs break-words' }"
-                    data-testid="tailored-cv-entry-error"
-                  />
-                  <ListingsTailoredCvSuggestion
-                    v-for="s in suggestionsFor((k) => k === `experience:${e.sourceEntryId}`)"
-                    :key="s.key"
-                    :current="s.current"
-                    :suggested="s.suggested"
-                    @accept="state.accept(s.key)"
-                    @dismiss="state.dismiss(s.key)"
-                  />
                   <template #fields>
                     <UFormField label="Title"
                       ><UInput v-model="e.title" class="w-full"
@@ -658,26 +677,21 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
             </ListingsTailoredCvSection>
 
             <ListingsTailoredCvSection
-              title="Ferdigheter (Skills)"
+              title="Skills"
               testid="tailored-cv-skills"
               analyzable
               :analyzing="analyzingKey === 'skills'"
               :disabled="busy"
               :error="sectionErrors.skills"
               :error-detail="sectionDetails.skills"
-              :empty-message="cv.skills.length ? undefined : 'No skills in this CV.'"
+              :empty-message="emptyMessage('skills', 'No skills in this CV.')"
+              :suggestions="suggestionsFor('skills')"
+              :add-items="addItems('skills')"
+              add-label="Add a skill from your profile"
               @analyze="openAi('skills', 'skills')"
+              @accept="state.accept"
+              @dismiss="state.dismiss"
             >
-              <template #suggestions>
-                <ListingsTailoredCvSuggestion
-                  v-for="s in suggestionsFor((k) => k === 'skills')"
-                  :key="s.key"
-                  :current="s.current"
-                  :suggested="s.suggested"
-                  @accept="state.accept(s.key)"
-                  @dismiss="state.dismiss(s.key)"
-                />
-              </template>
               <div class="space-y-2">
                 <VueDraggable
                   v-model="cv.skills"
@@ -689,88 +703,94 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                   class="space-y-1"
                   data-testid="tailored-cv-skill-list"
                 >
+                  <!-- Keyed without the index, so moving a skill keeps its row (and the focused
+                     button) instead of remounting it. Phones: name and remove first, then the
+                     category and order controls on their own line. -->
                   <li
                     v-for="(skill, i) in cv.skills"
-                    :key="`${skill.sourceSkillId ?? skill.name}-${i}`"
+                    :key="skill.sourceSkillId ?? skill.name"
                     class="flex flex-wrap items-center gap-x-1 gap-y-1"
                     data-testid="tailored-cv-skill"
                   >
-                    <UButton
-                      icon="i-lucide-grip-vertical"
-                      color="neutral"
-                      variant="ghost"
-                      size="sm"
-                      :aria-label="`Drag ${skill.name} to reorder`"
-                      class="drag-handle shrink-0 cursor-grab touch-none"
-                    />
-                    <span class="min-w-24 flex-1 truncate">{{ skill.name }}</span>
-                    <USelect
-                      :model-value="knownCategory(skill.categoryId)"
-                      :items="categoryItems"
-                      size="sm"
-                      :aria-label="`${skill.name} category`"
-                      class="w-40 shrink-0"
-                      @update:model-value="
-                        (choice) => (skill.categoryId = fromCategoryChoice(choice))
-                      "
-                    />
-                    <!-- Dragging is awkward on touch and unusable by keyboard, so the order has buttons too. -->
-                    <UButton
-                      icon="i-lucide-chevron-up"
-                      color="neutral"
-                      variant="ghost"
-                      size="sm"
-                      :disabled="i === 0"
-                      :aria-label="`Move ${skill.name} earlier`"
-                      @click="moveSkill(i, i - 1)"
-                    />
-                    <UButton
-                      icon="i-lucide-chevron-down"
-                      color="neutral"
-                      variant="ghost"
-                      size="sm"
-                      :disabled="i === cv.skills.length - 1"
-                      :aria-label="`Move ${skill.name} later`"
-                      @click="moveSkill(i, i + 1)"
-                    />
+                    <!-- Mouse only: the arrow buttons cover touch and keyboard, so no tab stop. -->
+                    <span
+                      class="drag-handle hidden shrink-0 cursor-grab touch-none p-1.5 text-muted sm:inline-flex"
+                      aria-hidden="true"
+                    >
+                      <UIcon name="i-lucide-grip-vertical" class="size-4" />
+                    </span>
+                    <span class="min-w-0 flex-1 break-words">{{ skill.name }}</span>
                     <UButton
                       icon="i-lucide-x"
                       color="neutral"
                       variant="ghost"
                       size="sm"
+                      class="sm:order-last"
                       :aria-label="`Remove ${skill.name}`"
-                      @click="cv.skills.splice(i, 1)"
+                      @click="removeItem('skills', i, skill.name)"
                     />
+                    <div class="flex w-full items-center gap-1 sm:w-auto">
+                      <!-- Categories only group skills in the Developer layout. -->
+                      <USelect
+                        v-if="cv.sectionOrder === 'DEVELOPER'"
+                        :model-value="knownCategory(skill.categoryId)"
+                        :items="categoryItems"
+                        size="sm"
+                        :aria-label="`${skill.name} category`"
+                        class="w-40 shrink-0"
+                        @update:model-value="
+                          (choice) => (skill.categoryId = fromCategoryChoice(choice))
+                        "
+                      />
+                      <UButton
+                        icon="i-lucide-chevron-up"
+                        color="neutral"
+                        variant="ghost"
+                        size="sm"
+                        :disabled="i === 0"
+                        :aria-label="`Move ${skill.name} earlier`"
+                        @click="moveSkill(i, i - 1)"
+                      />
+                      <UButton
+                        icon="i-lucide-chevron-down"
+                        color="neutral"
+                        variant="ghost"
+                        size="sm"
+                        :disabled="i === cv.skills.length - 1"
+                        :aria-label="`Move ${skill.name} later`"
+                        @click="moveSkill(i, i + 1)"
+                      />
+                    </div>
                   </li>
                 </VueDraggable>
                 <p class="text-xs text-muted">
-                  Categories and order apply to this CV only, not your profile.
+                  {{
+                    cv.sectionOrder === 'DEVELOPER'
+                      ? 'Categories and order apply to this CV only, not your profile.'
+                      : 'The order applies to this CV only. Categories show with the Developer PDF layout.'
+                  }}
                 </p>
               </div>
             </ListingsTailoredCvSection>
 
             <ListingsTailoredCvSection
-              title="Utdanning (Education)"
+              title="Education"
               testid="tailored-cv-education"
-              :empty-message="cv.educations.length ? undefined : 'No education in this CV.'"
+              :empty-message="emptyMessage('educations', 'No education in this CV.')"
+              :suggestions="suggestionsFor('educations')"
+              suggestion-label="All education"
+              :add-items="addItems('educations')"
+              add-label="Add education from your profile"
+              @accept="state.accept"
+              @dismiss="state.dismiss"
             >
-              <template #suggestions>
-                <ListingsTailoredCvSuggestion
-                  v-for="s in suggestionsFor((k) => k === 'educations')"
-                  :key="s.key"
-                  :current="s.current"
-                  :suggested="s.suggested"
-                  @accept="state.accept(s.key)"
-                  @dismiss="state.dismiss(s.key)"
-                />
-              </template>
               <ul class="divide-y divide-default">
                 <ListingsTailoredCvEntry
                   v-for="(e, i) in cv.educations"
                   :key="e.sourceEntryId ?? `new-${i}`"
                   v-model:bullets="e.bullets"
                   v-model:paragraph="e.paragraph"
-                  :content-style="cv.contentStyle"
+                  :content-style="entryStyle"
                   :title="e.school"
                   :subtitle="[e.degree, e.field].filter(Boolean).join(', ')"
                   :dates="dates(e.startMonth, e.endMonth)"
@@ -778,27 +798,14 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                   :analyzable="e.sourceEntryId != null"
                   :analyzing="analyzingKey === `education:${e.sourceEntryId}`"
                   :disabled="busy"
+                  :error="sectionErrors[`education:${e.sourceEntryId!}`]"
+                  :error-detail="sectionDetails[`education:${e.sourceEntryId!}`]"
+                  :suggestions="suggestionsFor(`education:${e.sourceEntryId}`)"
                   @analyze="openAi(`education:${e.sourceEntryId!}`, e.school)"
-                  @remove="cv.educations.splice(i, 1)"
+                  @remove="removeItem('educations', i, e.school)"
+                  @accept="state.accept"
+                  @dismiss="state.dismiss"
                 >
-                  <UAlert
-                    v-if="sectionErrors[`education:${e.sourceEntryId!}`]"
-                    color="error"
-                    variant="subtle"
-                    icon="i-lucide-circle-alert"
-                    :title="sectionErrors[`education:${e.sourceEntryId!}`]"
-                    :description="sectionDetails[`education:${e.sourceEntryId!}`]"
-                    :ui="{ description: 'text-xs break-words' }"
-                    data-testid="tailored-cv-entry-error"
-                  />
-                  <ListingsTailoredCvSuggestion
-                    v-for="s in suggestionsFor((k) => k === `education:${e.sourceEntryId}`)"
-                    :key="s.key"
-                    :current="s.current"
-                    :suggested="s.suggested"
-                    @accept="state.accept(s.key)"
-                    @dismiss="state.dismiss(s.key)"
-                  />
                   <template #fields>
                     <UFormField label="School"
                       ><UInput v-model="e.school" class="w-full"
@@ -822,40 +829,36 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                         @update:model-value="e.location = $event"
                     /></UFormField>
                     <UFormField label="Start"><AppMonthField v-model="e.startMonth" /></UFormField>
-                    <UFormField label="End"><AppMonthField v-model="e.endMonth" /></UFormField>
+                    <UFormField label="End" help="Empty means ongoing."
+                      ><AppMonthField v-model="e.endMonth"
+                    /></UFormField>
                   </template>
                 </ListingsTailoredCvEntry>
               </ul>
             </ListingsTailoredCvSection>
 
             <ListingsTailoredCvSection
-              title="Sertifiseringer (Certifications)"
+              title="Certifications"
               testid="tailored-cv-certifications"
-              :empty-message="
-                cv.certifications.length ? undefined : 'No certifications in this CV.'
-              "
+              :empty-message="emptyMessage('certifications', 'No certifications in this CV.')"
+              :suggestions="suggestionsFor('certifications')"
+              suggestion-label="All certifications"
+              :add-items="addItems('certifications')"
+              add-label="Add a certification from your profile"
+              @accept="state.accept"
+              @dismiss="state.dismiss"
             >
-              <template #suggestions>
-                <ListingsTailoredCvSuggestion
-                  v-for="s in suggestionsFor((k) => k === 'certifications')"
-                  :key="s.key"
-                  :current="s.current"
-                  :suggested="s.suggested"
-                  @accept="state.accept(s.key)"
-                  @dismiss="state.dismiss(s.key)"
-                />
-              </template>
               <ul class="divide-y divide-default">
                 <ListingsTailoredCvEntry
                   v-for="(c, i) in cv.certifications"
                   :key="c.sourceEntryId ?? `new-${i}`"
                   v-model:bullets="c.bullets"
                   v-model:paragraph="c.paragraph"
-                  :content-style="cv.contentStyle"
+                  :content-style="entryStyle"
                   :title="c.name"
                   :subtitle="c.issuer"
                   :dates="dates(c.issuedMonth, c.expiresMonth)"
-                  @remove="cv.certifications.splice(i, 1)"
+                  @remove="removeItem('certifications', i, c.name)"
                 >
                   <template #fields>
                     <UFormField label="Name"><UInput v-model="c.name" class="w-full" /></UFormField>
@@ -884,27 +887,23 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
             </ListingsTailoredCvSection>
 
             <ListingsTailoredCvSection
-              title="Prosjekter (Projects)"
+              title="Projects"
               testid="tailored-cv-projects"
-              :empty-message="cv.projects.length ? undefined : 'No projects in this CV.'"
+              :empty-message="emptyMessage('projects', 'No projects in this CV.')"
+              :suggestions="suggestionsFor('projects')"
+              suggestion-label="All projects"
+              :add-items="addItems('projects')"
+              add-label="Add a project from your profile"
+              @accept="state.accept"
+              @dismiss="state.dismiss"
             >
-              <template #suggestions>
-                <ListingsTailoredCvSuggestion
-                  v-for="s in suggestionsFor((k) => k === 'projects')"
-                  :key="s.key"
-                  :current="s.current"
-                  :suggested="s.suggested"
-                  @accept="state.accept(s.key)"
-                  @dismiss="state.dismiss(s.key)"
-                />
-              </template>
               <ul class="divide-y divide-default">
                 <ListingsTailoredCvEntry
                   v-for="(p, i) in cv.projects"
                   :key="p.sourceEntryId ?? `new-${i}`"
                   v-model:bullets="p.bullets"
                   v-model:paragraph="p.paragraph"
-                  :content-style="cv.contentStyle"
+                  :content-style="entryStyle"
                   :title="p.name"
                   :subtitle="p.url"
                   :dates="dates(p.startMonth, p.endMonth)"
@@ -914,27 +913,14 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                   :analyzable="p.sourceEntryId != null"
                   :analyzing="analyzingKey === `project:${p.sourceEntryId}`"
                   :disabled="busy"
+                  :error="sectionErrors[`project:${p.sourceEntryId!}`]"
+                  :error-detail="sectionDetails[`project:${p.sourceEntryId!}`]"
+                  :suggestions="suggestionsFor(`project:${p.sourceEntryId}`)"
                   @analyze="openAi(`project:${p.sourceEntryId!}`, p.name)"
-                  @remove="cv.projects.splice(i, 1)"
+                  @remove="removeItem('projects', i, p.name)"
+                  @accept="state.accept"
+                  @dismiss="state.dismiss"
                 >
-                  <UAlert
-                    v-if="sectionErrors[`project:${p.sourceEntryId!}`]"
-                    color="error"
-                    variant="subtle"
-                    icon="i-lucide-circle-alert"
-                    :title="sectionErrors[`project:${p.sourceEntryId!}`]"
-                    :description="sectionDetails[`project:${p.sourceEntryId!}`]"
-                    :ui="{ description: 'text-xs break-words' }"
-                    data-testid="tailored-cv-entry-error"
-                  />
-                  <ListingsTailoredCvSuggestion
-                    v-for="s in suggestionsFor((k) => k === `project:${p.sourceEntryId}`)"
-                    :key="s.key"
-                    :current="s.current"
-                    :suggested="s.suggested"
-                    @accept="state.accept(s.key)"
-                    @dismiss="state.dismiss(s.key)"
-                  />
                   <template #fields>
                     <UFormField label="Name" class="sm:col-span-2"
                       ><UInput v-model="p.name" class="w-full"
@@ -956,7 +942,9 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                         @update:model-value="p.location = $event"
                     /></UFormField>
                     <UFormField label="Start"><AppMonthField v-model="p.startMonth" /></UFormField>
-                    <UFormField label="End"><AppMonthField v-model="p.endMonth" /></UFormField>
+                    <UFormField label="End" help="Empty means ongoing."
+                      ><AppMonthField v-model="p.endMonth"
+                    /></UFormField>
                     <UFormField label="Technologies" :help="technologiesHint" class="sm:col-span-2"
                       ><ProfileNamesField
                         v-model="p.technologies"
@@ -969,51 +957,53 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
             </ListingsTailoredCvSection>
 
             <ListingsTailoredCvSection
-              title="Språk (Languages)"
+              title="Languages"
               testid="tailored-cv-languages"
               :empty-message="cv.languages.length ? undefined : 'No languages in this CV.'"
+              :suggestions="suggestionsFor('languages')"
+              @accept="state.accept"
+              @dismiss="state.dismiss"
             >
-              <template #suggestions>
-                <ListingsTailoredCvSuggestion
-                  v-for="s in suggestionsFor((k) => k === 'languages')"
-                  :key="s.key"
-                  :current="s.current"
-                  :suggested="s.suggested"
-                  @accept="state.accept(s.key)"
-                  @dismiss="state.dismiss(s.key)"
-                />
-              </template>
-              <div class="space-y-2">
-                <div v-for="(l, i) in cv.languages" :key="i" class="flex items-center gap-2">
-                  <UInput
-                    v-model="l.name"
-                    placeholder="Language"
-                    class="min-w-0 flex-1"
-                    :aria-label="`Language ${i + 1}`"
-                  />
-                  <USelect
-                    :model-value="l.spoken ?? undefined"
-                    :items="[...PROFICIENCY_OPTIONS]"
-                    placeholder="Spoken"
-                    class="w-32"
-                    :aria-label="`Spoken level for language ${i + 1}`"
-                    @update:model-value="l.spoken = $event"
-                  />
-                  <USelect
-                    :model-value="l.written ?? undefined"
-                    :items="[...PROFICIENCY_OPTIONS]"
-                    placeholder="Written"
-                    class="w-32"
-                    :aria-label="`Written level for language ${i + 1}`"
-                    @update:model-value="l.written = $event"
-                  />
+              <div class="space-y-3">
+                <!-- Phones: name and remove, then both levels side by side; one row from md. -->
+                <div
+                  v-for="(l, i) in cv.languages"
+                  :key="i"
+                  class="flex flex-wrap items-end gap-2"
+                  data-testid="tailored-cv-language-row"
+                >
+                  <UFormField label="Language" class="min-w-0 flex-1">
+                    <UInput v-model="l.name" class="w-full" />
+                  </UFormField>
                   <UButton
                     icon="i-lucide-x"
                     color="neutral"
                     variant="ghost"
+                    size="sm"
+                    class="mb-1 md:order-last"
                     :aria-label="`Remove language ${i + 1}`"
                     @click="cv.languages.splice(i, 1)"
                   />
+                  <div class="grid w-full grid-cols-2 gap-2 md:w-72">
+                    <UFormField label="Spoken">
+                      <USelect
+                        :model-value="l.spoken ?? undefined"
+                        :items="[...PROFICIENCY_OPTIONS]"
+                        placeholder="Choose"
+                        class="w-full"
+                        @update:model-value="l.spoken = $event"
+                      />
+                    </UFormField>
+                    <UFormField label="Written">
+                      <USelect
+                        :model-value="l.written ?? undefined"
+                        :items="[...PROFICIENCY_OPTIONS]"
+                        placeholder="Choose"
+                        class="w-full"
+                        @update:model-value="l.written = $event"
+                      />
+                    </UFormField>
+                  </div>
                 </div>
                 <UButton
                   icon="i-lucide-plus"
@@ -1025,6 +1015,57 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                 >
               </div>
             </ListingsTailoredCvSection>
+
+            <AppCard title="PDF" data-testid="tailored-cv-pdf">
+              <UFormField
+                label="PDF layout"
+                :description="SECTION_ORDER_HINTS[cv.sectionOrder]"
+                help="Only changes the PDF, not the text you edit."
+              >
+                <USelect
+                  v-model="cv.sectionOrder"
+                  :items="SECTION_ORDER_OPTIONS"
+                  :disabled="analyzing"
+                  class="w-full sm:w-56"
+                  data-testid="tailored-cv-section-order"
+                />
+              </UFormField>
+              <div
+                v-if="pdf"
+                class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-default pt-3"
+                data-testid="tailored-cv-latest-pdf"
+              >
+                <p class="flex min-w-0 items-center gap-2 text-sm">
+                  <UIcon name="i-lucide-file-text" class="size-4 shrink-0 text-muted" />
+                  <span class="truncate">{{ pdf.fileName }}</span>
+                  <span class="shrink-0 text-muted"
+                    >{{ formatDateTime(pdf.createdAt)
+                    }}{{ pdfCurrent ? '' : ' · older than the draft' }}</span
+                  >
+                </p>
+                <div class="flex items-center gap-1">
+                  <UButton
+                    icon="i-lucide-eye"
+                    color="neutral"
+                    variant="subtle"
+                    size="sm"
+                    data-testid="tailored-cv-latest-pdf-preview"
+                    @click="pdfOpen = true"
+                    >Preview</UButton
+                  >
+                  <UButton
+                    v-if="!pdf.sentAt"
+                    icon="i-lucide-trash-2"
+                    color="error"
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Delete unsent PDF"
+                    data-testid="tailored-cv-delete-pdf"
+                    @click="askDeletePdf(pdf)"
+                  />
+                </div>
+              </div>
+            </AppCard>
 
             <div v-if="refreshFailed || state.generateError.value" class="space-y-2">
               <UAlert
@@ -1091,12 +1132,15 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                   />
                   <span data-testid="tailored-cv-save-status">{{ saveStatus }}</span>
                 </span>
-                <UBadge
+                <!-- Also a way back to the suggestions from wherever the owner has scrolled. -->
+                <UButton
                   v-if="suggestions.length"
-                  color="warning"
+                  icon="i-lucide-sparkles"
                   variant="subtle"
+                  size="xs"
                   data-testid="tailored-cv-pending"
-                  >{{ pendingLabel }} to review</UBadge
+                  @click="showNextSuggestion"
+                  >{{ pendingLabel }} to review</UButton
                 >
               </span>
               <UButton
@@ -1185,7 +1229,7 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
         v-model:open="resetOpen"
         title="Reset to your profile?"
         :description="`Your edits${suggestions.length ? ` and ${pendingLabel} not yet reviewed` : ''} are replaced with your current profile. The saved draft and PDFs stay as they are until you save.`"
-        confirm-label="Reset"
+        confirm-label="Reset to profile"
         @confirm="resetToProfile"
       />
 
@@ -1214,15 +1258,18 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
       data-testid="tailored-cv-analysis-overlay"
     >
       <div
-        class="flex items-center gap-3 rounded-lg border border-default bg-default p-4 shadow-lg"
+        class="w-full max-w-sm space-y-3 rounded-lg border border-default bg-default p-4 shadow-lg"
       >
-        <UIcon name="i-lucide-loader-circle" class="size-5 animate-spin text-primary" />
-        <div>
-          <p class="font-medium text-highlighted">{{ progress?.label ?? 'Analyzing your CV' }}</p>
-          <p v-if="progress" class="text-sm text-muted">
-            Step {{ progress.step }} of {{ progress.total }} · Nothing is saved yet
-          </p>
+        <div class="flex items-center gap-3" data-testid="tailored-cv-progress">
+          <UIcon name="i-lucide-loader-circle" class="size-5 shrink-0 animate-spin text-primary" />
+          <div>
+            <p class="font-medium text-highlighted">{{ progress?.label ?? 'Analyzing your CV' }}</p>
+            <p v-if="progress" class="text-sm text-muted">
+              Step {{ progress.step }} of {{ progress.total }} · Nothing is saved yet
+            </p>
+          </div>
         </div>
+        <UProgress v-if="progress" :model-value="progress.step" :max="progress.total" size="sm" />
       </div>
     </div>
   </div>

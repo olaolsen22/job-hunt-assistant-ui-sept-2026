@@ -22,8 +22,14 @@ const noNorwegianSamples = computed(
   () => !!samples.value && !samples.value.some((s) => s.language === 'NORWEGIAN')
 )
 
-// existing: replaces a saved Norwegian translation.
-type Row = RewriteRow & { existing: boolean }
+// existing: replaces a saved Norwegian translation. Job title and education rows carry their
+// entry; bullet, headline and summary rows use the shared RewriteRow fields.
+type Row = RewriteRow & {
+  existing: boolean
+  experienceId?: number
+  educationId?: number
+  educationField?: 'degree' | 'field'
+}
 
 const reply = ref('')
 const {
@@ -42,34 +48,8 @@ const {
   apply: applyRows
 } = useTextRewriteReview<Row>(open, reply)
 
-// Bullet id → English text, whether it already has a Norwegian translation, and its entry's name
-// so rows say where they belong.
-const bulletInfo = computed(() => {
-  const entries = [
-    ...profile.experiences.map((e) => ({
-      name: [e.title, e.employer].filter(Boolean).join(', '),
-      bullets: e.bullets
-    })),
-    ...profile.educations.map((e) => ({
-      name: [e.degree, e.school].filter(Boolean).join(', '),
-      bullets: e.bullets
-    })),
-    ...profile.certifications.map((e) => ({ name: e.name, bullets: e.bullets })),
-    ...profile.projects.map((e) => ({ name: e.name, bullets: e.bullets }))
-  ]
-  return new Map(
-    entries.flatMap(({ name, bullets }) =>
-      bullets.map((b) => [
-        b.id,
-        {
-          name,
-          text: b.text,
-          existing: b.translations.some((t) => t.language === 'NORWEGIAN')
-        }
-      ])
-    )
-  )
-})
+// Bullet id → its entry's name (so rows say where they belong) and the bullet itself.
+const bulletInfo = computed(() => profileBullets(profile))
 const savedTranslation = computed(() =>
   profile.translations.find((t) => t.language === 'NORWEGIAN')
 )
@@ -77,7 +57,7 @@ const savedTranslation = computed(() =>
 const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(open, {
   onOpen: () => api.loadPrompt()
 })
-watch([reply, tab], () => (error.value = ''))
+watch(reply, () => (error.value = ''))
 
 const fieldRow = (field: 'headline' | 'summary', label: string, text: string | null): Row[] =>
   text == null
@@ -94,10 +74,74 @@ const fieldRow = (field: 'headline' | 'summary', label: string, text: string | n
         }
       ]
 
-const startReview = ({ bullets, headline, summary }: ProfileTranslationDraft) =>
-  start([
-    ...fieldRow('headline', 'Headline', headline),
-    ...fieldRow('summary', 'Summary', summary),
+const norwegian = <T extends { language: string }>(translations: readonly T[]) =>
+  translations.find((t) => t.language === 'NORWEGIAN')
+
+// Row keys in page order, each entry's title rows before its bullets, so one entry's rows stay
+// together. Rows the profile doesn't have go last.
+const pageOrder = computed(() => {
+  const bullets = (list: readonly { id: number }[]) => list.map((b) => `bullet-${b.id}`)
+  return new Map(
+    [
+      ...profile.experiences.flatMap((e) => [`experience-${e.id}`, ...bullets(e.bullets)]),
+      ...profile.projects.flatMap((e) => bullets(e.bullets)),
+      ...profile.educations.flatMap((e) => [
+        `education-${e.id}-degree`,
+        `education-${e.id}-field`,
+        ...bullets(e.bullets)
+      ]),
+      ...profile.certifications.flatMap((e) => bullets(e.bullets))
+    ].map((key, i) => [key, i])
+  )
+})
+
+const educationRows = ({ id, degree, field }: ProfileTranslationDraft['educations'][number]) => {
+  const entry = profile.educations.find((e) => e.id === id)
+  const saved = entry && norwegian(entry.translations)
+  return (
+    [
+      ['degree', 'Degree', degree],
+      ['field', 'Field of study', field]
+    ] as const
+  ).flatMap(([name, label, text]): Row[] =>
+    text == null
+      ? []
+      : [
+          {
+            key: `education-${id}-${name}`,
+            label: entry ? `${label} · ${entry.school}` : label,
+            educationId: id,
+            educationField: name,
+            current: entry?.[name] ?? undefined,
+            existing: !!saved?.[name],
+            text,
+            include: !!entry?.[name]
+          }
+        ]
+  )
+}
+
+const startReview = ({
+  bullets,
+  experiences,
+  educations,
+  headline,
+  summary
+}: ProfileTranslationDraft) => {
+  const entryRows: Row[] = [
+    ...experiences.map((x) => {
+      const entry = profile.experiences.find((e) => e.id === x.id)
+      return {
+        key: `experience-${x.id}`,
+        label: entry ? `Job title · ${entry.employer}` : 'Job title',
+        experienceId: x.id,
+        current: entry?.title,
+        existing: !!(entry && norwegian(entry.translations)),
+        text: x.title,
+        include: !!entry
+      }
+    }),
+    ...educations.flatMap(educationRows),
     // An id that isn't on the profile can't be applied, so it starts unticked and stays that way.
     ...bullets.map((b) => {
       const info = bulletInfo.value.get(b.id)
@@ -105,13 +149,20 @@ const startReview = ({ bullets, headline, summary }: ProfileTranslationDraft) =>
         key: `bullet-${b.id}`,
         label: info?.name ? `Bullet · ${info.name}` : 'Bullet',
         bulletId: b.id,
-        current: info?.text,
-        existing: !!info?.existing,
+        current: info?.bullet.text,
+        existing: !!info?.bullet.translations.some((t) => t.language === 'NORWEGIAN'),
         text: b.text,
         include: !!info
       }
     })
+  ]
+  const order = (row: Row) => pageOrder.value.get(row.key) ?? Infinity
+  start([
+    ...fieldRow('headline', 'Headline', headline),
+    ...fieldRow('summary', 'Summary', summary),
+    ...entryRows.sort((a, b) => order(a) - order(b))
   ])
+}
 const suggest = async () => {
   error.value = ''
   const result = await api.suggest()
@@ -138,12 +189,31 @@ const preview = () => {
   startReview(draft)
 }
 
+// The API takes one item per education, with null leaving an unticked field as it is.
+const entrySelection = () => {
+  const educations = new Map<number, { id: number; degree: string | null; field: string | null }>()
+  for (const r of included.value.filter((r) => r.educationId != null)) {
+    const item = educations.get(r.educationId!) ?? { id: r.educationId!, degree: null, field: null }
+    item[r.educationField!] = r.text.trim()
+    educations.set(r.educationId!, item)
+  }
+  return {
+    experiences: included.value
+      .filter((r) => r.experienceId != null)
+      .map((r) => ({ id: r.experienceId!, title: r.text.trim() })),
+    educations: [...educations.values()]
+  }
+}
+
 const apply = () => {
   if (busy.value) return
-  return applyRows(api.apply, () => {
-    emit('changed')
-    toastSuccess('Translations saved')
-  })
+  return applyRows(
+    (selection) => api.apply({ ...selection, ...entrySelection() }),
+    () => {
+      emit('changed')
+      toastSuccess('Translations saved')
+    }
+  )
 }
 
 const goToSamples = () => {
@@ -159,7 +229,7 @@ const goToSamples = () => {
     :description="
       rows
         ? 'Review each translation. Nothing is saved until you apply it.'
-        : 'Translates your headline, summary and bullets that are missing or out of date.'
+        : 'Translates your headline, summary, job titles, education and bullets that are missing or out of date.'
     "
     :busy="busy"
     :close="requestClose"

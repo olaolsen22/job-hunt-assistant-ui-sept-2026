@@ -20,6 +20,8 @@ const emit = defineEmits<{ edit: []; delete: []; changed: [] }>()
       <div class="min-w-0 flex-1">
         <p class="break-words font-medium text-highlighted">{{ title }}</p>
         <p v-if="subtitle" class="break-words text-sm">{{ subtitle }}</p>
+        <!-- The title's translation sits right under the original it translates. -->
+        <slot name="translation" />
         <p v-if="dates" class="text-sm text-muted">{{ dates }}</p>
         <slot />
       </div>

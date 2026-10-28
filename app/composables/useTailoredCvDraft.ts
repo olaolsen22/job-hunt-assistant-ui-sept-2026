@@ -17,6 +17,7 @@ const CONTENT_FIELDS = graphql(`
     referencesOnRequest
     sectionOrder
     contentStyle
+    template
     links {
       label
       url
@@ -119,8 +120,8 @@ const FROM_PROFILE = graphql(
 )
 
 const PROMPT = graphql(`
-  query TailoredCvExternalPrompt($listingId: Int!) {
-    tailoredCvExternalPrompt(listingId: $listingId) {
+  query TailoredCvExternalPrompt($listingId: Int!, $template: TailoredCvTemplate) {
+    tailoredCvExternalPrompt(listingId: $listingId, template: $template) {
       instructions
     }
   }
@@ -138,6 +139,10 @@ const ANALYZE = graphql(`
         summary
         paragraph
         technologies
+        bullets {
+          text
+          sourceBulletId
+        }
         error
         errorCode
       }
@@ -324,6 +329,9 @@ export const useTailoredCvDraft = (
   const analyzing = ref(false)
   const analyzingKey = ref<TailoredCvSectionKey>()
   const progress = ref<{ label: string; step: number; total: number }>()
+  // The template the entries were last written for (loaded draft, then each whole-CV AI run), so
+  // the page can ask for a new run after the owner switches.
+  const writtenTemplate = ref<TailoredCv['template']>()
 
   const dirty = computed(() => !!cv.value && snapshot(cv.value) !== saved.value)
   // First creation (nothing saved, nothing edited): AI output fills the candidate directly.
@@ -350,6 +358,7 @@ export const useTailoredCvDraft = (
     if (postingLanguage.value) cv.value.language = postingLanguage.value
     seed.value = snapshot(cv.value)
     saved.value = savedSnapshot
+    writtenTemplate.value = cv.value.template
     return !draft.value
   }
 
@@ -363,7 +372,7 @@ export const useTailoredCvDraft = (
       const { tailoredCvDraftFromProfile } = await gql(FROM_PROFILE, { listingId })
       if (!tailoredCvDraftFromProfile) return 'This listing no longer exists.'
       // The API returns defaults for the three toggles, so the owner's choices stay.
-      const { contentStyle, sectionOrder, referencesOnRequest } = cv.value ?? {}
+      const { contentStyle, sectionOrder, template, referencesOnRequest } = cv.value ?? {}
       // A saved draft pins the API to its own language, so an old English draft would rebuild in
       // English on a Norwegian ad; the client-side build follows the posting instead.
       const apiFresh = tailoredCvFromContent(tailoredCvDraftFromProfile)
@@ -376,6 +385,7 @@ export const useTailoredCvDraft = (
         ...fresh,
         contentStyle: contentStyle ?? fresh.contentStyle,
         sectionOrder: sectionOrder ?? fresh.sectionOrder,
+        template: template ?? fresh.template,
         referencesOnRequest: referencesOnRequest ?? fresh.referencesOnRequest
       }
       seed.value = snapshot(cv.value)
@@ -409,11 +419,15 @@ export const useTailoredCvDraft = (
   }
 
   // The API's own order: work experience first, then education and projects, then skills to match
-  // them, and the summary last.
+  // them, and the summary last. Entries removed from this CV are skipped, so they don't come back.
   const steps = (): AnalysisStep[] => {
-    const experiences = profile.value?.experiences ?? []
-    const educations = profile.value?.educations ?? []
-    const projects = profile.value?.projects ?? []
+    const kept = <T extends { id: number }>(
+      entries: readonly T[] | undefined,
+      list: readonly { sourceEntryId?: number | null }[] | undefined
+    ) => (entries ?? []).filter((e) => list?.some((c) => c.sourceEntryId === e.id))
+    const experiences = kept(profile.value?.experiences, cv.value?.experiences)
+    const educations = kept(profile.value?.educations, cv.value?.educations)
+    const projects = kept(profile.value?.projects, cv.value?.projects)
     return [
       ...experiences.map((e, i) => ({
         key: `experience:${e.id}` as const,
@@ -439,13 +453,21 @@ export const useTailoredCvDraft = (
   }
 
   // A failed or skipped section keeps its content and shows why; the caller moves on to the next
-  // one. Returns true when every later section would fail the same way, so the caller stops: the
+  // one. 'stop' means every later section would fail the same way, so the caller stops: the
   // saved model is gone (the list is already refetched) or the API's AI safeguards refused.
-  const runStep = async (step: AnalysisStep, direct: boolean) => {
+  const runStep = async (
+    step: AnalysisStep,
+    direct: boolean
+  ): Promise<'ok' | 'failed' | 'stop'> => {
     sectionErrors.value = { ...sectionErrors.value, [step.key]: undefined }
     sectionDetails.value = { ...sectionDetails.value, [step.key]: undefined }
     try {
-      const input = { listingId, section: step.section, sourceEntryId: step.sourceEntryId }
+      const input = {
+        listingId,
+        section: step.section,
+        sourceEntryId: step.sourceEntryId,
+        template: cv.value?.template
+      }
       const { result, errors } = await attempt(
         input,
         async (requestId) =>
@@ -454,11 +476,11 @@ export const useTailoredCvDraft = (
       if (isUnknownModel(errors)) {
         sectionErrors.value[step.key] = errors![0]!.message
         await llm.refresh()
-        return true
+        return 'stop'
       }
       if (aiSafetyCode(errors)) {
         sectionErrors.value[step.key] = errors![0]!.message
-        return true
+        return 'stop'
       }
       const value =
         result && profile.value && cv.value
@@ -469,12 +491,14 @@ export const useTailoredCvDraft = (
         sectionErrors.value[step.key] = result?.errorCode
           ? `${message} (${result.errorCode})`
           : message
-        return
+        return 'failed'
       }
       offer(value.key, value.value, direct)
+      return 'ok'
     } catch (e) {
       sectionErrors.value[step.key] = ERROR_MESSAGES.generic
       sectionDetails.value[step.key] = errorDetail(e)
+      return 'failed'
     }
   }
 
@@ -483,12 +507,18 @@ export const useTailoredCvDraft = (
   const analyzeAll = async () => {
     const direct = fillsDirectly()
     const all = steps()
+    const template = cv.value?.template
+    let wrote = false
     analyzing.value = true
     try {
       for (const [i, step] of all.entries()) {
         progress.value = { label: step.label, step: i + 1, total: all.length }
-        if (await runStep(step, direct)) break
+        const outcome = await runStep(step, direct)
+        wrote ||= outcome === 'ok'
+        if (outcome === 'stop') break
       }
+      // A run that wrote nothing leaves the entries in the old style, so the nudge stays.
+      if (wrote) writtenTemplate.value = template
     } finally {
       analyzing.value = false
       progress.value = undefined
@@ -509,10 +539,30 @@ export const useTailoredCvDraft = (
     }
   }
 
+  // The template the shown prompt was written for; the pasted reply is previewed with the same one.
+  const promptTemplate = ref<TailoredCv['template']>()
   const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
-    async () => (await gql(PROMPT, { listingId })).tailoredCvExternalPrompt.instructions
+    async () => {
+      // A switch while the request is out fetches again, so the prompt never trails the choice.
+      let template
+      let text
+      do {
+        template = cv.value?.template
+        text = (await gql(PROMPT, { listingId, template })).tailoredCvExternalPrompt.instructions
+      } while (template !== cv.value?.template)
+      promptTemplate.value = template
+      return text
+    }
   )
-
+  // A prompt already on screen is fetched again, so the copied text matches the new template. One
+  // loaded before the draft went out without a template, which the API reads as Detailed.
+  watch(
+    () => cv.value?.template,
+    (template) => {
+      const shown = promptTemplate.value ?? 'DETAILED'
+      if (instructions.value && !promptLoading.value && template !== shown) void loadPrompt()
+    }
+  )
   // Returns the API's error to show next to the pasted JSON, or null when the reply was taken in.
   const previewing = ref(false)
   // `scope` takes one section from the reply: the API has a single whole-CV prompt.
@@ -521,7 +571,7 @@ export const useTailoredCvDraft = (
     previewing.value = true
     try {
       const { previewTailoredCvDraft } = await gql(PREVIEW, {
-        input: { listingId, json: json.trim() }
+        input: { listingId, json: json.trim(), template: promptTemplate.value ?? cv.value.template }
       })
       const { candidate, errors } = previewTailoredCvDraft
       if (!candidate) return errors?.[0]?.message ?? ERROR_MESSAGES.generic
@@ -531,11 +581,14 @@ export const useTailoredCvDraft = (
         const value = getCvSection(next, scope)
         if (value === undefined) return 'The reply has nothing for this section.'
         offer(scope, value, fillsDirectly())
-      } else if (fillsDirectly()) {
-        cv.value = next
-        suggestions.value = []
       } else {
-        for (const { key, value } of changedCvSections(cv.value, next)) offer(key, value, false)
+        writtenTemplate.value = promptTemplate.value ?? cv.value.template
+        if (fillsDirectly()) {
+          cv.value = next
+          suggestions.value = []
+        } else {
+          for (const { key, value } of changedCvSections(cv.value, next)) offer(key, value, false)
+        }
       }
       return null
     } catch (e) {
@@ -640,6 +693,7 @@ export const useTailoredCvDraft = (
     analyzing,
     analyzingKey,
     progress,
+    writtenTemplate,
     analyzeAll,
     analyzeSection,
     requestCount,

@@ -60,12 +60,23 @@ const profile = {
   translations: [{ language: 'NORWEGIAN', headline: 'Utvikler', summary: null }],
   experiences: [
     {
+      id: 1,
       title: 'Developer',
       employer: 'Acme',
+      translations: [],
       bullets: [{ id: 10, text: 'Built apps', translations: [] }]
     }
   ],
-  educations: [],
+  educations: [
+    {
+      id: 2,
+      school: 'NTNU',
+      degree: 'Bachelor',
+      field: 'Computer science',
+      translations: [{ language: 'NORWEGIAN', degree: 'Bachelor', field: null }],
+      bullets: []
+    }
+  ],
   certifications: [],
   projects: []
 } as unknown as ProfileData
@@ -105,6 +116,8 @@ beforeEach(() => {
   applyError = ''
   translation = {
     bullets: [{ id: 10, text: 'Bygde apper' }],
+    experiences: [],
+    educations: [],
     headline: 'Utvikler med erfaring',
     summary: 'Jeg bygger apper.'
   }
@@ -137,12 +150,45 @@ describe('TranslationAiModal', () => {
     expect(applyRequests()[0]!.variables).toEqual({
       bullets: [{ id: 10, text: 'Bygde nettapper' }],
       headline: 'Utvikler med erfaring',
+      summary: null,
+      experiences: [],
+      educations: []
+    })
+  })
+
+  it('reviews job titles and education next to their bullets and sends each education once', async () => {
+    translation = {
+      bullets: [{ id: 10, text: 'Bygde apper' }],
+      experiences: [{ id: 1, title: 'Utvikler' }],
+      educations: [{ id: 2, degree: 'Bachelorgrad', field: 'Informatikk' }],
+      headline: null,
       summary: null
+    }
+    const wrapper = await suggest()
+    expect(queryAll('compare-current').map((p) => p.textContent?.trim())).toEqual([
+      'Developer',
+      'Built apps',
+      'Bachelor',
+      'Computer science'
+    ])
+    expect(document.body.textContent).toContain('Job title · Acme')
+    expect(document.body.textContent).toContain('Field of study · NTNU')
+
+    // Untick the degree: the field still goes out, and null leaves the saved degree alone.
+    await click(
+      queryAll('translation-ai-row')[2]!.querySelector<HTMLElement>('button[role="checkbox"]')!
+    )
+    await click(query('translation-ai-apply')!)
+
+    await vi.waitFor(() => expect(wrapper.emitted('changed')).toHaveLength(1))
+    expect(applyRequests()[0]!.variables).toMatchObject({
+      experiences: [{ id: 1, title: 'Utvikler' }],
+      educations: [{ id: 2, degree: null, field: 'Informatikk' }]
     })
   })
 
   it('says so when everything is already translated', async () => {
-    translation = { bullets: [], headline: null, summary: null }
+    translation = { bullets: [], experiences: [], educations: [], headline: null, summary: null }
     await suggest()
     expect(query('translation-ai-empty')!.textContent).toContain('up to date')
   })

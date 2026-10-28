@@ -71,7 +71,7 @@ const use = (summary: string) => {
 <template>
   <AppAiModal
     v-model:open="open"
-    title="Generate summary"
+    title="Write your summary with AI"
     :description="
       suggestion
         ? 'Nothing changes until you use it and save.'
@@ -133,7 +133,7 @@ const use = (summary: string) => {
 
     <template #actions>
       <UButton v-if="suggestion" data-testid="summary-ai-use" @click="use(suggestion)"
-        >Use suggestion</UButton
+        >Use in summary</UButton
       >
       <UButton
         v-else-if="tab === 'builtin'"
@@ -142,11 +142,12 @@ const use = (summary: string) => {
         :disabled="busy || needsConfirm"
         data-testid="summary-ai-suggest"
         @click="suggest"
-        >Generate summary</UButton
+        >Write summary</UButton
       >
-      <UButton v-else :disabled="!reply.trim()" data-testid="summary-ai-preview" @click="preview"
-        >Use reply</UButton
-      >
+      <!-- An empty field takes the reply straight away; existing text is compared first. -->
+      <UButton v-else :disabled="!reply.trim()" data-testid="summary-ai-preview" @click="preview">{{
+        current.trim() ? 'Preview summary' : 'Fill summary'
+      }}</UButton>
     </template>
   </AppAiModal>
 </template>

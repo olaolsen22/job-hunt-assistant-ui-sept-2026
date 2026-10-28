@@ -19,18 +19,18 @@ const single = computed(() => companyName !== undefined)
 const copyText = computed(() =>
   single.value
     ? {
-        title: 'Research company',
+        title: 'Research this company with AI',
         description: 'Fill in the form from what the AI finds about this company.',
         help: 'Only empty fields are filled. Your saved values are kept.',
         run: 'Research company',
         apply: 'Fill form'
       }
     : {
-        title: 'Research companies',
-        description: 'Add companies, with their details, from a list of names or a page.',
-        help: 'Details like description, links, size and skills are saved as researched.',
+        title: 'Research companies with AI',
+        description: 'Adds companies, with their details, to the list from names or a page.',
+        help: 'Details like description, links, size and skills come with each row. Nothing is saved until you save the list.',
         run: 'Research companies',
-        apply: 'Add companies'
+        apply: 'Add to list'
       }
 )
 
@@ -54,7 +54,7 @@ const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(o
   }
 })
 
-watch([json, text, tab], () => (error.value = ''))
+watch([json, text], () => (error.value = ''))
 watch(error, (value) => {
   if (!value) errorDetail.value = ''
 })
@@ -129,6 +129,7 @@ const retryConfirmed = () => {
         v-if="needsConfirm"
         :message="safetyMessage"
         :loading="parsing"
+        :disabled="!text.trim()"
         @retry="retryConfirmed"
       />
       <AppAiErrorAlert

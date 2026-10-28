@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ProfileData } from '~/composables/useProfile'
+import type { CvCandidate } from '~/composables/useProfileCvImport'
 import {
   createCvDraft,
   reviewCvSelection,
@@ -92,30 +93,38 @@ const requestClose = () => {
     confirmOpen.value = true
   } else open.value = false
 }
-watch([cv, json, tab], () => {
+// A read CV whose profile refresh failed: trying again only refreshes, so a paid parse isn't
+// repeated. Other input makes it stale.
+let unreviewed: CvCandidate | undefined
+watch([cv, json, tab], () => (unreviewed = undefined))
+watch([cv, json], () => {
   error.value = ''
 })
 const runParse = async () => {
   if (locked.value || !canParse.value) return
   error.value = ''
-  const result = tab.value === 'paste' ? await api.parse(cv.value) : await api.preview(json.value)
-  if (tab.value === 'paste') refreshUsage()
-  if (result.error !== undefined) {
-    error.value = result.error
-    errorCode.value = result.code
-    return
+  if (!unreviewed) {
+    const result = tab.value === 'paste' ? await api.parse(cv.value) : await api.preview(json.value)
+    if (tab.value === 'paste') refreshUsage()
+    if (result.error !== undefined) {
+      error.value = result.error
+      errorCode.value = result.code
+      return
+    }
+    method.value = tab.value === 'paste' ? 'builtin' : 'own'
+    unreviewed = result.value
   }
-  method.value = tab.value === 'paste' ? 'builtin' : 'own'
   refreshing.value = true
   try {
     await props.refreshProfile()
-    draft.value = createCvDraft(result.value, props.profile)
+    draft.value = createCvDraft(unreviewed, props.profile)
+    unreviewed = undefined
     attempted.value = false
     serverIssues.value = []
     saveError.value = saveDetails.value = ''
     reviewing.value = true
   } catch {
-    error.value = ERROR_MESSAGES.generic
+    error.value = `${ERROR_MESSAGES.generic} Your CV was read; trying again only reloads your profile.`
   } finally {
     refreshing.value = false
   }
@@ -203,9 +212,11 @@ const save = async () => {
   <!-- Complete history forms need more width than a simple prompt modal. -->
   <AppAiModal
     v-model:open="open"
-    title="Import English CV"
+    title="Import your English CV with AI"
     :description="
-      reviewing ? 'Review and select what to save.' : 'Parse your CV, then review it before saving.'
+      reviewing
+        ? 'Review and select what to save.'
+        : 'Analyze your CV, then review it before saving.'
     "
     :busy="locked"
     wide
@@ -224,7 +235,7 @@ const save = async () => {
       <template v-else>
         <AppAiMethodTabs
           v-model="tab"
-          :builtin="[{ label: 'Paste CV', value: 'paste', icon: 'i-lucide-clipboard-paste' }]"
+          :builtin="[{ label: 'Built-in AI', value: 'paste', icon: 'i-lucide-sparkles' }]"
           :disabled="locked"
         />
         <template v-if="tab === 'paste'">
@@ -346,7 +357,7 @@ const save = async () => {
           :disabled="locked || !canParse"
           data-testid="cv-parse"
           @click="parse"
-          >{{ tab === 'paste' ? 'Parse CV' : 'Preview changes' }}</UButton
+          >{{ tab === 'paste' ? 'Analyze CV' : 'Preview changes' }}</UButton
         >
       </template>
     </template>
@@ -355,7 +366,7 @@ const save = async () => {
     v-model:open="confirmOpen"
     :title="pending === 'close' ? 'Discard CV review?' : 'Replace CV review?'"
     description="Your unsaved review edits will be discarded."
-    :confirm-label="pending === 'close' ? 'Discard' : 'Parse again'"
+    :confirm-label="pending === 'close' ? 'Discard' : 'Analyze again'"
     @confirm="confirm"
   />
 </template>

@@ -24,7 +24,7 @@ watch(
   },
   { immediate: true }
 )
-watch([pasted, tab], () => (error.value = ''))
+watch(pasted, () => (error.value = ''))
 
 const extraTabs = [{ label: 'Paste a letter', value: 'letter', icon: 'i-lucide-clipboard-paste' }]
 
@@ -55,7 +55,7 @@ const retry = () => {
 <template>
   <AppAiModal
     v-model:open="open"
-    title="Write the body"
+    title="Write the letter body"
     description="The letter loads into the editor. Nothing is saved until you save it."
     :busy="busy"
   >
@@ -115,7 +115,7 @@ const retry = () => {
         :icon="tab === 'builtin' ? 'i-lucide-sparkles' : 'i-lucide-file-input'"
         :color="replacesEdits ? 'warning' : 'primary'"
         :loading="busy"
-        :disabled="(tab !== 'builtin' && !pasted.trim()) || editor.needsConfirm.value"
+        :disabled="tab === 'builtin' ? editor.needsConfirm.value : !pasted.trim()"
         data-testid="cover-letter-source-run"
         @click="submit"
         >{{

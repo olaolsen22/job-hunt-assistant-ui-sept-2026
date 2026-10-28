@@ -5,6 +5,8 @@ import type { TailoredCvSectionKey } from '~/utils/tailoredCv'
 // Built-in or your own AI for the whole CV (no `scope`) or one section. Nothing runs until the
 // owner picks: built-in shows today's usage and the request count first; your own AI is copy,
 // paste, preview. The editor's state comes in whole, since this drives its analysis and preview.
+// Built-in runs on the page (live progress and suggestions); the page reopens this modal when the
+// API's safeguards stop a run, so the retry confirm and limit link sit where the run started.
 const {
   ai,
   scope = undefined,
@@ -34,6 +36,11 @@ const analyze = () => {
   open.value = false
   emit('analyze')
 }
+// The owner accepted that the repeat may be charged again.
+const retry = () => {
+  ai.confirmRetry()
+  analyze()
+}
 
 const preview = async () => {
   error.value = (await ai.preview(json.value, scope)) ?? ''
@@ -46,7 +53,7 @@ const preview = async () => {
 <template>
   <AppAiModal
     v-model:open="open"
-    :title="`Optimize ${scopeLabel} with AI`"
+    :title="`Tailor ${scopeLabel} with AI`"
     description="Results show in the editor for review. Nothing saves until you save the draft."
     :busy="ai.previewing.value"
   >
@@ -56,13 +63,16 @@ const preview = async () => {
         Makes {{ requests }} AI {{ requests === 1 ? 'request' : 'requests' }}.
       </p>
       <AppAiCostNotice :usage="usage" data-testid="tailored-cv-ai-usage" />
-      <!-- The retry runs on the page, where the overlay and per-section errors are. -->
-      <UAlert
+      <AppAiRetryConfirm
         v-if="ai.needsConfirm.value"
-        color="warning"
-        variant="subtle"
-        icon="i-lucide-triangle-alert"
-        title="The last run may already have been charged. Confirm the retry on the page first."
+        :message="ai.safetyMessage.value"
+        @retry="retry"
+      />
+      <AppAiErrorAlert
+        v-else-if="ai.safetyCode.value"
+        :title="ai.safetyMessage.value"
+        :code="ai.safetyCode.value"
+        data-testid="tailored-cv-ai-error"
       />
     </template>
     <AppAiOwnSteps
@@ -81,7 +91,7 @@ const preview = async () => {
         :disabled="ai.needsConfirm.value"
         data-testid="tailored-cv-ai-run"
         @click="analyze"
-        >Optimize</UButton
+        >Tailor</UButton
       >
       <UButton
         v-else

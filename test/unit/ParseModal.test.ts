@@ -389,5 +389,30 @@ describe('ParseModal', () => {
       expect(confirm()).toBeNull()
       wrapper.unmount()
     })
+
+    it('keeps the retry on the source that was sent, and off without its input', async () => {
+      respondToBuiltInParse(safetyError('operation-interrupted'))
+      sentRequestIds = []
+      const wrapper = await openPaste()
+      await click('parse-builtin-run')
+      await vi.waitFor(() =>
+        expect(document.body.querySelector('[data-testid="ai-retry-confirm"]')).not.toBeNull()
+      )
+
+      const radios = [
+        ...document.body.querySelectorAll<HTMLButtonElement>(
+          '[data-testid="parse-source"] [role="radio"]'
+        )
+      ]
+      expect(radios.length).toBeGreaterThan(0)
+      expect(radios.every((radio) => radio.disabled)).toBe(true)
+      const retry = () =>
+        document.body.querySelector<HTMLButtonElement>('[data-testid="ai-retry-confirm-run"]')!
+      expect(retry().disabled).toBe(false)
+      await typeAd('')
+      expect(retry().disabled).toBe(true)
+      expect(sentRequestIds).toHaveLength(1)
+      wrapper.unmount()
+    })
   })
 })

@@ -120,6 +120,7 @@ export const tailoredCvFromProfile = (
     referencesOnRequest: false,
     sectionOrder: 'STANDARD',
     contentStyle: 'BULLETS',
+    template: 'DETAILED',
     links: profile.links.map((l) => ({ label: linkLabel(l), url: l.url })),
     summary: translated?.summary ?? profile.summary ?? '',
     experiences: profile.experiences.map((e) => experienceFromProfile(e, profile, language)),
@@ -223,6 +224,7 @@ export const tailoredCvFromContent = (content: TailoredCvContent): TailoredCv =>
   referencesOnRequest: content.referencesOnRequest,
   sectionOrder: content.sectionOrder,
   contentStyle: content.contentStyle,
+  template: content.template,
   links: [...(content.links ?? [])],
   summary: content.summary ?? '',
   experiences: [...(content.experiences ?? [])].map((e) => withTechnologies(withBullets(e))),
@@ -259,6 +261,7 @@ export const toTailoredCvInput = (cv: TailoredCv): TailoredCvContentInput => {
     referencesOnRequest: cv.referencesOnRequest,
     sectionOrder: cv.sectionOrder,
     contentStyle: cv.contentStyle,
+    template: cv.template,
     summary: blankToNull(cv.summary),
     links: cv.links
       .filter((l) => l.url.trim())
@@ -319,9 +322,42 @@ export const setCvSection = (cv: TailoredCv, key: TailoredCvSectionKey, value: u
   ;(cv as Record<string, unknown>)[key] = value
 }
 
+// The lists whose profile items the owner can remove from this CV and add back.
+export type CvProfileList = 'experiences' | 'educations' | 'certifications' | 'projects' | 'skills'
+type ProfileItem = { sourceEntryId?: number | null; sourceSkillId?: number | null }
+const profileItemId = (item: ProfileItem) => item.sourceEntryId ?? item.sourceSkillId
+
+// The profile's items this CV doesn't have, in profile order and the draft's language.
+export const missingFromProfile = <K extends CvProfileList>(
+  cv: TailoredCv,
+  profile: ProfileData,
+  list: K
+): TailoredCv[K] => {
+  const present = new Set((cv[list] as ProfileItem[]).map(profileItemId))
+  return (tailoredCvFromProfile(profile, cv.language)[list] as ProfileItem[]).filter(
+    (item) => !present.has(profileItemId(item))
+  ) as TailoredCv[K]
+}
+
+// Puts a profile item back where the profile has it, before the first entry that comes later
+// there. Skills go last: their order is the owner's or the AI's, not the profile's.
+export const addFromProfile = <K extends CvProfileList>(
+  cv: TailoredCv,
+  profile: ProfileData,
+  list: K,
+  item: TailoredCv[K][number]
+) => {
+  const items = cv[list] as ProfileItem[]
+  if (list === 'skills') return void items.push(item)
+  const order = (profile[list] as { id: number }[]).map((e) => e.id)
+  const rank = (e: ProfileItem) => order.indexOf(e.sourceEntryId ?? -1)
+  const at = items.findIndex((e) => rank(e) > rank(item))
+  items.splice(at === -1 ? items.length : at, 0, item)
+}
+
 // Turns one built-in analysis result into the section value it suggests, or null when it failed.
-// Only the selected profile bullets/skills are kept (bullets in profile order, skills in the AI's
-// order); the owner's edits to an entry's other fields (title, employer, school...) stay.
+// Bullets are the result's own text (shortened for the Concise template), skills the selected profile
+// skills in the AI's order; the owner's edits to an entry's other fields (title, employer, school...) stay.
 export const cvSectionFromAnalysis = (
   cv: TailoredCv,
   profile: ProfileData,
@@ -337,9 +373,10 @@ export const cvSectionFromAnalysis = (
       .map((s) => skillFromProfile(s, cv.language))
     return { key: 'skills', value }
   }
-  const selected = new Set(result.selectedBulletIds)
-  const pick = (bullets: readonly { id: number; text: string }[]) =>
-    bulletsOf(bullets.filter((b) => selected.has(b.id)))
+  const bullets = (result.bullets ?? []).map((b) => ({
+    text: b.text,
+    sourceBulletId: b.sourceBulletId
+  }))
   if (result.section === 'EDUCATION') {
     const source = profile.educations.find((e) => e.id === result.sourceEntryId)
     if (!source) return null
@@ -351,7 +388,7 @@ export const cvSectionFromAnalysis = (
       key,
       value: {
         ...current,
-        bullets: pick(source.bullets),
+        bullets,
         paragraph: result.paragraph ?? current.paragraph
       }
     }
@@ -369,7 +406,7 @@ export const cvSectionFromAnalysis = (
       key,
       value: {
         ...current,
-        bullets: pick(source.bullets),
+        bullets,
         paragraph: result.paragraph ?? current.paragraph,
         technologies: result.technologies ? [...result.technologies] : current.technologies
       }
@@ -387,7 +424,7 @@ export const cvSectionFromAnalysis = (
     key,
     value: {
       ...current,
-      bullets: pick(source.bullets),
+      bullets,
       paragraph: result.paragraph ?? current.paragraph,
       technologies: result.technologies ? [...result.technologies] : current.technologies
     }
@@ -398,6 +435,7 @@ export const cvSectionFromAnalysis = (
 export const mergeExternalCandidate = (cv: TailoredCv, external: TailoredCv): TailoredCv => ({
   ...external,
   sectionOrder: cv.sectionOrder,
+  template: cv.template,
   fullName: cv.fullName,
   email: cv.email,
   phone: cv.phone,

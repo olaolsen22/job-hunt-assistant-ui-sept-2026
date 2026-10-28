@@ -89,4 +89,17 @@ describe('QuestionAiModal', () => {
 
     expect(query('question-ai-error')?.textContent).toContain('Model overloaded (busy)')
   })
+
+  it('leaves a built-in error behind when switching to your own AI', async () => {
+    result = { status: 'FAILED', candidate: null, error: 'Model overloaded', errorCode: 'busy' }
+    await generate()
+    // Reka tabs switch on mousedown.
+    ;[...document.body.querySelectorAll<HTMLElement>('[role="tab"]')]
+      .find((t) => t.textContent?.includes('own AI'))!
+      .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await flushPromises()
+
+    expect(query('question-ai-json')).not.toBeNull()
+    expect(document.body.textContent).not.toContain('Model overloaded')
+  })
 })

@@ -31,24 +31,13 @@ const {
   apply: applyRows
 } = useTextRewriteReview(open, reply)
 
-const currentBullets = computed(
-  () =>
-    new Map(
-      [
-        ...profile.experiences,
-        ...profile.educations,
-        ...profile.certifications,
-        ...profile.projects
-      ]
-        .flatMap((e) => e.bullets)
-        .map((b) => [b.id, b.text])
-    )
-)
+// Bullet id → its entry's name (so rows say where they belong) and the bullet itself.
+const bulletInfo = computed(() => profileBullets(profile))
 
 const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(open, {
   onOpen: () => api.loadPrompt()
 })
-watch([reply, tab], () => (error.value = ''))
+watch(reply, () => (error.value = ''))
 
 const startReview = ({ bullets, headline, summary }: SkillWording) =>
   start([
@@ -78,14 +67,14 @@ const startReview = ({ bullets, headline, summary }: SkillWording) =>
       : []),
     // An id that isn't on the profile can't be applied, so it starts unticked and stays that way.
     ...bullets.map((b) => {
-      const current = currentBullets.value.get(b.id)
+      const info = bulletInfo.value.get(b.id)
       return {
         key: `bullet-${b.id}`,
-        label: 'Bullet',
+        label: info?.name ? `Bullet · ${info.name}` : 'Bullet',
         bulletId: b.id,
-        current,
+        current: info?.bullet.text,
         text: b.text,
-        include: current != null
+        include: !!info
       }
     })
   ])
@@ -127,7 +116,7 @@ const apply = () => {
 <template>
   <AppAiModal
     v-model:open="open"
-    title="Fix skill wording"
+    title="Fix skill wording with AI"
     :description="
       rows
         ? 'Review each change. Nothing changes until you apply it.'
@@ -142,7 +131,7 @@ const apply = () => {
         <AppAiReviewEmpty
           v-if="!rows.length"
           icon="i-lucide-spell-check"
-          text="Nothing to change"
+          text="The AI found no skill names to fix. Nothing to change."
           data-testid="wording-empty"
         />
         <template v-else>

@@ -5,8 +5,9 @@ import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-uti
 import AddPage from '~/pages/listings/add.vue'
 import EditPage from '~/pages/listings/[id]/edit.vue'
 
-const { navigateTo } = vi.hoisted(() => ({ navigateTo: vi.fn() }))
+const { navigateTo, toastAdd } = vi.hoisted(() => ({ navigateTo: vi.fn(), toastAdd: vi.fn() }))
 mockNuxtImport('navigateTo', () => navigateTo)
+mockNuxtImport('useToast', () => () => ({ add: toastAdd }))
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
 
 describe('Leaving a listing form after saving', () => {
@@ -30,7 +31,55 @@ describe('Leaving a listing form after saving', () => {
     await flushPromises()
     document.body.querySelector<HTMLElement>('[data-testid="confirm-modal-confirm"]')!.click()
 
-    await vi.waitFor(() => expect(navigateTo).toHaveBeenCalledWith('/listings', { replace: true }))
+    await vi.waitFor(() =>
+      expect(navigateTo).toHaveBeenCalledWith('/listings/7', { replace: true })
+    )
+    wrapper.unmount()
+  })
+
+  it('links to the existing listing in a toast when the ad URL is already saved', async () => {
+    navigateTo.mockClear()
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: () => ({
+        data: {
+          createListing: {
+            listing: null,
+            previousAttempts: null,
+            errors: [
+              {
+                __typename: 'DuplicateListingError',
+                message: 'A listing with this URL already exists (890).',
+                existingListingId: 890
+              }
+            ]
+          }
+        }
+      })
+    })
+    const wrapper = await mountSuspended(AddPage, { attachTo: document.body })
+    await flushPromises()
+
+    Object.assign(wrapper.vm.state, {
+      title: 'Frontend Developer',
+      companyName: 'Acme',
+      jobRoleName: 'Developer',
+      url: 'https://example.com/job'
+    })
+    wrapper.vm.confirmOpen = true
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-modal-confirm"]')!.click()
+
+    await vi.waitFor(() =>
+      expect(toastAdd).toHaveBeenCalledWith(
+        expect.objectContaining({
+          color: 'error',
+          actions: [expect.objectContaining({ to: '/listings/890' })]
+        })
+      )
+    )
+    expect(wrapper.find('[data-testid="add-listing-error"]').exists()).toBe(false)
+    expect(navigateTo).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

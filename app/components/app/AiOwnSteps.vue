@@ -59,9 +59,12 @@ const help = computed(() =>
       :title="promptError"
       :data-testid="`${testidPrefix}-prompt-error`"
     >
-      <UButton color="neutral" variant="soft" icon="i-lucide-rotate-ccw" @click="ai.loadPrompt()"
-        >Retry loading prompt</UButton
-      >
+      <!-- Only a prompt that never loaded needs refetching; a failed copy points to View prompt. -->
+      <template v-if="!instructions" #default>
+        <UButton color="neutral" variant="soft" icon="i-lucide-rotate-ccw" @click="ai.loadPrompt()"
+          >Retry loading prompt</UButton
+        >
+      </template>
     </AppAiErrorAlert>
 
     <details v-if="instructions" class="text-sm">

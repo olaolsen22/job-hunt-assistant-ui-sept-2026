@@ -113,6 +113,7 @@ const filledProfile = {
       startMonth: '2020-01-01',
       endMonth: null,
       skills: [{ id: 1, name: 'Vue', translations: [] }],
+      translations: [],
       bullets: [bullet(100, 'Led a team', 0)]
     }
   ],
@@ -125,6 +126,7 @@ const filledProfile = {
       location: null,
       startMonth: '2015-08-01',
       endMonth: '2018-06-01',
+      translations: [],
       bullets: []
     }
   ],
@@ -1247,6 +1249,96 @@ describe('ProfilePage translations', () => {
     wrapper.unmount()
   })
 
+  it('translates a job title and then opens the entry’s first untranslated bullet', async () => {
+    const { wrapper, requests } = await mountPage(withTranslation(), (body) =>
+      body.query.includes('setProfileExperienceTranslation(')
+        ? {
+            setProfileExperienceTranslation: {
+              profileExperienceTranslation: { id: 1 },
+              errors: null
+            }
+          }
+        : undefined
+    )
+    await startTranslating(wrapper)
+
+    const [title] = wrapper.findAll('[data-testid="profile-entry-translation-add"]')
+    await title!.trigger('click')
+    setInputIn(wrapper, '[data-testid="profile-entry-translation-title"]', ' Developer ')
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-entry-translation"] form').trigger('submit')
+
+    await vi.waitFor(() =>
+      expect(
+        requests.find((r) => r.query.includes('setProfileExperienceTranslation('))!.variables.input
+      ).toEqual({ experienceId: 10, language: 'ENGLISH', title: 'Developer', isMachine: false })
+    )
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="profile-bullet-translation-input"]').exists()).toBe(true)
+    )
+    wrapper.unmount()
+  })
+
+  it('sends both education fields when editing one, and shows what changed per field', async () => {
+    const profile = {
+      ...withTranslation(),
+      educations: [
+        {
+          ...filledProfile.educations[0]!,
+          translations: [
+            {
+              id: 950,
+              language: 'ENGLISH',
+              degree: 'Bachelor',
+              field: 'Computer science',
+              sourceDegree: 'Bachelorgrad',
+              sourceField: 'CS',
+              isMachine: true,
+              isDegreeStale: true,
+              isFieldStale: false
+            }
+          ]
+        }
+      ]
+    }
+    const { wrapper, requests } = await mountPage(profile, (body) =>
+      body.query.includes('setProfileEducationTranslation(')
+        ? {
+            setProfileEducationTranslation: {
+              profileEducationTranslation: { id: 950 },
+              errors: null
+            }
+          }
+        : undefined
+    )
+    await startTranslating(wrapper)
+
+    // Only the stale degree is compared; the job title row has no translation, so this is the education's.
+    await wrapper.get('[data-testid="profile-entry-translation-changes"]').trigger('click')
+    const diffs = wrapper.findAll('[data-testid="profile-entry-translation-diff"]')
+    expect(diffs).toHaveLength(1)
+    expect(diffs[0]!.text()).toContain('Bachelorgrad')
+
+    // Full replace: the untouched field goes out too, so it isn't cleared.
+    await chooseAction(wrapper, '[data-testid="profile-entry-translation-actions"]', 'Edit')
+    setInputIn(wrapper, '[data-testid="profile-entry-translation-degree"]', 'BSc')
+    await flushPromises()
+    await wrapper.get('[data-testid="profile-entry-translation"] form').trigger('submit')
+
+    await vi.waitFor(() =>
+      expect(
+        requests.find((r) => r.query.includes('setProfileEducationTranslation('))!.variables.input
+      ).toEqual({
+        educationId: 20,
+        language: 'ENGLISH',
+        degree: 'BSc',
+        field: 'Computer science',
+        isMachine: false
+      })
+    )
+    wrapper.unmount()
+  })
+
   it('shows stale and machine badges only when flagged', async () => {
     const { wrapper } = await mountPage(withTranslation(tr()))
     await startTranslating(wrapper)
@@ -1322,7 +1414,7 @@ describe('ProfilePage translations', () => {
     const { wrapper } = await mountPage(withTranslation(tr()))
     await startTranslating(wrapper)
     expect(wrapper.get('[data-testid="profile-translating-progress"]').text()).toContain(
-      '1 of 1 bullets'
+      '1 of 3 translated'
     )
     expect(wrapper.find('[data-testid="profile-translate-toggle"]').exists()).toBe(false)
 

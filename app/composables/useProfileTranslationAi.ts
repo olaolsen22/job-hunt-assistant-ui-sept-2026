@@ -1,3 +1,4 @@
+import type { VariablesOf } from 'gql.tada'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { AiOutcome } from '~/utils/aiOutcome'
 import type { SkillWording } from '~/composables/useSkillWording'
@@ -20,6 +21,15 @@ const SUGGEST = graphql(`
             id
             text
           }
+          experiences {
+            id
+            title
+          }
+          educations {
+            id
+            degree
+            field
+          }
           headline
           summary
         }
@@ -41,9 +51,18 @@ const APPLY = graphql(`
     $bullets: [ProfileBulletTextInput!]!
     $headline: String
     $summary: String
+    $experiences: [ProfileExperienceTitleTextInput!]
+    $educations: [ProfileEducationTextInput!]
   ) {
     applyProfileTranslation(
-      input: { language: NORWEGIAN, bullets: $bullets, headline: $headline, summary: $summary }
+      input: {
+        language: NORWEGIAN
+        bullets: $bullets
+        headline: $headline
+        summary: $summary
+        experiences: $experiences
+        educations: $educations
+      }
     ) {
       profile {
         id
@@ -58,11 +77,39 @@ const APPLY = graphql(`
   }
 `)
 
-// Same shape as a skill wording draft: only missing or out-of-date items, null = nothing to change.
-export type ProfileTranslationDraft = SkillWording
-// Pasted replies use the wording reply's JSON shape; the server validates on apply.
-export const parseTranslationReply = (reply: string): ProfileTranslationDraft | null =>
-  parseWordingReply(reply)
+// A skill wording draft plus job titles and education: only missing or out-of-date items,
+// null = nothing to change.
+export type ProfileTranslationDraft = SkillWording & {
+  experiences: { id: number; title: string }[]
+  educations: { id: number; degree: string | null; field: string | null }[]
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+const optionalText = (value: unknown) => (typeof value === 'string' ? value : null)
+
+// Pasted replies use the wording reply's JSON shape plus optional `experiences`/`educations`;
+// entries that aren't shaped right are dropped, and the server validates the rest on apply.
+export const parseTranslationReply = (reply: string): ProfileTranslationDraft | null => {
+  const wording = parseWordingReply(reply)
+  if (!wording) return null
+  const draft = parseDraft(reply)!
+  const list = (value: unknown) =>
+    (Array.isArray(value) ? value : []).filter(
+      (item): item is Record<string, unknown> => isObject(item) && typeof item.id === 'number'
+    )
+  return {
+    ...wording,
+    experiences: list(draft.experiences)
+      .filter((e) => typeof e.title === 'string')
+      .map((e) => ({ id: e.id as number, title: e.title as string })),
+    educations: list(draft.educations).map((e) => ({
+      id: e.id as number,
+      degree: optionalText(e.degree),
+      field: optionalText(e.field)
+    }))
+  }
+}
 
 // English → Norwegian only; the API rejects translating into the profile's own language.
 export const useProfileTranslationAi = () => {
@@ -82,6 +129,12 @@ export const useProfileTranslationAi = () => {
           ? {
               value: {
                 bullets: result.translation.bullets.map(({ id, text }) => ({ id, text })),
+                experiences: result.translation.experiences.map(({ id, title }) => ({ id, title })),
+                educations: result.translation.educations.map(({ id, degree, field }) => ({
+                  id,
+                  degree: degree ?? null,
+                  field: field ?? null
+                })),
                 headline: result.translation.headline ?? null,
                 summary: result.translation.summary ?? null
               }
@@ -89,7 +142,7 @@ export const useProfileTranslationAi = () => {
           : { error: result?.error ?? ERROR_MESSAGES.generic }
     )
 
-  const apply = async (draft: ProfileTranslationDraft): Promise<{ error?: string }> => {
+  const apply = async (draft: VariablesOf<typeof APPLY>): Promise<{ error?: string }> => {
     busy.value = true
     try {
       const { applyProfileTranslation: payload } = await gql(APPLY, draft)

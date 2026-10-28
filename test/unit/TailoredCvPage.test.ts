@@ -133,6 +133,23 @@ const click = async (id: string) => {
 
 const ops = (name: string) => calls.filter((c) => c.query.includes(`mutation ${name}`))
 
+// Opens a menu from the keyboard (Reka opens it on pointerdown, not click) and finds an item.
+const menuItem = async (trigger: HTMLElement, label: string) => {
+  trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await flushPromises()
+  return [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (item) => item.textContent?.trim() === label
+  )!
+}
+const chooseMenuItem = async (trigger: HTMLElement, label: string) => {
+  ;(await menuItem(trigger, label)).click()
+  await flushPromises()
+}
+const confirmReset = () =>
+  [...document.body.querySelectorAll('button')]
+    .find((b) => b.textContent?.trim() === 'Reset to profile')!
+    .click()
+
 beforeEach(() => {
   clearNuxtData()
   calls = []
@@ -274,12 +291,16 @@ describe('Tailored CV page', () => {
       await runWholeCv()
 
       expect(ops('AnalyzeTailoredCvSection')).toHaveLength(1)
+      // The modal reopens where the run started, with the confirm instead of a plain run.
+      await vi.waitFor(() => expect(el('ai-retry-confirm')).not.toBeNull())
       expect(el('ai-retry-confirm')!.textContent).toContain('Stopped: operation-interrupted')
-      await click('tailored-cv-optimize')
-      await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
       expect((el('tailored-cv-ai-run') as HTMLButtonElement).disabled).toBe(true)
-      document.body.querySelector<HTMLElement>('[role="dialog"] button')?.click()
-      await flushPromises()
+
+      // Another section's AI button still offers the retry of the run that failed.
+      await click('ai-modal-cancel')
+      await click('tailored-cv-summary-analyze')
+      await vi.waitFor(() => expect(el('ai-retry-confirm')).not.toBeNull())
+      expect(document.body.textContent).toContain('Tailor your CV with AI')
 
       await click('ai-retry-confirm-run')
       await vi.waitFor(() => expect(ops('AnalyzeTailoredCvSection')).toHaveLength(5))
@@ -336,8 +357,10 @@ describe('Tailored CV page', () => {
     await mountPage()
     const projects = () => el('tailored-cv-projects')!
     await vi.waitFor(() => expect(el('tailored-cv-projects')).not.toBeNull())
-    projects().querySelector<HTMLElement>('[data-testid="tailored-cv-entry-analyze"]')!.click()
-    await flushPromises()
+    await chooseMenuItem(
+      projects().querySelector<HTMLElement>('[data-testid="tailored-cv-entry-actions"]')!,
+      'Tailor with AI'
+    )
     await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
     await click('tailored-cv-ai-run')
 
@@ -436,6 +459,29 @@ describe('Tailored CV page', () => {
     })
   })
 
+  it('restores a Concise draft with bullets only, and asks for a new run after switching', async () => {
+    savedDraft = savedSummary()
+    savedDraft.content.template = 'CONCISE'
+    savedDraft.content.contentStyle = 'PARAGRAPH'
+    const wrapper = await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-template')).not.toBeNull())
+    expect(el('tailored-cv-template')!.textContent).toContain('Concise')
+    // Concise prints bullets, so the entry format shows that and can't be changed.
+    expect(el('tailored-cv-content-style')!.textContent).toContain('Bullets')
+    expect((el('tailored-cv-content-style') as HTMLButtonElement).disabled).toBe(true)
+    expect(el('tailored-cv-template-changed')).toBeNull()
+
+    wrapper
+      .findAllComponents(USelect)
+      .find((s) => s.vm.$attrs['data-testid'] === 'tailored-cv-template')!
+      .vm.$emit('update:modelValue', 'DETAILED')
+    await flushPromises()
+    // The owner's paragraph choice comes back, and the entries wait for a new run.
+    expect(el('tailored-cv-content-style')!.textContent).toContain('Paragraphs')
+    expect(el('tailored-cv-template-changed')).not.toBeNull()
+    expect(ops('AnalyzeTailoredCvSection')).toHaveLength(0)
+  })
+
   it('copies the external prompt and shows a rejected reply inline', async () => {
     savedDraft = savedSummary()
     previewReply = {
@@ -500,18 +546,18 @@ describe('Tailored CV page', () => {
     savedDraft = savedSummary()
     savedDraft.content.contentStyle = 'PARAGRAPH'
     savedDraft.content.sectionOrder = 'DEVELOPER'
+    savedDraft.content.template = 'CONCISE'
     savedDraft.content.referencesOnRequest = true
     await mountPage()
     await vi.waitFor(() => expect(summaryValue()).toBe('Mine'))
-    expect((el('tailored-cv-reset') as HTMLButtonElement).disabled).toBe(false)
+    const reset = await menuItem(el('tailored-cv-more')!, 'Reset to profile…')
+    expect(reset.hasAttribute('data-disabled')).toBe(false)
 
-    await click('tailored-cv-reset')
+    reset.click()
+    await flushPromises()
     expect(document.body.textContent).toContain('Reset to your profile?')
     expect(summaryValue()).toBe('Mine')
-    const confirm = [...document.body.querySelectorAll('button')].find(
-      (b) => b.textContent?.trim() === 'Reset'
-    )!
-    confirm.click()
+    confirmReset()
     await vi.waitFor(() => expect(summaryValue()).not.toBe('Mine'))
 
     expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
@@ -524,6 +570,7 @@ describe('Tailored CV page', () => {
     expect(ops('SaveTailoredCvDraft')[0]!.variables.input.content).toMatchObject({
       contentStyle: 'PARAGRAPH',
       sectionOrder: 'DEVELOPER',
+      template: 'CONCISE',
       referencesOnRequest: true
     })
   })
@@ -534,15 +581,58 @@ describe('Tailored CV page', () => {
     await mountPage()
     await vi.waitFor(() => expect(summaryValue()).toBe('Mine'))
 
-    await click('tailored-cv-reset')
-    ;[...document.body.querySelectorAll('button')]
-      .find((b) => b.textContent?.trim() === 'Reset')!
-      .click()
+    await chooseMenuItem(el('tailored-cv-more')!, 'Reset to profile…')
+    confirmReset()
     await vi.waitFor(() =>
       expect(document.body.textContent).not.toContain('Reset to your profile?')
     )
     expect(summaryValue()).toBe('Mine')
     expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved')
+  })
+
+  it('removes an entry with Undo, and brings it back from the profile later', async () => {
+    await mountPage()
+    const experience = () => el('tailored-cv-experience')!
+    const entries = () => experience().querySelectorAll('[data-testid="tailored-cv-entry"]')
+    const actions = () =>
+      experience().querySelector<HTMLElement>('[data-testid="tailored-cv-entry-actions"]')!
+    await vi.waitFor(() => expect(entries()).toHaveLength(1))
+
+    await chooseMenuItem(actions(), 'Remove from this CV')
+    expect(entries()).toHaveLength(0)
+    expect(el('tailored-cv-experience-empty')!.textContent).toContain('Use Add to bring it back')
+    const toast = useToast().toasts.value.at(-1)!
+    expect(toast.title).toBe('Removed Developer from this CV')
+    toast.actions![0]!.onClick!(new MouseEvent('click'))
+    await flushPromises()
+    expect(entries()).toHaveLength(1)
+
+    await chooseMenuItem(actions(), 'Remove from this CV')
+    await chooseMenuItem(el('tailored-cv-experience-add')!, 'Developer at Acme')
+    expect(entries()).toHaveLength(1)
+    expect(experience().textContent).toContain('Developer')
+    const none = await menuItem(
+      el('tailored-cv-experience-add')!,
+      'Everything from your profile is already here'
+    )
+    expect(none.hasAttribute('data-disabled')).toBe(true)
+  })
+
+  it('shows an entry once while editing it', async () => {
+    await mountPage()
+    const experience = () => el('tailored-cv-experience')!
+    await vi.waitFor(() => expect(experience().textContent).toContain('Developer'))
+    const readBullets = () => experience().querySelectorAll('ul.list-disc li').length
+    expect(readBullets()).toBeGreaterThan(0)
+
+    experience().querySelector<HTMLElement>('[data-testid="tailored-cv-entry-edit"]')!.click()
+    await flushPromises()
+    expect(readBullets()).toBe(0)
+    expect(experience().querySelector('textarea')).not.toBeNull()
+
+    experience().querySelector<HTMLElement>('[data-testid="tailored-cv-entry-done"]')!.click()
+    await flushPromises()
+    expect(readBullets()).toBeGreaterThan(0)
   })
 
   describe('Generate PDF', () => {

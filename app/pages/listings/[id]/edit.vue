@@ -32,6 +32,7 @@ watch(
 )
 
 const toastSuccess = useSuccessToast()
+const toastDuplicate = useDuplicateListingToast()
 const listingForm = useTemplateRef('listingForm')
 
 const filledFromAd = ref(false)
@@ -56,7 +57,8 @@ const onConfirm = async () => {
     })
     if (updateListing.errors?.length) {
       confirmOpen.value = false
-      errorMessages.value = updateListing.errors.map((e) => e.message)
+      if (!toastDuplicate(updateListing.errors))
+        errorMessages.value = updateListing.errors.map((e) => e.message)
       return
     }
     clearNuxtState('name-lookups')

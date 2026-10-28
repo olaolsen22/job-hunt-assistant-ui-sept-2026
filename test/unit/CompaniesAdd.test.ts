@@ -214,7 +214,7 @@ describe('Add companies', () => {
     )
     // Worded for adding a list, unlike the edit page's single company.
     expect(document.body.textContent).toContain('Research companies')
-    expect(inBody('companies-parse-apply')!.textContent).toContain('Add companies')
+    expect(inBody('companies-parse-apply')!.textContent).toContain('Add to list')
     // Handed over once: a later visit starts empty.
     expect(useState<string[]>('companiesResearchNames').value).toEqual([])
 

@@ -38,6 +38,8 @@ registerEndpoint('/graphql', {
       return { data: { tailoredCvDraft: savedDraft } }
     if (body.query.includes('mutation AnalyzeTailoredCvSection'))
       return { data: { analyzeTailoredCvSection: analyze(body.variables.input!) } }
+    if (body.query.includes('query TailoredCvExternalPrompt'))
+      return { data: { tailoredCvExternalPrompt: { instructions: 'Tailor this CV' } } }
     if (body.query.includes('mutation PreviewTailoredCvDraft'))
       return {
         data: {
@@ -155,6 +157,42 @@ describe('useTailoredCvDraft', () => {
     expect(state.cv.value!.summary).toBe('Tailored summary')
   })
 
+  it('skips entries removed from this CV, so they are neither analyzed nor offered back', async () => {
+    savedDraft = {
+      id: 1,
+      updatedAt: '2026-10-12T10:00:00Z',
+      content: toTailoredCvInput({ ...tailoredCvFromProfile(cvProfile()), experiences: [] })
+    }
+    const state = await setup()
+    state.init()
+    expect(state.requestCount()).toBe(3)
+    await state.analyzeAll()
+
+    expect(operations()).toEqual([
+      'AnalyzeTailoredCvSection:PROJECT',
+      'AnalyzeTailoredCvSection:SKILLS',
+      'AnalyzeTailoredCvSection:SUMMARY'
+    ])
+    expect(state.suggestions.value.map((s) => s.key)).not.toContain('experience:10')
+    expect(state.cv.value!.experiences).toEqual([])
+  })
+
+  it('keeps the old written style when a whole-CV run writes nothing', async () => {
+    analyze = (input) => ({
+      result: { ...succeeded(input).result, status: 'FAILED', error: 'Model timed out' },
+      errors: null
+    })
+    const state = await setup()
+    state.init()
+    state.cv.value!.template = 'CONCISE'
+    await state.analyzeAll()
+    expect(state.writtenTemplate.value).toBe('DETAILED')
+
+    analyze = succeeded
+    await state.analyzeAll()
+    expect(state.writtenTemplate.value).toBe('CONCISE')
+  })
+
   it('stops the whole-CV run on an unknown default model and refetches the models', async () => {
     analyze = () => ({ result: null, errors: [unknownModelError] })
     const state = await setup()
@@ -195,7 +233,12 @@ describe('useTailoredCvDraft', () => {
       if (input.section !== 'PROJECT') return reply
       return {
         ...reply,
-        result: { ...reply.result, selectedBulletIds: [200], technologies: ['Nuxt', 'Vue'] }
+        result: {
+          ...reply.result,
+          selectedBulletIds: [200],
+          bullets: [{ text: 'Project bullet', sourceBulletId: 200 }],
+          technologies: ['Nuxt', 'Vue']
+        }
       }
     }
     const state = await setup()
@@ -237,6 +280,31 @@ describe('useTailoredCvDraft', () => {
     expect(state.cv.value!.projects[0]!.technologies).toEqual(['Nuxt'])
   })
 
+  it('sends the chosen template to analysis, the prompt and the preview of its reply', async () => {
+    analyze = succeeded
+    const state = await setup()
+    state.init()
+    state.cv.value!.template = 'CONCISE'
+    await state.analyzeSection('summary')
+    await state.loadPrompt()
+    await state.preview('{}')
+    const sent = (name: string) =>
+      calls.filter((c) => c.query.includes(name)).map((c) => c.variables)
+    expect(sent('mutation AnalyzeTailoredCvSection')[0]!.input).toMatchObject({
+      template: 'CONCISE'
+    })
+    expect(sent('query TailoredCvExternalPrompt')[0]).toMatchObject({ template: 'CONCISE' })
+    expect(sent('mutation PreviewTailoredCvDraft')[0]!.input).toMatchObject({
+      template: 'CONCISE'
+    })
+
+    // A prompt already loaded is fetched again for the new template.
+    state.cv.value!.template = 'DETAILED'
+    await vi.waitFor(() =>
+      expect(sent('query TailoredCvExternalPrompt')[1]).toMatchObject({ template: 'DETAILED' })
+    )
+  })
+
   it('saves the complete candidate and is clean afterwards', async () => {
     const state = await setup()
     state.init()
@@ -269,7 +337,8 @@ describe('useTailoredCvDraft', () => {
         'referencesOnRequest',
         'sectionOrder',
         'skills',
-        'summary'
+        'summary',
+        'template'
       ].sort()
     )
     expect(state.dirty.value).toBe(false)

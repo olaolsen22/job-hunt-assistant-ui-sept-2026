@@ -335,6 +335,18 @@ describe('SkillCleanupModal', () => {
     expect(query('cleanup-error')!.textContent).toContain('Page size too large')
   })
 
+  it('keeps the paid plan when the skills cannot be loaded, so trying again only loads them', async () => {
+    skillsError = 'Page size too large'
+    await mountOpen()
+    await click('cleanup-suggest')
+    await vi.waitFor(() => expect(query('cleanup-error')?.textContent).toContain('plan is kept'))
+
+    skillsError = ''
+    await click('cleanup-suggest')
+    await vi.waitFor(() => expect(query('cleanup-apply')).not.toBeNull())
+    expect(requests.filter((r) => r.query.includes('mutation SuggestSkillCleanup'))).toHaveLength(1)
+  })
+
   it('closes an untouched plan without asking, and asks once a change was removed', async () => {
     const wrapper = await suggest()
     await click('ai-modal-cancel')

@@ -4,7 +4,7 @@ import type { ProfileEducation } from '~/composables/useProfile'
 const props = defineProps<{ educations: readonly ProfileEducation[] }>()
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
-const { locale } = useProfileTranslation()
+const { locale, translating } = useProfileTranslation()
 
 const DELETE_EDUCATION = graphql(`
   mutation DeleteProfileEducation($input: DeleteProfileEducationInput!) {
@@ -83,6 +83,9 @@ const remove = async () => {
         @delete="deleting = e"
         @changed="emit('changed')"
       >
+        <template v-if="translating" #translation>
+          <ProfileEntryTranslation :education="e" @changed="emit('changed')" />
+        </template>
       </ProfileEntry>
     </ul>
   </ProfileSection>

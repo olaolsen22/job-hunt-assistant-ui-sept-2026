@@ -35,7 +35,8 @@ const DELETE_TRANSLATION = graphql(`
   }
 `)
 
-const { target, editingBulletId, nextUntranslated } = useProfileTranslation()
+const { target, editingKey, nextUntranslated } = useProfileTranslation()
+const key = computed(() => translationKey('bullet', props.bullet.id))
 const targetLabel = computed(() => LANGUAGE_OPTIONS.find((o) => o.value === target.value)!.label)
 // A visible tag tells the translation from its original without relying on an icon.
 const targetCode = computed(() => (target.value === 'ENGLISH' ? 'EN' : 'NO'))
@@ -43,10 +44,10 @@ const translation = computed(() =>
   props.bullet.translations.find((t) => t.language === target.value)
 )
 
-// One bullet at a time, page-wide, so a save can hand editing on to the next bullet.
+// One item at a time, page-wide, so a save can hand editing on to the next one.
 const editing = computed({
-  get: () => editingBulletId.value === props.bullet.id,
-  set: (on: boolean) => (editingBulletId.value = on ? props.bullet.id : null)
+  get: () => editingKey.value === key.value,
+  set: (on: boolean) => (editingKey.value = on ? key.value : null)
 })
 const text = ref('')
 const showChanges = ref(false)
@@ -78,7 +79,7 @@ const save = async () => {
     return setProfileBulletTranslation.errors
   })
   if (!ok) return
-  editingBulletId.value = nextUntranslated(props.bullet.id)
+  editingKey.value = nextUntranslated(key.value)
   emit('changed')
 }
 

@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import type { TailoredCvBullet } from '~/utils/tailoredCv'
+import type { DropdownMenuItem } from '@nuxt/ui'
+import type { TailoredCvBullet, TailoredCvSectionKey } from '~/utils/tailoredCv'
 
 // One experience/education/certification/project of the tailored CV. Read view by default, since
 // entries can have many bullets; Edit opens its fields (the `fields` slot) and bullets in place.
 // Edits go straight into the candidate, so a collapsed entry keeps them for Save draft.
-// `analyzable` adds a per-entry AI button; its error and suggestion go in the default slot.
-defineProps<{
+// `analyzable` adds "Tailor with AI" to its menu; that call's error and suggestion show under the
+// header, like a section's.
+const props = defineProps<{
   contentStyle: 'BULLETS' | 'PARAGRAPH'
   title: string
   subtitle?: string | null
@@ -17,11 +19,39 @@ defineProps<{
   analyzable?: boolean
   analyzing?: boolean
   disabled?: boolean
+  error?: string
+  errorDetail?: string
+  suggestions?: { key: TailoredCvSectionKey; current: string; suggested: string }[]
 }>()
 const bullets = defineModel<TailoredCvBullet[]>('bullets', { required: true })
 const paragraph = defineModel<string | null>('paragraph')
-const emit = defineEmits<{ remove: []; analyze: [] }>()
+const emit = defineEmits<{
+  remove: []
+  analyze: []
+  accept: [key: TailoredCvSectionKey]
+  dismiss: [key: TailoredCvSectionKey]
+}>()
 const editing = ref(false)
+
+// AI and Remove share a menu, so the trash can isn't one mis-tap away from Edit.
+const items = computed<DropdownMenuItem[]>(() => [
+  ...(props.analyzable
+    ? [
+        {
+          label: 'Tailor with AI',
+          icon: 'i-lucide-sparkles',
+          disabled: props.disabled,
+          onSelect: () => emit('analyze')
+        }
+      ]
+    : []),
+  {
+    label: 'Remove from this CV',
+    icon: 'i-lucide-trash-2',
+    color: 'error' as const,
+    onSelect: () => emit('remove')
+  }
+])
 </script>
 
 <template>
@@ -52,18 +82,6 @@ const editing = ref(false)
         </p>
       </div>
       <UButton
-        v-if="analyzable"
-        icon="i-lucide-sparkles"
-        color="neutral"
-        variant="ghost"
-        size="sm"
-        :loading="analyzing"
-        :disabled="disabled"
-        :aria-label="`Optimize ${title} with AI`"
-        data-testid="tailored-cv-entry-analyze"
-        @click="emit('analyze')"
-      />
-      <UButton
         :icon="editing ? 'i-lucide-check' : 'i-lucide-pencil'"
         color="neutral"
         variant="ghost"
@@ -73,19 +91,42 @@ const editing = ref(false)
         data-testid="tailored-cv-entry-edit"
         @click="editing = !editing"
       />
-      <UButton
-        icon="i-lucide-trash-2"
-        color="neutral"
-        variant="ghost"
-        size="sm"
-        :aria-label="`Remove ${title}`"
-        data-testid="tailored-cv-entry-remove"
-        @click="emit('remove')"
-      />
+      <UDropdownMenu :items="items" :content="{ align: 'end' }">
+        <UButton
+          icon="i-lucide-ellipsis-vertical"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          :loading="analyzing"
+          :aria-label="`Actions for ${title}`"
+          class="shrink-0"
+          data-testid="tailored-cv-entry-actions"
+        />
+      </UDropdownMenu>
     </div>
 
-    <!-- empty:hidden drops the gap when the slot renders nothing (its v-if comments don't count). -->
-    <div class="mt-3 space-y-3 empty:hidden"><slot /></div>
+    <div v-if="error || suggestions?.length" class="mt-3 space-y-3">
+      <AppAiErrorAlert
+        v-if="error"
+        :title="error"
+        :detail="errorDetail"
+        data-testid="tailored-cv-entry-error"
+      >
+        <template v-if="analyzable" #default>
+          <UButton color="neutral" variant="outline" :disabled="disabled" @click="emit('analyze')"
+            >Retry</UButton
+          >
+        </template>
+      </AppAiErrorAlert>
+      <ListingsTailoredCvSuggestion
+        v-for="s in suggestions"
+        :key="s.key"
+        :current="s.current"
+        :suggested="s.suggested"
+        @accept="emit('accept', s.key)"
+        @dismiss="emit('dismiss', s.key)"
+      />
+    </div>
 
     <div v-if="editing" class="mt-3 space-y-3">
       <div class="grid gap-3 sm:grid-cols-2">
@@ -97,7 +138,7 @@ const editing = ref(false)
           :rows="4"
           autoresize
           class="w-full"
-          placeholder="Summarize the relevant experience, or optimize with AI."
+          placeholder="Summarize the relevant experience, or tailor it with AI."
           data-testid="tailored-cv-entry-paragraph-input"
           @update:model-value="paragraph = $event"
         />
@@ -116,6 +157,7 @@ const editing = ref(false)
             icon="i-lucide-x"
             color="neutral"
             variant="ghost"
+            size="sm"
             :aria-label="`Remove bullet ${i + 1}`"
             @click="bullets.splice(i, 1)"
           />
@@ -129,8 +171,18 @@ const editing = ref(false)
           >Add bullet</UButton
         >
       </fieldset>
+      <!-- The header's check scrolls away on long entries, so the panel ends with its own. -->
+      <UButton
+        icon="i-lucide-check"
+        color="neutral"
+        variant="subtle"
+        size="sm"
+        data-testid="tailored-cv-entry-done"
+        @click="editing = false"
+        >Done editing</UButton
+      >
     </div>
-    <template v-if="contentStyle === 'PARAGRAPH'">
+    <template v-else-if="contentStyle === 'PARAGRAPH'">
       <p
         v-if="paragraph?.trim()"
         class="mt-2 whitespace-pre-wrap break-words text-sm"

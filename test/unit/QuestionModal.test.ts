@@ -114,4 +114,27 @@ describe('QuestionModal', () => {
     await save()
     expect(requests.at(-1)?.variables.input).toMatchObject({ id: 9, question: 'Why us?' })
   })
+
+  it('fetches the AI prompt for the question being edited, each time the AI opens', async () => {
+    const wrapper = await mount()
+    const promptIds = () =>
+      requests
+        .filter((r) => r.query.includes('query ApplicationAnswerExternalPrompt'))
+        .map((r) => (r.variables as unknown as { questionId: number }).questionId)
+    const openAi = async () => {
+      document.body.querySelector<HTMLElement>('[data-testid="question-ai-open"]')!.click()
+      await flushPromises()
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain('Draft the answer with AI')
+      )
+    }
+    await openAi()
+    await vi.waitFor(() => expect(promptIds()).toEqual([3]))
+
+    document.body.querySelector<HTMLElement>('[data-testid="ai-modal-cancel"]')!.click()
+    await flushPromises()
+    await wrapper.setProps({ question: { ...question, id: 4 } })
+    await openAi()
+    await vi.waitFor(() => expect(promptIds()).toEqual([3, 4]))
+  })
 })

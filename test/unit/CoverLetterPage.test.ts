@@ -276,6 +276,30 @@ describe('Cover letter page', () => {
     expect(ops('SaveCoverLetterDraft')).toHaveLength(0)
   })
 
+  it('still loads a pasted letter while an interrupted AI run waits for its retry', async () => {
+    generateReply = () => ({
+      result: null,
+      errors: [
+        {
+          __typename: 'AiSafetyError',
+          message: 'Stopped: operation-interrupted',
+          code: 'operation-interrupted'
+        }
+      ]
+    })
+    await mountPage()
+    await chooseSource('Generate with AI')
+    await click('cover-letter-source-run')
+    await vi.waitFor(() => expect(el('ai-retry-confirm')).not.toBeNull())
+    expect((el('cover-letter-source-run') as HTMLButtonElement).disabled).toBe(true)
+
+    await chooseSource('Paste my own letter')
+    await type('[data-testid="cover-letter-paste"]', 'Pasted')
+    expect((el('cover-letter-source-run') as HTMLButtonElement).disabled).toBe(false)
+    await click('cover-letter-source-run')
+    await vi.waitFor(() => expect(paragraphs()).toEqual(['Pasted']))
+  })
+
   it('warns before a pasted letter replaces unsaved edits, and Discard brings them back after several loads', async () => {
     savedDraft = {
       id: 1,

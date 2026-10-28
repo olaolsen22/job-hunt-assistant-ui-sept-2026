@@ -60,8 +60,12 @@ const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(o
 
 // Closing mid-parse would throw the result away.
 const busy = computed(() => parsing.value || parsingUrl.value || parsingNewUrl.value)
+// The chosen source has what a built-in parse needs (the saved link counts on an edit page).
+const canParse = computed(() =>
+  source.value === 'link' ? !!props.listingId || !!link.value.trim() : !!ad.value.trim()
+)
 
-watch([json, ad, link, source, tab], () => (error.value = ''))
+watch([json, ad, link, source], () => (error.value = ''))
 watch(error, (value) => {
   if (!value) errorDetail.value = ''
 })
@@ -118,20 +122,23 @@ const retryConfirmed = () => {
 <template>
   <AppAiModal
     v-model:open="open"
-    title="Analyze ad"
-    description="Fill in the form from the job ad."
+    title="Analyze the ad with AI"
+    description="Fills the form from the job ad. Nothing is saved until you save the listing."
     :busy="busy"
   >
     <AppAiMethodTabs v-model="tab" :disabled="busy" />
 
     <!-- Built-in AI runs on the backend's AI key; your own AI doesn't. -->
-    <template v-if="tab === 'builtin'">
+    <!-- Locked while a parse runs, and the source while a retry waits, so the retry (and the
+       result) belong to the input that was sent. -->
+    <fieldset v-if="tab === 'builtin'" :disabled="busy" class="min-w-0 space-y-4">
       <URadioGroup
         v-model="source"
         legend="Ad source"
         :items="builtinSources"
         orientation="horizontal"
         variant="card"
+        :disabled="busy || needsConfirm"
         data-testid="parse-source"
       />
       <template v-if="source === 'link'">
@@ -161,12 +168,15 @@ const retryConfirmed = () => {
           data-testid="parse-ad"
         />
       </UFormField>
+    </fieldset>
 
+    <template v-if="tab === 'builtin'">
       <AppAiCostNotice :usage="usage" data-testid="parse-cost-notice" />
       <AppAiRetryConfirm
         v-if="needsConfirm"
         :message="safetyMessage"
         :loading="busy"
+        :disabled="!canParse"
         @retry="retryConfirmed"
       />
       <AppAiErrorAlert
@@ -245,9 +255,9 @@ const retryConfirmed = () => {
     <template #actions>
       <UButton
         v-if="tab === 'builtin' && source === 'link'"
-        icon="i-lucide-link"
+        icon="i-lucide-sparkles"
         :loading="parsingUrl || parsingNewUrl"
-        :disabled="(!listingId && !link.trim()) || needsConfirm"
+        :disabled="!canParse || needsConfirm"
         data-testid="parse-url"
         @click="parseUrl"
         >Analyze from link</UButton
@@ -256,7 +266,7 @@ const retryConfirmed = () => {
         v-else-if="tab === 'builtin'"
         icon="i-lucide-sparkles"
         :loading="parsing"
-        :disabled="!ad.trim() || needsConfirm"
+        :disabled="!canParse || needsConfirm"
         data-testid="parse-builtin-run"
         @click="parseBuiltIn"
         >Analyze ad</UButton

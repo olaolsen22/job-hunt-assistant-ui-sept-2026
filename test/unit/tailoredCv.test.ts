@@ -91,6 +91,7 @@ describe('tailored CV candidate', () => {
     expect(cv.links).toEqual([{ label: 'GitHub', url: 'https://github.com/owner' }])
     expect(cv.experiences[0]).toMatchObject({ sourceEntryId: 10, employer: 'Acme' })
     expect(cv.contentStyle).toBe('BULLETS')
+    expect(cv.template).toBe('DETAILED')
     expect(cv.experiences[0]!.bullets.map((b) => b.sourceBulletId)).toEqual([100, 101, 102])
     expect(cv.skills.map((s) => s.sourceSkillId)).toEqual([1, 2, 3])
   })
@@ -106,23 +107,28 @@ describe('tailored CV candidate', () => {
     expect(experience.paragraph).toBe('Built checkout flows.')
     cv.experiences[0] = experience
     cv.contentStyle = 'PARAGRAPH'
+    cv.template = 'CONCISE'
     const input = toTailoredCvInput(cv)
     expect(input.contentStyle).toBe('PARAGRAPH')
+    expect(input.template).toBe('CONCISE')
     expect(input.experiences?.[0]?.paragraph).toBe('Built checkout flows.')
   })
 
-  it('keeps only the selected bullets, in profile order, and the edited title', () => {
+  it("takes the result's bullet text over the profile's, and keeps the edited title", () => {
     const cv = tailoredCvFromProfile(profile())
     cv.experiences[0]!.title = 'Senior developer'
-    const section = cvSectionFromAnalysis(cv, profile(), result({ selectedBulletIds: [102, 100] }))
+    // Concise shortens the text; the source ids still point at the profile bullets.
+    const bullets = [
+      { text: 'Built checkout', sourceBulletId: 100 },
+      { text: 'Mentored juniors', sourceBulletId: 102 }
+    ]
+    const section = cvSectionFromAnalysis(
+      cv,
+      profile(),
+      result({ selectedBulletIds: [102, 100], bullets })
+    )
     expect(section?.key).toBe('experience:10')
-    expect(section?.value).toMatchObject({
-      title: 'Senior developer',
-      bullets: [
-        { text: 'Built the checkout', sourceBulletId: 100 },
-        { text: 'Mentored juniors', sourceBulletId: 102 }
-      ]
-    })
+    expect(section?.value).toMatchObject({ title: 'Senior developer', bullets })
   })
 
   it('keeps only the selected skills and takes the suggested summary', () => {
@@ -174,7 +180,12 @@ describe('tailored CV candidate', () => {
     const section = cvSectionFromAnalysis(
       cv,
       p,
-      result({ section: 'EDUCATION', sourceEntryId: 30, selectedBulletIds: [300] })
+      result({
+        section: 'EDUCATION',
+        sourceEntryId: 30,
+        selectedBulletIds: [300],
+        bullets: [{ text: 'Thesis on compilers', sourceBulletId: 300 }]
+      })
     )
     expect(section?.key).toBe('education:30')
     expect(section?.value).toMatchObject({

@@ -6,11 +6,15 @@ type ProfileTranslationState = {
   translating: Ref<boolean>
   target: Ref<Language>
   locale: Ref<string>
-  // The one bullet whose translation is open for editing, if any.
-  editingBulletId: Ref<number | null>
-  // The next bullet after this one, in page order, with no translation yet; null at the end.
-  nextUntranslated: (bulletId: number) => number | null
+  // The one item whose translation is open for editing, if any (see `translationKey`).
+  editingKey: Ref<string | null>
+  // The next item after this one, in page order, with no translation yet; null at the end.
+  nextUntranslated: (key: string) => string | null
 }
+
+// Bullets, job titles and education share one editing slot, so Enter can hand on across them.
+export const translationKey = (kind: 'bullet' | 'experience' | 'education', id: number) =>
+  `${kind}-${id}`
 
 // provide/inject (same as Vue 2): the page owns the mode, and bullets and entry lists deep inside
 // read it without every component passing it down as a prop.

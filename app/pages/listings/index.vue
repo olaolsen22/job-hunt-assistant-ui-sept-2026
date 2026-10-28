@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ListingsFilter, QuickToggle } from '~/composables/useListingsList'
+import type { ListingsFilter } from '~/composables/useListingsList'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Job listings' })
@@ -25,60 +25,58 @@ const narrowed = computed(() => !!(filter.value || search.value || countActiveFa
 // is measured at its final height.
 const firstLoad = computed(() => loading.value && listings.value.length === 0)
 
+// The everyday presets are tabs; the rarely used ones sit in a "More" menu so the row stays short.
 // "All" makes the no-preset state a visible choice, so a preset is left by picking another one.
-const PRESETS = [
-  { value: null, label: 'All', color: 'neutral', icon: 'i-lucide-list' },
-  { value: 'closingSoon', label: 'Closing soon', color: 'error', icon: 'i-lucide-alarm-clock' },
-  { value: 'toAnalyze', label: 'To analyze', color: 'warning', icon: 'i-lucide-clock' },
-  { value: 'archived', label: 'Archived', color: 'neutral', icon: 'i-lucide-archive' }
+const TAB_PRESETS = [
+  { value: null, label: 'All', icon: 'i-lucide-list' },
+  { value: 'closingSoon', label: 'Closing soon', icon: 'i-lucide-alarm-clock' },
+  { value: 'toAnalyze', label: 'To analyze', icon: 'i-lucide-clock' }
+] as const
+const MORE_PRESETS = [
+  { value: 'withExpired', label: 'Incl. expired', icon: 'i-lucide-calendar-x' },
+  { value: 'archived', label: 'Archived', icon: 'i-lucide-archive' }
 ] as const
 
 const presetCount = (value: ListingsFilter | null) => counts.value[value ?? 'all']
+// "Incl. expired" only earns its place when it would show more than "All".
+const presetVisible = (value: ListingsFilter | null) =>
+  !value ||
+  filter.value === value ||
+  (value === 'withExpired' ? counts.value.withExpired > counts.value.all : !!presetCount(value))
 
-// Facets, not presets: each narrows whichever preset is active, so its count does too.
-const QUICK_TOGGLES: {
-  key: QuickToggle
-  label: string
-  icon: string
-  active: () => boolean
-  toggle: () => void
-}[] = [
-  {
-    key: 'preferred',
-    label: 'Preferred locations',
-    icon: 'i-lucide-map-pin',
-    active: () => facets.preferredLocations,
-    toggle: () => (facets.preferredLocations = !facets.preferredLocations)
-  },
-  {
-    key: 'it',
-    label: 'IT',
-    icon: 'i-lucide-monitor',
-    active: () => facets.itRoles,
-    toggle: () => (facets.itRoles = !facets.itRoles)
-  },
-  {
-    key: 'englishPosting',
-    label: 'English posting',
-    icon: 'i-lucide-languages',
-    active: () => facets.englishPosting,
-    toggle: () => (facets.englishPosting = !facets.englishPosting)
-  },
-  {
-    key: 'englishMentioned',
-    label: 'English mentioned',
-    icon: 'i-lucide-message-circle',
-    active: () => facets.englishMentioned,
-    toggle: () => (facets.englishMentioned = !facets.englishMentioned)
-  }
-]
+// UTabs can't hold null, so "all" stands for no preset. A "More" preset matches no tab, leaving
+// none selected while the menu button shows it instead.
+const tab = computed({
+  get: () => filter.value ?? 'all',
+  set: (value: string) => (filter.value = value === 'all' ? null : (value as ListingsFilter))
+})
+const tabItems = computed(() =>
+  TAB_PRESETS.filter((p) => presetVisible(p.value)).map((p) => ({
+    label: p.label,
+    icon: p.icon,
+    value: p.value ?? 'all',
+    badge: firstLoad.value
+      ? undefined
+      : { label: String(presetCount(p.value)), color: 'neutral' as const, variant: 'soft' as const }
+  }))
+)
 
-const quickVisible = computed(() => QUICK_TOGGLES.some((t) => counts.value[t.key] || t.active()))
+const moreActive = computed(() => MORE_PRESETS.find((p) => p.value === filter.value))
+const moreItems = computed(() =>
+  MORE_PRESETS.filter((p) => presetVisible(p.value)).map((p) => ({
+    label: p.label,
+    icon: p.icon,
+    count: presetCount(p.value),
+    onSelect: () => (filter.value = p.value)
+  }))
+)
 
 const heading = computed(() => {
   const n = totalCount.value
+  const plural = `listing${n === 1 ? '' : 's'}`
+  if (filter.value === 'withExpired') return `${n} ${plural} incl. expired`
   const adjective = filter.value === 'archived' ? 'archived' : 'active'
-  return `${n} ${adjective} listing${n === 1 ? '' : 's'}`
+  return `${n} ${adjective} ${plural}`
 })
 
 const clearEverything = () => {
@@ -124,69 +122,43 @@ const ADD_ITEMS = [
     <!-- Kept while a filter is on, so an empty filtered page can still clear it.
          `:facets`, not v-model: the panel edits the composable's reactive object in place. -->
     <template v-if="loading || listings.length || narrowed">
+      <!-- The tabs scroll sideways on narrow phones instead of wrapping; "More" stays in reach. -->
+      <div class="flex items-center gap-2">
+        <div class="min-w-0 overflow-x-auto">
+          <UTabs
+            v-model="tab"
+            :items="tabItems"
+            :content="false"
+            variant="pill"
+            size="sm"
+            aria-label="Show"
+            data-testid="listings-presets"
+          />
+        </div>
+        <UDropdownMenu v-if="moreItems.length" :items="moreItems">
+          <UButton
+            :color="moreActive ? 'primary' : 'neutral'"
+            :variant="moreActive ? 'soft' : 'ghost'"
+            size="sm"
+            :icon="moreActive?.icon"
+            trailing-icon="i-lucide-chevron-down"
+            class="shrink-0"
+            data-testid="listings-presets-more"
+            >{{ moreActive?.label ?? 'More' }}</UButton
+          >
+          <template #item-trailing="{ item }">
+            <span class="text-muted tabular-nums">{{ item.count }}</span>
+          </template>
+        </UDropdownMenu>
+      </div>
+
       <ListingsFilterPanel
         v-model:search="search"
         v-model:sort="sort"
         :facets="facets"
+        :quick-counts="counts"
         :company-name="facets.companyId ? listings[0]?.company.name : undefined"
       />
-
-      <!-- Phones stack two labelled groups so nothing hides off-screen; sm+ flattens them back into one
-           wrapping row (`sm:contents`) and the labels become screen-reader only. -->
-      <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-        <div role="radiogroup" aria-label="Show" class="flex flex-col gap-1 sm:contents">
-          <span class="text-xs text-muted sm:sr-only" aria-hidden="true">Show</span>
-          <div class="flex flex-wrap items-center gap-2 sm:contents">
-            <template v-for="p in PRESETS" :key="p.value ?? 'all'">
-              <UButton
-                v-if="!p.value || presetCount(p.value) || filter === p.value"
-                :color="p.color"
-                :variant="filter === p.value ? 'solid' : 'subtle'"
-                size="sm"
-                class="max-sm:py-2"
-                :class="{ 'cursor-default': filter === p.value }"
-                :icon="p.icon"
-                role="radio"
-                :aria-checked="filter === p.value"
-                :data-testid="`listings-filter-${p.value ?? 'all'}`"
-                @click="filter = p.value"
-                >{{ p.label }}
-                <span v-if="!firstLoad" class="tabular-nums opacity-80">{{
-                  presetCount(p.value)
-                }}</span></UButton
-              >
-            </template>
-          </div>
-        </div>
-        <!-- Presets are one exclusive set, quick toggles independent ones; on sm+ the groups flatten
-             into one row, so a divider keeps them apart. -->
-        <USeparator v-if="quickVisible" orientation="vertical" class="hidden h-5 sm:block" />
-        <div
-          v-if="quickVisible"
-          role="group"
-          aria-label="Narrow by"
-          class="flex flex-col gap-1 sm:contents"
-        >
-          <span class="text-xs text-muted sm:sr-only" aria-hidden="true">Narrow by</span>
-          <div class="flex flex-wrap items-center gap-2 sm:contents">
-            <template v-for="t in QUICK_TOGGLES" :key="t.key">
-              <UButton
-                v-if="counts[t.key] || t.active()"
-                color="primary"
-                :variant="t.active() ? 'solid' : 'outline'"
-                size="sm"
-                class="max-sm:py-2"
-                :icon="t.active() ? 'i-lucide-check' : t.icon"
-                :aria-pressed="t.active()"
-                :data-testid="`listings-filter-${t.key}`"
-                @click="t.toggle"
-                >{{ t.label }}
-                <span class="tabular-nums opacity-80">{{ counts[t.key] }}</span></UButton
-              >
-            </template>
-          </div>
-        </div>
-      </div>
     </template>
 
     <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />

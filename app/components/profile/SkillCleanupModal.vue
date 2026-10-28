@@ -106,7 +106,11 @@ const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(o
     api.loadPrompt()
   }
 })
-watch([reply, tab], () => (error.value = ''))
+watch(reply, () => (error.value = ''))
+// A built-in plan whose skill names failed to load: trying again only loads the names, so a paid
+// plan isn't asked for twice.
+let unshown: CleanupPlan | undefined
+watch(tab, () => (unshown = undefined))
 const { dirty, mark, clear } = useReviewDirty(() => [
   rows.value?.map((r) => [r.skillIds, r.names, r.dropped]),
   translationRows.value.map((t) => t.name),
@@ -114,13 +118,16 @@ const { dirty, mark, clear } = useReviewDirty(() => [
   removalRows.value.map((x) => x.accepted)
 ])
 
-const startReview = async ({ operations, translations, categories, removals }: CleanupPlan) => {
+const startReview = async (plan: CleanupPlan) => {
   // Names are only needed to label the plan, so a plan that can't be shown isn't opened.
   const names = await api.loadSkillNames()
   if (names.error !== undefined) {
-    error.value = names.error
+    error.value = tab.value === 'builtin' ? `${names.error} The plan is kept.` : names.error
+    if (tab.value === 'builtin') unshown = plan
     return
   }
+  unshown = undefined
+  const { operations, translations, categories, removals } = plan
   skillNames.value = names.value
   rows.value = operations.map((op) => ({ key: nextKey++, dropped: false, ...op }))
   translationRows.value = translations.map((t) => ({ key: nextKey++, ...t }))
@@ -138,6 +145,7 @@ const startReview = async ({ operations, translations, categories, removals }: C
 }
 const suggest = async () => {
   error.value = ''
+  if (unshown) return startReview(unshown)
   const result = await api.suggest()
   refreshUsage()
   if (result.error !== undefined) {
@@ -234,7 +242,7 @@ const requestClose = () => (dirty.value ? (discardOpen.value = true) : discard()
 <template>
   <AppAiModal
     v-model:open="open"
-    title="Clean up skills"
+    title="Clean up skills with AI"
     :description="
       rows
         ? 'Review the plan. Nothing changes until you apply it.'
@@ -244,13 +252,12 @@ const requestClose = () => (dirty.value ? (discardOpen.value = true) : discard()
     :close="requestClose"
     wide
   >
-    <AppAiErrorAlert v-if="rows && error" :title="error" data-testid="cleanup-error" />
     <fieldset :disabled="busy" class="min-w-0 space-y-4">
       <div v-if="rows" ref="body" class="space-y-4">
         <AppAiReviewEmpty
           v-if="!hasSuggestions"
           icon="i-lucide-sparkles"
-          text="Nothing to clean up"
+          text="The AI found no duplicates, misspellings or combined skills. Nothing to clean up."
           data-testid="cleanup-empty"
         />
         <!-- Jump links: a long plan can be scanned by kind. Scrolls sideways on phones. -->

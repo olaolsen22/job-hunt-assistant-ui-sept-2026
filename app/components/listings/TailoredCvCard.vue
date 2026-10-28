@@ -64,7 +64,7 @@ const openApply = () => {
           :loading="resetting"
           data-testid="tailored-cv-card-reset"
           @click="resetOpen = true"
-          >Reset CV</UButton
+          >Reset to profile</UButton
         >
       </template>
     </UAlert>
@@ -133,7 +133,6 @@ const openApply = () => {
             color="error"
             variant="ghost"
             class="ml-auto"
-            aria-label="Delete unsent CV PDF"
             data-testid="tailored-cv-card-delete-pdf"
             @click="confirmDeletePdf(pdf)"
             >Delete PDF</UButton
@@ -173,9 +172,9 @@ const openApply = () => {
     />
     <AppConfirmModal
       v-model:open="resetOpen"
-      title="Reset this CV?"
+      title="Reset to your profile?"
       description="The saved draft for this listing is replaced with a fresh copy of your profile. Generated PDFs are kept."
-      confirm-label="Reset CV"
+      confirm-label="Reset to profile"
       :loading="resetting"
       @confirm="reset().then(() => (resetOpen = false))"
     />

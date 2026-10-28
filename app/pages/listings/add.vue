@@ -20,6 +20,9 @@ const CREATE_LISTING = graphql(`
         ... on Error {
           message
         }
+        ... on DuplicateListingError {
+          existingListingId
+        }
       }
     }
   }
@@ -29,6 +32,7 @@ const { state, validate, toInput, fillDraft } = useListingForm()
 const { checkNewNames } = provideNewNames()
 
 const toast = useToast()
+const toastDuplicate = useDuplicateListingToast()
 const parseOpen = ref(false)
 const listingForm = useTemplateRef('listingForm')
 
@@ -54,7 +58,8 @@ const onConfirm = async () => {
     })
     if (createListing.errors?.length) {
       confirmOpen.value = false
-      errorMessages.value = createListing.errors.map((e) => e.message)
+      if (!toastDuplicate(createListing.errors))
+        errorMessages.value = createListing.errors.map((e) => e.message)
       return
     }
     clearNuxtState('name-lookups')
@@ -83,7 +88,7 @@ const onConfirm = async () => {
             icon: 'i-lucide-check'
           }
     )
-    await navigateTo('/listings', { replace: true })
+    await navigateTo(`/listings/${createListing.listing!.id}`, { replace: true })
   } catch {
     confirmOpen.value = false
     errorMessages.value = [ERROR_MESSAGES.generic]

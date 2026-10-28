@@ -3,7 +3,7 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LINK_KIND_OPTIONS } from '~/constants/listing'
 import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 import type { DropdownMenuItem } from '@nuxt/ui'
-import { PROFILE, type ProfileData } from '~/composables/useProfile'
+import { PROFILE, type ProfileBullet, type ProfileData } from '~/composables/useProfile'
 import type { ProfileSectionName } from '~/components/profile/ClearSectionsModal.vue'
 import { STORY_FIELDS } from '~/constants/profileStory'
 
@@ -68,36 +68,60 @@ const bulletsOf = (p: ProfileData) => [
   ...p.certifications.flatMap((e) => e.bullets)
 ]
 
-// Saving one bullet's translation opens the next one still missing, so translating is a run of
-// Enter presses down the page.
-const editingBulletId = ref<number | null>(null)
-watch(translating, () => (editingBulletId.value = null))
-const nextUntranslated = (bulletId: number) => {
-  const bullets = profile.value ? bulletsOf(profile.value) : []
-  const after = bullets.findIndex((b) => b.id === bulletId)
-  return (
-    bullets.slice(after + 1).find((b) => !b.translations.some((t) => t.language === target.value))
-      ?.id ?? null
-  )
+// Everything that can be translated one by one, in page order: an entry's title before its
+// bullets. Education counts once for its degree and field, and only when it has either.
+const translatableItems = (p: ProfileData) => {
+  const translated = (translations: readonly { language: Language }[]) =>
+    translations.some((t) => t.language === target.value)
+  const bullets = (list: readonly ProfileBullet[]) =>
+    list.map((b) => ({ key: translationKey('bullet', b.id), done: translated(b.translations) }))
+  return [
+    ...p.experiences.flatMap((e) => [
+      { key: translationKey('experience', e.id), done: translated(e.translations) },
+      ...bullets(e.bullets)
+    ]),
+    ...p.projects.flatMap((e) => bullets(e.bullets)),
+    ...p.educations.flatMap((e) => [
+      ...(e.degree || e.field
+        ? [{ key: translationKey('education', e.id), done: translated(e.translations) }]
+        : []),
+      ...bullets(e.bullets)
+    ]),
+    ...p.certifications.flatMap((e) => bullets(e.bullets))
+  ]
 }
-provideProfileTranslation({ translating, target, locale, editingBulletId, nextUntranslated })
+
+// Saving one translation opens the next one still missing, so translating is a run of Enter
+// presses down the page.
+const editingKey = ref<string | null>(null)
+watch(translating, () => (editingKey.value = null))
+const nextUntranslated = (key: string) => {
+  const items = profile.value ? translatableItems(profile.value) : []
+  const after = items.findIndex((i) => i.key === key)
+  return items.slice(after + 1).find((i) => !i.done)?.key ?? null
+}
+provideProfileTranslation({ translating, target, locale, editingKey, nextUntranslated })
 const hasTranslations = computed(
   () =>
     !!profile.value &&
     (profile.value.translations.length > 0 ||
+      profile.value.experiences.some((e) => e.translations.length > 0) ||
+      profile.value.educations.some((e) => e.translations.length > 0) ||
       bulletsOf(profile.value).some((b) => b.translations.length > 0))
 )
-// Progress for the translating bar: how many bullets have a translation in the target language.
-const bulletProgress = computed(() => {
-  const bullets = profile.value ? bulletsOf(profile.value) : []
-  const done = bullets.filter((b) => b.translations.some((t) => t.language === target.value))
-  return { done: done.length, total: bullets.length }
+// Progress for the translating bar: how many items have a translation in the target language.
+const translateProgress = computed(() => {
+  const items = profile.value ? translatableItems(profile.value) : []
+  return { done: items.filter((i) => i.done).length, total: items.length }
 })
 const staleCount = computed(() => {
   const p = profile.value
   if (!p) return 0
   return (
     p.translations.filter((t) => t.isHeadlineStale || t.isSummaryStale).length +
+    p.experiences.filter((e) => e.translations.some((t) => t.isStale)).length +
+    p.educations.filter((e) => e.translations.some((t) => t.isDegreeStale || t.isFieldStale))
+      .length +
     bulletsOf(p).filter((b) => b.translations.some((t) => t.isStale)).length
   )
 })
@@ -503,11 +527,12 @@ const contact = computed(() => {
             <p class="font-medium text-highlighted">
               Translating to {{ targetLabel }}
               <span class="font-normal text-muted" data-testid="profile-translating-progress"
-                >· {{ bulletProgress.done }} of {{ bulletProgress.total }} bullets</span
+                >· {{ translateProgress.done }} of {{ translateProgress.total }} translated</span
               >
             </p>
             <p class="text-muted">
-              Summary and bullets only. Titles, dates and other sections are used as written.
+              Summary, job titles, education and bullets. Names, dates and other sections are used
+              as written.
             </p>
           </div>
           <UButton

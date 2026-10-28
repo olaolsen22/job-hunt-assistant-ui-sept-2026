@@ -4,7 +4,7 @@ import type { ProfileExperience } from '~/composables/useProfile'
 const props = defineProps<{ experiences: readonly ProfileExperience[] }>()
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
-const { locale } = useProfileTranslation()
+const { locale, translating } = useProfileTranslation()
 
 const DELETE_EXPERIENCE = graphql(`
   mutation DeleteProfileExperience($input: DeleteProfileExperienceInput!) {
@@ -82,6 +82,9 @@ const remove = async () => {
         @delete="deleting = e"
         @changed="emit('changed')"
       >
+        <template v-if="translating" #translation>
+          <ProfileEntryTranslation :experience="e" @changed="emit('changed')" />
+        </template>
         <div v-if="e.skills.length" class="mt-1 flex flex-wrap gap-1">
           <UBadge v-for="s in e.skills" :key="s.id" color="neutral" variant="subtle" size="sm">{{
             s.name

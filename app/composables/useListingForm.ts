@@ -37,6 +37,9 @@ export const UPDATE_LISTING = graphql(`
         ... on Error {
           message
         }
+        ... on DuplicateListingError {
+          existingListingId
+        }
       }
     }
   }

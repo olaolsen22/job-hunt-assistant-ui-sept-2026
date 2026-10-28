@@ -194,8 +194,10 @@ const refine = async () => {
     </div>
   </AppFormModal>
 
+  <!-- Keyed by question, so its prompt and retry state never carry over to another one. -->
   <ListingsQuestionAiModal
     v-if="savedId"
+    :key="savedId"
     v-model:open="aiOpen"
     :question-id="savedId"
     :char-limit="state.charLimit ?? null"

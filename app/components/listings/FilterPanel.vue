@@ -2,7 +2,8 @@
 import {
   DUE_WITHIN_OPTIONS,
   type ListingsFacets,
-  type ListingsSort
+  type ListingsSort,
+  type QuickToggle
 } from '~/composables/useListingsList'
 import { APPLICATION_STATUS_OPTIONS, LANGUAGE_OPTIONS } from '~/constants/listing'
 
@@ -10,10 +11,23 @@ const facets = defineModel<ListingsFacets>('facets', { required: true })
 const sort = defineModel<ListingsSort>('sort', { required: true })
 const search = defineModel<string>('search', { required: true })
 // The company filter holds an id; the page knows the name from the listings it shows.
-const { companyName = '' } = defineProps<{ companyName?: string }>()
+// Quick counts tell how many listings each switch would leave under the active preset.
+const { companyName = '', quickCounts } = defineProps<{
+  companyName?: string
+  quickCounts: Record<QuickToggle, number>
+}>()
+
+// Yes/no facets with a count each, at the top of the sheet.
+const QUICK_TOGGLES = [
+  { key: 'preferred', facet: 'preferredLocations', label: 'Preferred locations' },
+  { key: 'it', facet: 'itRoles', label: 'IT roles' },
+  { key: 'englishPosting', facet: 'englishPosting', label: 'English posting' },
+  { key: 'englishMentioned', facet: 'englishMentioned', label: 'English mentioned' }
+] as const
 
 const SORT_OPTIONS = [
   { label: 'Due date', value: 'due' },
+  { label: 'Newest posted', value: 'posted' },
   { label: 'Newest added', value: 'newest' },
   { label: 'Recently changed', value: 'changed' }
 ]
@@ -24,23 +38,14 @@ const DUE_ITEMS = [
   ...DUE_WITHIN_OPTIONS.map((days) => ({ label: `Due within ${days} days`, value: days }))
 ]
 
-// These are set outside the sheet (toggles, or the company from a dashboard link), so the Filters badge counts only what is inside it, and the
+// These are set outside the sheet (Favorites, or the company from a dashboard link), so the Filters badge counts only what is inside it, and the
 // sheet's own Clear leaves them alone. Clear all still resets every facet.
 const outsideToggles = () => {
-  const { favorites, preferredLocations, itRoles, englishPosting, englishMentioned, companyId } =
-    facets.value
-  return { favorites, preferredLocations, itRoles, englishPosting, englishMentioned, companyId }
+  const { favorites, companyId } = facets.value
+  return { favorites, companyId }
 }
 const sheetCount = computed(() =>
-  countActiveFacets({
-    ...facets.value,
-    favorites: false,
-    preferredLocations: false,
-    itRoles: false,
-    englishPosting: false,
-    englishMentioned: false,
-    companyId: null
-  })
+  countActiveFacets({ ...facets.value, favorites: false, companyId: null })
 )
 const anyActive = computed(() => countActiveFacets(facets.value) > 0)
 
@@ -58,6 +63,9 @@ const chips = computed(() => {
       label: companyName ? `Company: ${companyName}` : 'Company',
       clear: () => (f.companyId = null)
     },
+    ...QUICK_TOGGLES.map(
+      (t) => f[t.facet] && { key: t.key, label: t.label, clear: () => (f[t.facet] = false) }
+    ),
     f.statuses.length && {
       key: 'status',
       label: `Status: ${labels(APPLICATION_STATUS_OPTIONS, f.statuses)}`,
@@ -198,6 +206,20 @@ const openSheet = () => {
     >
       <template #body>
         <div class="space-y-4">
+          <div class="space-y-3">
+            <USwitch
+              v-for="t in QUICK_TOGGLES"
+              :key="t.key"
+              v-model="facets[t.facet]"
+              :data-testid="`listings-facet-${t.key}`"
+            >
+              <template #label>
+                {{ t.label }}
+                <span class="text-muted tabular-nums">{{ quickCounts[t.key] }}</span>
+              </template>
+            </USwitch>
+          </div>
+          <USeparator />
           <UFormField label="Status">
             <USelectMenu
               v-model="facets.statuses"

@@ -80,6 +80,14 @@ export const PROFILE_FIELDS = graphql(
         id
         employer
         title
+        translations {
+          id
+          language
+          title
+          sourceTitle
+          isMachine
+          isStale
+        }
         location {
           city
           countryCode
@@ -103,6 +111,17 @@ export const PROFILE_FIELDS = graphql(
         school
         degree
         field
+        translations {
+          id
+          language
+          degree
+          field
+          sourceDegree
+          sourceField
+          isMachine
+          isDegreeStale
+          isFieldStale
+        }
         location {
           city
           countryCode

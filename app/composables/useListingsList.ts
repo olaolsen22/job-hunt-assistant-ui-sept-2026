@@ -64,9 +64,9 @@ export const measurePageSize = (grid: HTMLElement, itemHeight = ROW_HEIGHT, gap 
 // The clauses never contain user input; all values travel as variables.
 // Typed like batchDocument: gql.tada can't infer a runtime document, so the result is named here.
 
-const FILTER_KEYS = ['closingSoon', 'toAnalyze', 'archived'] as const
+const FILTER_KEYS = ['closingSoon', 'toAnalyze', 'withExpired', 'archived'] as const
 export type ListingsFilter = (typeof FILTER_KEYS)[number]
-const SORTS = ['due', 'newest', 'changed'] as const
+const SORTS = ['due', 'posted', 'newest', 'changed'] as const
 export type ListingsSort = (typeof SORTS)[number]
 
 export interface ListingsFacets {
@@ -223,6 +223,8 @@ const PRESETS: Record<ListingsFilter | 'none', { args: string; where: string[] }
   none: { args: '', where: [EXPIRY] },
   toAnalyze: { args: '', where: [EXPIRY, 'analyzedAt: { eq: null }'] },
   archived: { args: 'archived: true', where: [] },
+  // Maintenance view: every non-archived listing, also those whose (possibly misparsed) deadline passed.
+  withExpired: { args: '', where: [] },
   closingSoon: { args: '', where: [] }
 }
 
@@ -256,6 +258,7 @@ export type QuickToggle = keyof typeof QUICK
 // UNSPECIFIED: postedOn + 30). dueOn itself isn't sortable, and any client `order` turns the default off.
 const ORDERS = {
   due: undefined,
+  posted: [{ postedOn: 'DESC' }],
   newest: [{ createdAt: 'DESC' }],
   changed: [{ statusChangedAt: 'DESC' }]
 } as const
@@ -342,6 +345,7 @@ export const buildListingsQuery = (
       ${field(filter ?? 'none', ['skip: $skip', 'take: $take', 'search: $search', 'order: $order'], 'items { ...ListingListItem } totalCount')}
       all: ${field('none', ['take: 1', 'search: $search'], 'totalCount')}
       toAnalyze: ${field('toAnalyze', ['take: 1', 'search: $search'], 'totalCount')}
+      withExpired: ${field('withExpired', ['take: 1', 'search: $search'], 'totalCount')}
       archived: ${field('archived', ['take: 1', 'search: $search'], 'totalCount')}
       closingSoon: ${field('closingSoon', ['take: 1', 'search: $search'], 'totalCount')}
       ${quickCounts}
@@ -438,6 +442,7 @@ export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) 
       all: data.value?.all?.totalCount ?? 0,
       closingSoon: data.value?.closingSoon?.totalCount ?? 0,
       toAnalyze: data.value?.toAnalyze?.totalCount ?? 0,
+      withExpired: data.value?.withExpired?.totalCount ?? 0,
       archived: data.value?.archived?.totalCount ?? 0,
       preferred: data.value?.preferred?.totalCount ?? 0,
       it: data.value?.it?.totalCount ?? 0,

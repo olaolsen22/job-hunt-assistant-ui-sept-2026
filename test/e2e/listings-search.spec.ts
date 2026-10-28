@@ -54,7 +54,7 @@ test('searches listings and filters by closing soon', async ({ page }) => {
   await page.goto('/listings')
   await expect(page.getByTestId('listings-total')).toHaveText('2 active listings')
 
-  await page.getByTestId('listings-filter-closingSoon').click()
+  await page.getByRole('tab', { name: /Closing soon/ }).click()
   await expect(page.getByTestId('listings-total')).toHaveText('1 active listing')
 
   await page.getByTestId('listings-search').fill('frontend')

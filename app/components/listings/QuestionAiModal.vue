@@ -20,7 +20,8 @@ const { method, tab, error, usage, refreshUsage } = useAiModalState(open, {
     json.value = ''
     candidate.value = undefined
     draft.value = ''
-    if (!ai.instructions.value) ai.loadPrompt()
+    // Fetched on every open: the prompt holds the saved answer and notes, which change between opens.
+    ai.loadPrompt()
   }
 })
 watch(json, () => (error.value = ''))
@@ -134,13 +135,7 @@ const use = () => {
     </template>
 
     <template v-if="candidate" #back>
-      <UButton
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-arrow-left"
-        @click="candidate = undefined"
-        >Try again</UButton
-      >
+      <UButton color="neutral" variant="subtle" @click="candidate = undefined">Back</UButton>
     </template>
     <template #actions>
       <UButton
@@ -157,7 +152,7 @@ const use = () => {
         :disabled="ai.needsConfirm.value"
         data-testid="question-ai-run"
         @click="submit"
-        >Generate</UButton
+        >Draft answer</UButton
       >
       <UButton
         v-else
