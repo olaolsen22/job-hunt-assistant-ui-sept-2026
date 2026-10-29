@@ -2,11 +2,9 @@
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { TailoredCvBullet, TailoredCvSectionKey } from '~/utils/tailoredCv'
 
-// One experience/education/certification/project of the tailored CV. Read view by default, since
-// entries can have many bullets; Edit opens its fields (the `fields` slot) and bullets in place.
-// Edits go straight into the candidate, so a collapsed entry keeps them for Save draft.
-// `analyzable` adds "Tailor with AI" to its menu; that call's error and suggestion show under the
-// header, like a section's.
+// One experience/education/certification/project of the tailored CV, read only: Edit asks the page
+// to open the entry's modal. `analyzable` adds "Tailor with AI" to its menu; that call's error and
+// suggestion show under the header, like a section's.
 const props = defineProps<{
   contentStyle: 'BULLETS' | 'PARAGRAPH'
   title: string
@@ -22,16 +20,16 @@ const props = defineProps<{
   error?: string
   errorDetail?: string
   suggestions?: { key: TailoredCvSectionKey; current: string; suggested: string }[]
+  bullets: TailoredCvBullet[]
+  paragraph?: string | null
 }>()
-const bullets = defineModel<TailoredCvBullet[]>('bullets', { required: true })
-const paragraph = defineModel<string | null>('paragraph')
 const emit = defineEmits<{
+  edit: []
   remove: []
   analyze: []
   accept: [key: TailoredCvSectionKey]
   dismiss: [key: TailoredCvSectionKey]
 }>()
-const editing = ref(false)
 
 // AI and Remove share a menu, so the trash can isn't one mis-tap away from Edit.
 const items = computed<DropdownMenuItem[]>(() => [
@@ -82,15 +80,17 @@ const items = computed<DropdownMenuItem[]>(() => [
         </p>
       </div>
       <UButton
-        :icon="editing ? 'i-lucide-check' : 'i-lucide-pencil'"
+        icon="i-lucide-pencil"
         color="neutral"
         variant="ghost"
         size="sm"
-        :aria-label="editing ? `Done editing ${title}` : `Edit ${title}`"
-        :aria-expanded="editing"
+        :disabled="analyzing"
+        :aria-label="`Edit ${title}`"
+        class="shrink-0"
         data-testid="tailored-cv-entry-edit"
-        @click="editing = !editing"
-      />
+        @click="emit('edit')"
+        >Edit</UButton
+      >
       <UDropdownMenu :items="items" :content="{ align: 'end' }">
         <UButton
           icon="i-lucide-ellipsis-vertical"
@@ -128,61 +128,7 @@ const items = computed<DropdownMenuItem[]>(() => [
       />
     </div>
 
-    <div v-if="editing" class="mt-3 space-y-3">
-      <div class="grid gap-3 sm:grid-cols-2">
-        <slot name="fields" />
-      </div>
-      <UFormField v-if="contentStyle === 'PARAGRAPH'" label="Paragraph">
-        <UTextarea
-          :model-value="paragraph ?? ''"
-          :rows="4"
-          autoresize
-          class="w-full"
-          placeholder="Summarize the relevant experience, or tailor it with AI."
-          data-testid="tailored-cv-entry-paragraph-input"
-          @update:model-value="paragraph = $event"
-        />
-      </UFormField>
-      <fieldset v-else class="space-y-2">
-        <legend class="mb-2 text-sm font-medium">Bullets</legend>
-        <div v-for="(bullet, i) in bullets" :key="i" class="flex items-start gap-2">
-          <UTextarea
-            v-model="bullet.text"
-            :rows="1"
-            autoresize
-            class="flex-1"
-            :aria-label="`Bullet ${i + 1}`"
-          />
-          <UButton
-            icon="i-lucide-x"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            :aria-label="`Remove bullet ${i + 1}`"
-            @click="bullets.splice(i, 1)"
-          />
-        </div>
-        <UButton
-          icon="i-lucide-plus"
-          color="neutral"
-          variant="subtle"
-          size="sm"
-          @click="bullets.push({ text: '', sourceBulletId: null })"
-          >Add bullet</UButton
-        >
-      </fieldset>
-      <!-- The header's check scrolls away on long entries, so the panel ends with its own. -->
-      <UButton
-        icon="i-lucide-check"
-        color="neutral"
-        variant="subtle"
-        size="sm"
-        data-testid="tailored-cv-entry-done"
-        @click="editing = false"
-        >Done editing</UButton
-      >
-    </div>
-    <template v-else-if="contentStyle === 'PARAGRAPH'">
+    <template v-if="contentStyle === 'PARAGRAPH'">
       <p
         v-if="paragraph?.trim()"
         class="mt-2 whitespace-pre-wrap break-words text-sm"

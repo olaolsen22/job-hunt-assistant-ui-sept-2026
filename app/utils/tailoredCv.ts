@@ -24,6 +24,7 @@ export type TailoredCv = Omit<CandidateBase, 'experiences' | 'projects'> & {
 }
 export type TailoredCvExperience = TailoredCv['experiences'][number]
 export type TailoredCvEducation = TailoredCv['educations'][number]
+export type TailoredCvCertification = TailoredCv['certifications'][number]
 export type TailoredCvProject = TailoredCv['projects'][number]
 export type TailoredCvBullet = TailoredCvExperience['bullets'][number]
 
@@ -324,6 +325,9 @@ export const setCvSection = (cv: TailoredCv, key: TailoredCvSectionKey, value: u
 
 // The lists whose profile items the owner can remove from this CV and add back.
 export type CvProfileList = 'experiences' | 'educations' | 'certifications' | 'projects' | 'skills'
+// The lists whose items are entries with bullets or a paragraph.
+export type CvEntryList = Exclude<CvProfileList, 'skills'>
+export type CvEntry = TailoredCv[CvEntryList][number]
 type ProfileItem = { sourceEntryId?: number | null; sourceSkillId?: number | null }
 const profileItemId = (item: ProfileItem) => item.sourceEntryId ?? item.sourceSkillId
 
@@ -492,7 +496,7 @@ const entryText = (
   return [title, ...body, technologies].filter(Boolean).join('\n')
 }
 
-const proficiencyLabel = (value?: string | null) =>
+export const proficiencyLabel = (value?: string | null) =>
   PROFICIENCY_OPTIONS.find((o) => o.value === value)?.label
 
 // Plain text for one section; also what the suggestion compare view shows.

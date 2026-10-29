@@ -104,3 +104,7 @@ export const OUTCOME_OPTIONS = [
 ] as const
 
 export type Outcome = (typeof OUTCOME_OPTIONS)[number]['value']
+
+// Tailored CV edit modals apply to the page's draft; the page's Save draft persists it.
+export const CV_APPLY_DESCRIPTION =
+  'Applies to this CV only. Save the draft on the page to keep it.'

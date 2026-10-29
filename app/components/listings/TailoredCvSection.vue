@@ -3,13 +3,14 @@ import type { DropdownMenuItem } from '@nuxt/ui'
 import type { TailoredCvSectionKey } from '~/utils/tailoredCv'
 
 // A card of the tailored CV editor: its own AI action and error, so one failed AI call
-// stays in its section, and its pending suggestions above the editable content. `addItems` adds
-// an Add menu for bringing removed profile items back.
+// stays in its section, and its pending suggestions above the content. `editable` adds an Edit
+// button for the page's modal; `addItems` adds an Add menu for bringing removed profile items back.
 defineProps<{
   title: string
   testid: string
   error?: string
   errorDetail?: string
+  editable?: boolean
   analyzable?: boolean
   analyzing?: boolean
   disabled?: boolean
@@ -21,6 +22,7 @@ defineProps<{
   addLabel?: string
 }>()
 const emit = defineEmits<{
+  edit: []
   analyze: []
   accept: [key: TailoredCvSectionKey]
   dismiss: [key: TailoredCvSectionKey]
@@ -29,8 +31,20 @@ const emit = defineEmits<{
 
 <template>
   <AppCard :title="title" :data-testid="testid">
-    <template v-if="analyzable || addItems" #actions>
-      <div class="flex items-center gap-2">
+    <template v-if="editable || analyzable || addItems" #actions>
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        <UButton
+          v-if="editable"
+          icon="i-lucide-pencil"
+          color="neutral"
+          variant="subtle"
+          size="sm"
+          :disabled="analyzing"
+          :aria-label="`Edit ${title.toLowerCase()}`"
+          :data-testid="`${testid}-edit`"
+          @click="emit('edit')"
+          >Edit</UButton
+        >
         <UDropdownMenu v-if="addItems" :items="addItems" :content="{ align: 'end' }">
           <UButton
             icon="i-lucide-plus"
