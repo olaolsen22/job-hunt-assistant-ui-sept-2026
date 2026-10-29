@@ -8,7 +8,6 @@ const mount = (facets: Partial<ListingsFacets>) =>
   mountSuspended(FilterPanel, {
     props: {
       facets: reactive({ ...emptyFacets(), ...facets }),
-      sort: 'due',
       search: '',
       quickCounts
     },
@@ -39,7 +38,7 @@ describe('FilterPanel', () => {
       favorites: true
     })
     const wrapper = await mountSuspended(FilterPanel, {
-      props: { facets, sort: 'due', search: '', quickCounts }
+      props: { facets, search: '', quickCounts }
     })
     expect(wrapper.get('[data-testid="listings-chip-status"]').text()).toBe('Status: Applied')
 
@@ -55,7 +54,7 @@ describe('FilterPanel', () => {
   it('shows the company from a dashboard link as a chip, outside the sheet count', async () => {
     const facets = reactive<ListingsFacets>({ ...emptyFacets(), companyId: 12 })
     const wrapper = await mountSuspended(FilterPanel, {
-      props: { facets, sort: 'due', search: '', quickCounts, companyName: 'Bekk' }
+      props: { facets, search: '', quickCounts, companyName: 'Bekk' }
     })
     expect(wrapper.get('[data-testid="listings-chip-company"]').text()).toBe('Company: Bekk')
     expect(wrapper.get('[data-testid="listings-filters-toggle"]').text()).not.toContain('1')
@@ -67,7 +66,7 @@ describe('FilterPanel', () => {
   it('toggles favorites from the toolbar', async () => {
     const facets = reactive(emptyFacets())
     const wrapper = await mountSuspended(FilterPanel, {
-      props: { facets, sort: 'due', search: '', quickCounts }
+      props: { facets, search: '', quickCounts }
     })
     const button = wrapper.get('[data-testid="listings-facet-favorites"]')
     expect(button.attributes('aria-pressed')).toBe('false')
@@ -91,7 +90,7 @@ describe('FilterPanel', () => {
   it('counts a quick toggle on Filters and shows it as a removable chip', async () => {
     const facets = reactive<ListingsFacets>({ ...emptyFacets(), itRoles: true })
     const wrapper = await mountSuspended(FilterPanel, {
-      props: { facets, sort: 'due', search: '', quickCounts }
+      props: { facets, search: '', quickCounts }
     })
     expect(wrapper.get('[data-testid="listings-filters-toggle"]').text()).toContain('1')
     expect(wrapper.get('[data-testid="listings-chip-it"]').text()).toBe('IT roles')

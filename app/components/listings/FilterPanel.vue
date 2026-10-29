@@ -2,13 +2,11 @@
 import {
   DUE_WITHIN_OPTIONS,
   type ListingsFacets,
-  type ListingsSort,
   type QuickToggle
 } from '~/composables/useListingsList'
 import { APPLICATION_STATUS_OPTIONS, LANGUAGE_OPTIONS } from '~/constants/listing'
 
 const facets = defineModel<ListingsFacets>('facets', { required: true })
-const sort = defineModel<ListingsSort>('sort', { required: true })
 const search = defineModel<string>('search', { required: true })
 // The company filter holds an id; the page knows the name from the listings it shows.
 // Quick counts tell how many listings each switch would leave under the active preset.
@@ -24,13 +22,6 @@ const QUICK_TOGGLES = [
   { key: 'englishPosting', facet: 'englishPosting', label: 'English posting' },
   { key: 'englishMentioned', facet: 'englishMentioned', label: 'English mentioned' }
 ] as const
-
-const SORT_OPTIONS = [
-  { label: 'Due date', value: 'due' },
-  { label: 'Newest posted', value: 'posted' },
-  { label: 'Newest added', value: 'newest' },
-  { label: 'Recently changed', value: 'changed' }
-]
 
 // USelect can't hold null, so "Any" is a sentinel that maps back to null.
 const DUE_ITEMS = [
@@ -118,13 +109,15 @@ const openSheet = () => {
 
 <template>
   <div class="space-y-3">
-    <div class="grid grid-cols-2 gap-3 md:flex md:items-center">
+    <!-- One row at every width: below lg the two buttons shrink to icons (their labels stay for
+         screen readers), so phones keep most of the width for search. -->
+    <div class="flex items-center gap-2">
       <UInput
         v-model="search"
         icon="i-lucide-search"
-        placeholder="Search title, company, role"
-        aria-label="Search listings"
-        class="col-span-2 w-full md:flex-1"
+        placeholder="Search listings"
+        aria-label="Search title, company or role"
+        class="min-w-0 flex-1 lg:max-w-md"
         data-testid="listings-search"
       >
         <template v-if="search" #trailing>
@@ -138,29 +131,11 @@ const openSheet = () => {
           />
         </template>
       </UInput>
-      <USelect
-        v-model="sort"
-        :items="SORT_OPTIONS"
-        aria-label="Sort by"
-        class="w-full md:w-48"
-        data-testid="listings-sort"
-      />
-      <UButton
-        color="neutral"
-        variant="subtle"
-        icon="i-lucide-sliders-horizontal"
-        class="justify-center"
-        data-testid="listings-filters-toggle"
-        @click="openSheet"
-      >
-        Filters
-        <UBadge v-if="sheetCount" size="sm">{{ sheetCount }}</UBadge>
-      </UButton>
       <UButton
         :color="facets.favorites ? 'warning' : 'neutral'"
         :variant="facets.favorites ? 'soft' : 'subtle'"
         :aria-pressed="facets.favorites"
-        class="col-span-2 justify-center md:col-span-1"
+        class="shrink-0"
         data-testid="listings-facet-favorites"
         @click="facets.favorites = !facets.favorites"
       >
@@ -171,7 +146,18 @@ const openSheet = () => {
           class="size-5"
           :class="{ '[&_*]:fill-current': facets.favorites }"
         />
-        Favorites
+        <span class="max-lg:sr-only">Favorites</span>
+      </UButton>
+      <UButton
+        color="neutral"
+        variant="subtle"
+        icon="i-lucide-sliders-horizontal"
+        class="shrink-0"
+        data-testid="listings-filters-toggle"
+        @click="openSheet"
+      >
+        <span class="max-lg:sr-only">Filters</span>
+        <UBadge v-if="sheetCount" size="sm">{{ sheetCount }}</UBadge>
       </UButton>
     </div>
 

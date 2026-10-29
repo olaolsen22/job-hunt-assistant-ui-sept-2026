@@ -61,6 +61,19 @@ const tabItems = computed(() =>
   }))
 )
 
+// Phones pick from every visible preset in one select; the count rides in the label.
+const presetItems = computed(() =>
+  [...TAB_PRESETS, ...MORE_PRESETS]
+    .filter((p) => presetVisible(p.value))
+    .map((p) => ({
+      label: firstLoad.value ? p.label : `${p.label} · ${presetCount(p.value)}`,
+      value: p.value ?? 'all'
+    }))
+)
+const presetIcon = computed(
+  () => [...TAB_PRESETS, ...MORE_PRESETS].find((p) => p.value === filter.value)?.icon
+)
+
 const moreActive = computed(() => MORE_PRESETS.find((p) => p.value === filter.value))
 const moreItems = computed(() =>
   MORE_PRESETS.filter((p) => presetVisible(p.value)).map((p) => ({
@@ -78,6 +91,13 @@ const heading = computed(() => {
   const adjective = filter.value === 'archived' ? 'archived' : 'active'
   return `${n} ${adjective} ${plural}`
 })
+
+const SORT_OPTIONS = [
+  { label: 'Due date', value: 'due' },
+  { label: 'Newest posted', value: 'posted' },
+  { label: 'Newest added', value: 'newest' },
+  { label: 'Recently changed', value: 'changed' }
+]
 
 const clearEverything = () => {
   Object.assign(facets, emptyFacets())
@@ -122,9 +142,18 @@ const ADD_ITEMS = [
     <!-- Kept while a filter is on, so an empty filtered page can still clear it.
          `:facets`, not v-model: the panel edits the composable's reactive object in place. -->
     <template v-if="loading || listings.length || narrowed">
-      <!-- The tabs scroll sideways on narrow phones instead of wrapping; "More" stays in reach. -->
+      <!-- Presets and sort share one row. Phones get two equal selects, because the pill tabs
+           squash their labels at that width; from md there is room for the tabs, sort goes right. -->
       <div class="flex items-center gap-2">
-        <div class="min-w-0 overflow-x-auto">
+        <USelect
+          v-model="tab"
+          :items="presetItems"
+          :icon="presetIcon"
+          aria-label="Show"
+          class="min-w-0 flex-1 md:hidden"
+          data-testid="listings-presets-select"
+        />
+        <div class="hidden min-w-0 items-center gap-2 md:flex">
           <UTabs
             v-model="tab"
             :items="tabItems"
@@ -134,27 +163,36 @@ const ADD_ITEMS = [
             aria-label="Show"
             data-testid="listings-presets"
           />
+          <UDropdownMenu v-if="moreItems.length" :items="moreItems">
+            <UButton
+              :color="moreActive ? 'primary' : 'neutral'"
+              :variant="moreActive ? 'soft' : 'ghost'"
+              size="sm"
+              :icon="moreActive?.icon"
+              trailing-icon="i-lucide-chevron-down"
+              class="shrink-0"
+              data-testid="listings-presets-more"
+              >{{ moreActive?.label ?? 'More' }}</UButton
+            >
+            <template #item-trailing="{ item }">
+              <span class="text-muted tabular-nums">{{ item.count }}</span>
+            </template>
+          </UDropdownMenu>
         </div>
-        <UDropdownMenu v-if="moreItems.length" :items="moreItems">
-          <UButton
-            :color="moreActive ? 'primary' : 'neutral'"
-            :variant="moreActive ? 'soft' : 'ghost'"
-            size="sm"
-            :icon="moreActive?.icon"
-            trailing-icon="i-lucide-chevron-down"
-            class="shrink-0"
-            data-testid="listings-presets-more"
-            >{{ moreActive?.label ?? 'More' }}</UButton
-          >
-          <template #item-trailing="{ item }">
-            <span class="text-muted tabular-nums">{{ item.count }}</span>
-          </template>
-        </UDropdownMenu>
+        <!-- Sort orders the list rather than narrowing it, so it lives here, not in the Filters
+             sheet. A visible value, not an icon menu, so the current order reads at a glance. -->
+        <USelect
+          v-model="sort"
+          :items="SORT_OPTIONS"
+          icon="i-lucide-arrow-up-down"
+          aria-label="Sort by"
+          class="min-w-0 flex-1 md:ml-auto md:w-48 md:flex-none"
+          data-testid="listings-sort"
+        />
       </div>
 
       <ListingsFilterPanel
         v-model:search="search"
-        v-model:sort="sort"
         :facets="facets"
         :quick-counts="counts"
         :company-name="facets.companyId ? listings[0]?.company.name : undefined"
