@@ -97,9 +97,15 @@ SSE subscriptions for parse-job updates.
   skill-format validation proves workflow behavior.
 - `pnpm gql:gen` regenerates `app/graphql-env.d.ts` after schema changes; include it in the next
   requested commit. Never run `pnpm dev` / `nuxt dev`.
-- No `nuxt dev`: a Stop hook (`.claude/hooks/preview.sh`) rebuilds and restarts `nuxt preview`
-  on :3000 (the `tailscale serve` target) when app sources changed. Do not build or start a
-  server yourself; fix reported build failures. Serving is not UI verification; say so.
+- No `nuxt dev`: serve `nuxt preview` on :3000 (the `tailscale serve` target). Once your code
+  changes are done and checked, build and restart preview yourself by running
+  `echo '{}' | .claude/hooks/preview.sh` (Bash timeout 600000). The script builds, then restarts
+  preview detached and records its stamp, so the same script running as the Stop hook skips the
+  work. Fix any build failures it reports. Serving is not UI verification; say so.
+- Command time limits: a foreground Bash command is stopped after 10 minutes at most, and a
+  background one after 2 hours. Only a detached process (`setsid nohup … &`) outlives those limits
+  and the session. Never run a server (`pnpm preview`, `pnpm dev`) as a foreground or background
+  command; detach it, log to a file, and check that file.
 
 ## Boundaries and commits
 
