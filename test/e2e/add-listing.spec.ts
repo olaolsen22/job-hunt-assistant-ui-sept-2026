@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
   )
 })
 
-test('adds a listing and returns to the list', async ({ page }) => {
+test('adds a listing and opens it', async ({ page }) => {
   let listing: Record<string, unknown> | undefined
   await page.route('**/graphql', (route) => {
     const { query, variables } = route.request().postDataJSON()
@@ -30,7 +30,8 @@ test('adds a listing and returns to the list', async ({ page }) => {
   await page.getByRole('button', { name: 'Add listing' }).click()
   await page.getByTestId('confirm-modal-confirm').click()
 
-  await expect(page).toHaveURL('/listings')
+  // Replaces the form in history, so Back doesn't reopen it.
+  await expect(page).toHaveURL('/listings/1')
   await expect(page.getByText('Listing added', { exact: true })).toBeVisible()
   expect(listing).toMatchObject({
     title: 'Frontend Developer',
