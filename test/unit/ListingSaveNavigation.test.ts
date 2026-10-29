@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { readBody } from 'h3'
+import { createError, readBody } from 'h3'
 import { flushPromises } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import AddPage from '~/pages/listings/add.vue'
@@ -167,6 +167,22 @@ describe('Leaving a listing form after saving', () => {
 
     await vi.waitFor(() => expect(back).toHaveBeenCalled())
     expect(navigateTo).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps Back when the listing fails to load', async () => {
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: () => {
+        throw createError({ statusCode: 500 })
+      }
+    })
+    const wrapper = await mountSuspended(EditPage, { route: '/listings/1/edit' })
+
+    // The installed app has no browser Back, so this is the only way out.
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Something went wrong'))
+    expect(wrapper.get('[data-testid="edit-listing-back"]').attributes('href')).toBe('/listings/1')
+    expect(wrapper.find('[data-testid="parse-open"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

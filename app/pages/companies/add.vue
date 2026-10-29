@@ -7,6 +7,8 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Add companies' })
 
+const companiesView = useCompaniesView()
+
 const CREATE_COMPANIES = graphql(`
   mutation CreateCompanies($companies: [CompanyInput!]!) {
     createCompanies(input: { companies: $companies }) {
@@ -195,6 +197,17 @@ const removeRow = (row: Row) => state.rows.splice(state.rows.indexOf(row), 1)
     data-testid="companies-add-form"
     @submit="onSave"
   >
+    <!-- Standalone (home-screen) mode has no browser Back; Cancel sits below every row. -->
+    <UButton
+      :to="companiesView"
+      icon="i-lucide-arrow-left"
+      variant="ghost"
+      color="neutral"
+      data-testid="companies-add-back"
+    >
+      Back
+    </UButton>
+
     <!-- Opened only on request: a modal over the empty page would hide "Add row". -->
     <CompaniesParseModal v-model:open="parseOpen" :apply="addRows" :initial-text="startText" />
 

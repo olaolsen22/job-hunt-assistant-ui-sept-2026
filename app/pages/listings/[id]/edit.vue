@@ -84,6 +84,32 @@ const onConfirm = async () => {
 
 <template>
   <div class="flex flex-col items-center gap-4">
+    <!-- Stacked below sm so Back never shares a line with Analyze ad on a phone. Above the
+         states so Back still shows on an error: the installed app has no browser Back. -->
+    <div
+      class="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <UButton
+        :to="`/listings/${id}`"
+        icon="i-lucide-arrow-left"
+        variant="ghost"
+        color="neutral"
+        class="self-start"
+        data-testid="edit-listing-back"
+        >Back</UButton
+      >
+      <UButton
+        v-if="!error && !loading && listing"
+        icon="i-lucide-sparkles"
+        color="neutral"
+        variant="subtle"
+        class="self-start"
+        data-testid="parse-open"
+        @click="parseOpen = true"
+        >{{ listing?.analyzedAt ? 'Re-analyze ad' : 'Analyze ad' }}</UButton
+      >
+    </div>
+
     <UAlert
       v-if="error"
       color="error"
@@ -106,30 +132,6 @@ const onConfirm = async () => {
     />
 
     <template v-else>
-      <!-- Stacked below sm so Back never shares a line with Analyze ad on a phone. -->
-      <div
-        class="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <UButton
-          :to="`/listings/${id}`"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          color="neutral"
-          class="self-start"
-          data-testid="edit-listing-back"
-          >Back</UButton
-        >
-        <UButton
-          icon="i-lucide-sparkles"
-          color="neutral"
-          variant="subtle"
-          class="self-start"
-          data-testid="parse-open"
-          @click="parseOpen = true"
-          >{{ listing?.analyzedAt ? 'Re-analyze ad' : 'Analyze ad' }}</UButton
-        >
-      </div>
-
       <!-- The saved title, not the form's, so the heading doesn't change while typing. -->
       <div class="w-full max-w-3xl">
         <h1 class="break-words text-xl font-semibold text-highlighted">{{ listing?.title }}</h1>

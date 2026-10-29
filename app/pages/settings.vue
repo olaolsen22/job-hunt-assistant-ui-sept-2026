@@ -11,6 +11,7 @@ const isOwner = computed(() => auth.user?.role === 'Owner')
     <!-- One card per setting group. -->
     <div class="w-full max-w-3xl space-y-4 sm:space-y-6">
       <SettingsAiModelSection />
+      <SettingsRemindersSection />
       <template v-if="isOwner">
         <SettingsProviderKeysSection />
         <SettingsDailyLimitsSection />

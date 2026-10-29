@@ -266,6 +266,33 @@ const onSave = async () => {
 
 <template>
   <div class="flex flex-col items-center gap-4">
+    <!-- Same top row as the listing edit page: Back (shown in every state), then the AI action. -->
+    <div
+      class="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <UButton
+        :to="`/companies/${id}`"
+        icon="i-lucide-arrow-left"
+        variant="ghost"
+        color="neutral"
+        class="self-start"
+        data-testid="edit-company-back"
+        >Back</UButton
+      >
+      <UButton
+        v-if="!error && !loading && company"
+        icon="i-lucide-sparkles"
+        color="neutral"
+        variant="subtle"
+        class="self-start"
+        data-testid="edit-company-research-ai"
+        @click="parseOpen = true"
+        >{{
+          company && hasCompanyResearch(company) ? 'Re-research company' : 'Research company'
+        }}</UButton
+      >
+    </div>
+
     <UAlert
       v-if="error"
       color="error"
@@ -283,32 +310,6 @@ const onSave = async () => {
     <USkeleton v-else-if="loading" class="h-64 w-full max-w-3xl" />
 
     <template v-else>
-      <!-- Same top row as the listing edit page: Back, then the AI action. -->
-      <div
-        class="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <UButton
-          :to="`/companies/${id}`"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          color="neutral"
-          class="self-start"
-          data-testid="edit-company-back"
-          >Back</UButton
-        >
-        <UButton
-          icon="i-lucide-sparkles"
-          color="neutral"
-          variant="subtle"
-          class="self-start"
-          data-testid="edit-company-research-ai"
-          @click="parseOpen = true"
-          >{{
-            company && hasCompanyResearch(company) ? 'Re-research company' : 'Research company'
-          }}</UButton
-        >
-      </div>
-
       <!-- The saved name, not the form's, so the heading doesn't change while typing. -->
       <div class="w-full max-w-3xl">
         <h1 class="break-words text-xl font-semibold text-highlighted">{{ company?.name }}</h1>

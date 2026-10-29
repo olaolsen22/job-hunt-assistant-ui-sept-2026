@@ -285,4 +285,18 @@ describe('Editing a company', () => {
     wrapper.unmount()
     document.cookie = 'ai-method=; Max-Age=0; path=/'
   })
+
+  it('keeps Back when the company is not found', async () => {
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: () => ({ data: { companies: { nodes: [] } } })
+    })
+    const wrapper = await mountSuspended(EditPage, { route: '/companies/3/edit' })
+
+    // The installed app has no browser Back, so this is the only way out.
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Company not found'))
+    expect(wrapper.get('[data-testid="edit-company-back"]').attributes('href')).toBe('/companies/3')
+    expect(wrapper.find('[data-testid="edit-company-research-ai"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })

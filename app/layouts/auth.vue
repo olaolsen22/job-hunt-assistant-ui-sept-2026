@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen">
+  <div class="min-h-dvh">
     <header class="border-b border-default">
       <UContainer class="flex h-14 items-center justify-between">
         <span class="font-semibold">Job Hunt Assistant</span>

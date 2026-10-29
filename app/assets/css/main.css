@@ -17,4 +17,12 @@
   [role='button']:not(:disabled) {
     cursor: pointer;
   }
+
+  /* The installed app has no reload button; stop Android pull-to-refresh wiping a half-filled form. */
+  @media (display-mode: standalone) {
+    html,
+    body {
+      overscroll-behavior-y: none;
+    }
+  }
 }

@@ -9,7 +9,9 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL: `http://localhost:${port}`,
-    trace: 'on-first-retry'
+    trace: 'on-first-retry',
+    // The app's service worker would answer requests before page.route mocks could see them.
+    serviceWorkers: 'block'
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   // Runs the production build; the API is mocked per test, so no backend is needed.

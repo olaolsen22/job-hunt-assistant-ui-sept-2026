@@ -496,6 +496,17 @@ const onConfirmRemove = async () => {
     data-testid="quick-add-form"
     @submit="onSave"
   >
+    <!-- Standalone (home-screen) mode has no browser Back, and the bottom one is a long scroll away. -->
+    <UButton
+      icon="i-lucide-arrow-left"
+      variant="ghost"
+      color="neutral"
+      data-testid="quick-add-back-top"
+      @click="onBack"
+    >
+      Back
+    </UButton>
+
     <p v-if="collectedMode" class="text-sm text-muted" data-testid="quick-add-stages">
       Check duplicates → Process jobs → Review → Save
     </p>

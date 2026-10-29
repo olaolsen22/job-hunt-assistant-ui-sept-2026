@@ -5,6 +5,8 @@ import { APPLICATION_STATUS_OPTIONS } from '~/constants/listing'
 
 definePageMeta({ title: 'Add listing' })
 
+const listingsView = useListingsView()
+
 const CREATE_LISTING = graphql(`
   mutation CreateListing($listing: ListingInput!) {
     createListing(input: { listing: $listing }) {
@@ -100,11 +102,25 @@ const onConfirm = async () => {
 
 <template>
   <div class="flex flex-col items-center gap-4">
-    <div class="flex w-full max-w-3xl justify-end">
+    <!-- Stacked below sm so Back never shares a line with the actions on a phone. -->
+    <div
+      class="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <UButton
+        :to="listingsView"
+        icon="i-lucide-arrow-left"
+        variant="ghost"
+        color="neutral"
+        class="self-start"
+        data-testid="add-listing-back"
+      >
+        Back
+      </UButton>
       <UButton
         icon="i-lucide-sparkles"
         color="neutral"
         variant="subtle"
+        class="self-start"
         data-testid="parse-open"
         @click="parseOpen = true"
         >Analyze ad</UButton

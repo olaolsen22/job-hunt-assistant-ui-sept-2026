@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem, NavigationMenuItem } from '@nuxt/ui'
+import { useMediaQuery, useSwipe } from '@vueuse/core'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -47,12 +48,48 @@ const logout = async () => {
   await auth.logout()
   await navigateTo('/login')
 }
+
+// Phones: swiping right opens the menu and swiping left closes it, like Slack or Discord. Swipes
+// from either screen edge are left to the iOS/Android back gesture, and a swipe has to cover 30%
+// of the screen so a small one doesn't toggle the menu by accident.
+const sidebarOpen = ref(false)
+// Nuxt UI's lg, where the sidebar stops being a mobile menu.
+const isDesktop = useMediaQuery('(min-width: 64rem)')
+const BACK_GESTURE_EDGE = 24
+const SWIPE_SHARE = 0.3
+
+// Swipes that start there belong to the element: scrolling it, selecting text, or a dialog.
+const ownsSwipe = (target: EventTarget | null) => {
+  if (!(target instanceof Element)) return false
+  if (target.closest('input, textarea, [contenteditable], [role="dialog"]')) return true
+  for (let el: Element | null = target; el; el = el.parentElement) {
+    const { overflowX } = getComputedStyle(el)
+    if (el.scrollWidth > el.clientWidth && (overflowX === 'auto' || overflowX === 'scroll'))
+      return true
+  }
+  return false
+}
+
+let ignoreSwipe = false
+const { coordsStart, lengthX } = useSwipe(window, {
+  onSwipeStart: (e) => {
+    const fromEdge =
+      coordsStart.x < BACK_GESTURE_EDGE || coordsStart.x > window.innerWidth - BACK_GESTURE_EDGE
+    // The open menu is itself a dialog, so only a closed menu checks where the swipe started.
+    ignoreSwipe = isDesktop.value || fromEdge || (!sidebarOpen.value && ownsSwipe(e.target))
+  },
+  onSwipeEnd: (_, direction) => {
+    if (ignoreSwipe || Math.abs(lengthX.value) < window.innerWidth * SWIPE_SHARE) return
+    if (!sidebarOpen.value && direction === 'right') sidebarOpen.value = true
+    else if (sidebarOpen.value && direction === 'left') sidebarOpen.value = false
+  }
+})
 </script>
 
 <template>
   <UDashboardGroup>
     <!-- Nuxt UI only animates the mobile slideover; desktop collapse would snap without this. -->
-    <UDashboardSidebar collapsible class="transition-all duration-200">
+    <UDashboardSidebar v-model:open="sidebarOpen" collapsible class="transition-all duration-200">
       <template #header="{ collapsed }">
         <NuxtLink
           to="/"
