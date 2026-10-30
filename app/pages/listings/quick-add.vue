@@ -512,7 +512,8 @@ const onConfirmRemove = async () => {
     </p>
     <UCard v-if="pasteOpen" data-testid="quick-add-paste">
       <div class="space-y-6">
-        <div class="space-y-3">
+        <!-- A column, not space-y: inline buttons would sit side by side, offset. -->
+        <div class="flex flex-col gap-3">
           <UFormField label="Input">
             <UFieldGroup class="w-full">
               <UButton
@@ -555,7 +556,7 @@ const onConfirmRemove = async () => {
           </UFormField>
           <template v-else>
             <UFormField
-              label="Collected jobs"
+              :label="builtIn ? 'Collected jobs' : '1. Collected jobs'"
               help='Paste the full listing JSON array. Each job needs a URL; all other fields are kept. Example: [{ "title": "Waiter", "companyName": "Acme", "url": "https://example.com/job/1" }]'
             >
               <UTextarea
@@ -575,6 +576,7 @@ const onConfirmRemove = async () => {
               :disabled="
                 !collected.trim() || checking || parsing || processing || saving || !!prepared
               "
+              class="max-sm:justify-center sm:self-start"
               data-testid="quick-add-check"
               @click="checkJobs"
               >Check jobs</UButton
@@ -600,6 +602,7 @@ const onConfirmRemove = async () => {
               color="neutral"
               variant="ghost"
               :disabled="saving || processing"
+              class="max-sm:justify-center sm:self-start"
               data-testid="quick-add-edit-collected"
               @click="requestEditCollected"
               >Edit collected jobs</UButton
@@ -618,6 +621,7 @@ const onConfirmRemove = async () => {
             icon="i-lucide-sparkles"
             :loading="parsing"
             :disabled="aiDisabled || saving || (collectedMode && runStatus !== 'idle')"
+            class="max-sm:justify-center sm:self-start"
             data-testid="quick-add-builtin-run"
             @click="collectedMode ? startCollectedProcessing() : parseBuiltIn()"
           >
@@ -648,6 +652,7 @@ const onConfirmRemove = async () => {
             :disabled="
               aiDisabled || !instructions || saving || (collectedMode && runStatus !== 'idle')
             "
+            class="max-sm:justify-center sm:self-start"
             data-testid="quick-add-copy-prompt"
             @click="copyPrompt"
           >
@@ -657,7 +662,7 @@ const onConfirmRemove = async () => {
 
         <USeparator v-if="!builtIn" />
 
-        <div v-if="!builtIn" class="space-y-3">
+        <div v-if="!builtIn" class="flex flex-col gap-3">
           <UFormField label="2. Paste the AI’s reply" :error="jsonError || undefined">
             <UTextarea
               v-model="json"
@@ -674,6 +679,7 @@ const onConfirmRemove = async () => {
             :disabled="
               !json.trim() || processing || saving || (collectedMode && runStatus !== 'idle')
             "
+            class="max-sm:justify-center sm:self-start"
             data-testid="quick-add-parse"
             @click="addOwnRows"
             >Parse into rows</UButton

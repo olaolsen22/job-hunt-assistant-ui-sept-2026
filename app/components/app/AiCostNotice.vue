@@ -28,11 +28,14 @@ const remaining = computed(() => {
 </script>
 
 <template>
+  <!-- Description in the default text colour: warning-coloured text on the subtle amber
+       background is hard to read in light mode. -->
   <UAlert
     :color="ownKey ? 'info' : 'warning'"
     variant="subtle"
     :icon="ownKey ? 'i-lucide-key-round' : 'i-lucide-coins'"
     :title="ownKey ? 'Billed to your API key' : 'Uses the app’s paid AI key'"
+    :ui="{ description: 'text-toned space-y-1' }"
   >
     <template #description>
       <p data-testid="ai-notice-billing">
@@ -46,21 +49,24 @@ const remaining = computed(() => {
         <template v-if="ownKey && remaining">{{ remaining }}</template>
         <ULink to="/settings" class="font-medium underline">Change model</ULink>
       </p>
-      <template v-if="usage">
-        <p data-testid="ai-usage-tokens">
-          {{ tokens.format(usage.inputTokens) }} tokens in ·
-          {{ tokens.format(usage.outputTokens) }} out
-        </p>
-        <p data-testid="ai-usage-requests">
-          {{ label(usage.model) }} ·
-          {{
+      <!-- Today's usage on one line; the model only when it differs from the one named above. -->
+      <p v-if="usage" class="text-muted">
+        Today:
+        <span data-testid="ai-usage-requests"
+          ><template v-if="usage.model !== defaultModel">{{ label(usage.model) }} · </template
+          >{{
             usage.requestsLimit != null
               ? `${usage.requests} of ${usage.requestsLimit}`
               : usage.requests
           }}
-          requests
-        </p>
-      </template>
+          requests</span
+        >
+        ·
+        <span data-testid="ai-usage-tokens"
+          >{{ tokens.format(usage.inputTokens) }} tokens in,
+          {{ tokens.format(usage.outputTokens) }} out</span
+        >
+      </p>
     </template>
   </UAlert>
 </template>

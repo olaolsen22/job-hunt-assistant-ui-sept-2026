@@ -283,8 +283,9 @@ describe('ParseModal', () => {
     const line = (id: string) => document.body.querySelector(`[data-testid="${id}"]`)?.textContent
     await vi.waitFor(() => expect(line('ai-usage-tokens')).toContain('1,200 tokens in'))
     expect(line('ai-usage-tokens')).toContain('340 out')
-    expect(line('ai-usage-requests')).toContain('Fast · 3 of 50 requests')
     await vi.waitFor(() => expect(line('ai-notice-model')).toBe('Fast'))
+    // The model is named once above, so the usage line leaves it out.
+    expect(line('ai-usage-requests')?.replace(/\s+/g, ' ').trim()).toBe('3 of 50 requests')
     expect(
       document.body.querySelector('[data-testid="parse-cost-notice"] a')?.getAttribute('href')
     ).toBe('/settings')

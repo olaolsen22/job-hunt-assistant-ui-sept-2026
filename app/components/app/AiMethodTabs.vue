@@ -26,5 +26,12 @@ const items = computed(() =>
 
 <template>
   <!-- content=false: the tabs only switch the model; each modal renders its own panels. -->
-  <UTabs v-model="tab" :items="items" :content="false" class="w-full" />
+  <!-- Three tabs don't fit a phone with icons, so their labels would be cut off. -->
+  <UTabs
+    v-model="tab"
+    :items="items"
+    :content="false"
+    :ui="items.length > 2 ? { leadingIcon: 'max-sm:hidden' } : undefined"
+    class="w-full"
+  />
 </template>

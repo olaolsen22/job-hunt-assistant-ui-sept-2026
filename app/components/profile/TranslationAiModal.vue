@@ -299,6 +299,8 @@ const goToSamples = () => {
               label: 'Add writing samples',
               color: 'info',
               variant: 'link',
+              // No inset, so the link lines up with the text above it.
+              class: 'px-0',
               onClick: goToSamples
             }
           ]"
