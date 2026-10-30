@@ -34,6 +34,17 @@ registerEndpoint('/graphql', {
     const body = (await readBody(event)) as Body
     calls.push(body)
     if (body.query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
+    // Like the API: the profile in the asked language, else the saved draft's.
+    if (body.query.includes('query TailoredCvDraftFromProfile')) {
+      const language = (body.variables as { language?: 'ENGLISH' | 'NORWEGIAN' }).language
+      return {
+        data: {
+          tailoredCvDraftFromProfile: toTailoredCvInput(
+            tailoredCvFromProfile(cvProfile(), language ?? 'ENGLISH')
+          )
+        }
+      }
+    }
     if (body.query.includes('query TailoredCvDraft'))
       return { data: { tailoredCvDraft: savedDraft } }
     if (body.query.includes('mutation AnalyzeTailoredCvSection'))
@@ -357,21 +368,53 @@ describe('useTailoredCvDraft', () => {
     expect(calls.some((c) => c.query.includes('mutation GenerateCvDocument'))).toBe(true)
   })
 
-  it('resaves an existing draft in the listing language before generating its CV', async () => {
+  it("keeps a saved draft's language over the listing's", async () => {
     savedDraft = {
       id: 1,
       updatedAt: '2026-10-12T10:00:00Z',
-      content: toTailoredCvInput(tailoredCvFromProfile(cvProfile()))
+      content: toTailoredCvInput(tailoredCvFromProfile(cvProfile(), 'ENGLISH'))
     }
     const state = await setup(cvProfile(), 'NORWEGIAN')
     state.init()
-    expect(state.dirty.value).toBe(true)
+    expect(state.cv.value!.language).toBe('ENGLISH')
+    expect(state.dirty.value).toBe(false)
+  })
 
-    expect(await state.generate()).toBe(true)
+  it('rebuilds in another language without saving, then sends it with every AI request', async () => {
+    analyze = succeeded
+    const state = await setup()
+    state.init()
+    state.cv.value!.sectionOrder = 'DEVELOPER'
 
-    const save = calls.find((c) => c.query.includes('mutation SaveTailoredCvDraft'))!
-    expect(save.variables.input!.content).toMatchObject({ language: 'NORWEGIAN' })
-    expect(calls.some((c) => c.query.includes('mutation GenerateCvDocument'))).toBe(true)
+    expect(await state.reset('NORWEGIAN')).toBeNull()
+    const sent = (name: string) =>
+      calls.filter((c) => c.query.includes(name)).map((c) => c.variables)
+    expect(sent('query TailoredCvDraftFromProfile')[0]).toEqual({
+      listingId: 5,
+      language: 'NORWEGIAN'
+    })
+    expect(state.cv.value!.language).toBe('NORWEGIAN')
+    expect(state.cv.value!.sectionOrder).toBe('DEVELOPER')
+    expect(state.matchesProfile.value).toBe(false)
+    expect(operations()).not.toContain('SaveTailoredCvDraft:')
+
+    await state.analyzeSection('summary')
+    await state.loadPrompt()
+    await state.preview('{}')
+    expect(sent('mutation AnalyzeTailoredCvSection')[0]!.input).toMatchObject({
+      language: 'NORWEGIAN'
+    })
+    expect(sent('query TailoredCvExternalPrompt')[0]).toMatchObject({ language: 'NORWEGIAN' })
+    expect(sent('mutation PreviewTailoredCvDraft')[0]!.input).toMatchObject({
+      language: 'NORWEGIAN'
+    })
+    expect(state.cv.value!.language).toBe('NORWEGIAN')
+
+    // A prompt already loaded is fetched again for the new language.
+    await state.reset('ENGLISH')
+    await vi.waitFor(() =>
+      expect(sent('query TailoredCvExternalPrompt')[1]).toMatchObject({ language: 'ENGLISH' })
+    )
   })
 
   it('takes only the asked section from an external reply', async () => {

@@ -299,7 +299,9 @@ export const toTailoredCvInput = (cv: TailoredCv): TailoredCvContentInput => {
       bullets: bullets(p.bullets),
       paragraph: paragraph(p)
     })),
-    skills: cv.skills.filter((s) => s.name.trim()),
+    skills: cv.skills
+      .filter((s) => s.name.trim())
+      .map((s) => ({ ...s, group: blankToNull(s.group) })),
     languages: cv.languages
   }
 }
@@ -371,10 +373,15 @@ export const cvSectionFromAnalysis = (
   if (result.section === 'SUMMARY') return { key: 'summary', value: result.summary ?? '' }
   if (result.section === 'SKILLS') {
     // The AI's order (most relevant first) is kept: it prints as is.
+    // A skill the draft already has keeps its group.
+    const groups = new Map(cv.skills.map((s) => [s.sourceSkillId, s.group]))
     const value = (result.selectedSkillIds ?? [])
       .map((id) => profile.skills.find((s) => s.skill.id === id))
       .filter((s) => s != null)
-      .map((s) => skillFromProfile(s, cv.language))
+      .map((s) => ({
+        ...skillFromProfile(s, cv.language),
+        ...(groups.get(s.skill.id) && { group: groups.get(s.skill.id) })
+      }))
     return { key: 'skills', value }
   }
   const bullets = (result.bullets ?? []).map((b) => ({

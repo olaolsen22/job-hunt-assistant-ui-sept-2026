@@ -10,7 +10,10 @@ import { tailoredCvFromProfile, toTailoredCvInput } from '~/utils/tailoredCv'
 import { cvProfile } from '../fixtures/profileCv'
 import { llmModels } from '../fixtures/llmModels'
 
-type Body = { query: string; variables: { input?: Record<string, unknown> } }
+type Body = {
+  query: string
+  variables: { input?: Record<string, unknown>; language?: 'ENGLISH' | 'NORWEGIAN' }
+}
 
 let savedDraft: unknown
 let calls: Body[]
@@ -23,6 +26,7 @@ let listing: Record<string, unknown> & { documents: Record<string, unknown>[] }
 let appliedInput: Record<string, unknown> | undefined
 // Replaces the default answer for a section request; undefined keeps the default.
 let analysisOverride: (input: Record<string, unknown>) => unknown
+let groupsReply: unknown
 
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
 registerEndpoint('/graphql', {
@@ -57,6 +61,10 @@ registerEndpoint('/graphql', {
         }
       }
     }
+    if (query.includes('query TailoredCvSkillGroupPrompt'))
+      return { data: { tailoredCvSkillGroupPrompt: { instructions: 'Group these skills' } } }
+    if (query.includes('mutation SuggestTailoredCvSkillGroups'))
+      return { data: { suggestTailoredCvSkillGroups: groupsReply } }
     if (query.includes('mutation PreviewTailoredCvDraft'))
       return { data: { previewTailoredCvDraft: previewReply } }
     if (query.includes('query TailoredCvDraftFromProfile'))
@@ -64,7 +72,9 @@ registerEndpoint('/graphql', {
         data: {
           tailoredCvDraftFromProfile:
             fromProfileReply === undefined
-              ? toTailoredCvInput(tailoredCvFromProfile(cvProfile()))
+              ? toTailoredCvInput(
+                  tailoredCvFromProfile(cvProfile(), body.variables?.language ?? 'ENGLISH')
+                )
               : fromProfileReply
         }
       }
@@ -184,6 +194,7 @@ beforeEach(() => {
   fromProfileReply = undefined
   appliedInput = undefined
   analysisOverride = () => undefined
+  groupsReply = null
   listing = {
     id: 5,
     title: 'Frontend Developer',
@@ -192,6 +203,8 @@ beforeEach(() => {
     documents: []
   }
   document.cookie = 'ai-method=; Max-Age=0; path=/'
+  // A successful own-AI run writes the method through the shared cookie ref, which outlives the DOM cookie.
+  useAiMethod().value = null
   let nextId = 70
   generateReply = () => ({
     document: { id: nextId++, fileName: 'cv.pdf', createdAt: new Date().toISOString() },
@@ -586,6 +599,141 @@ describe('Tailored CV page', () => {
       sectionOrder: 'DEVELOPER',
       template: 'CONCISE',
       referencesOnRequest: true
+    })
+  })
+
+  it('rebuilds the CV in another language after confirming, and saves that language', async () => {
+    savedDraft = savedSummary()
+    const wrapper = await mountPage()
+    await vi.waitFor(() => expect(summaryValue()).toBe('Mine'))
+    const language = wrapper
+      .findAllComponents(USelect)
+      .find((select) => select.element.closest?.('[data-testid="tailored-cv-language-field"]'))!
+    expect(language.props('modelValue')).toBe('ENGLISH')
+    const fromProfile = () =>
+      calls.filter((c) => c.query.includes('query TailoredCvDraftFromProfile'))
+
+    // Cancelling keeps the CV and the select as they were.
+    language.vm.$emit('update:modelValue', 'NORWEGIAN')
+    await flushPromises()
+    expect(document.body.textContent).toContain('Regenerate in Norwegian?')
+    buttonNamed('Cancel').click()
+    await flushPromises()
+    expect(fromProfile()).toHaveLength(0)
+    expect(language.props('modelValue')).toBe('ENGLISH')
+
+    language.vm.$emit('update:modelValue', 'NORWEGIAN')
+    await flushPromises()
+    buttonNamed('Regenerate').click()
+    await vi.waitFor(() => expect(language.props('modelValue')).toBe('NORWEGIAN'))
+    expect(fromProfile()[0]!.variables).toEqual({ listingId: 5, language: 'NORWEGIAN' })
+    expect(summaryValue()).not.toBe('Mine')
+    expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
+
+    await click('tailored-cv-save')
+    await vi.waitFor(() => expect(ops('SaveTailoredCvDraft')).toHaveLength(1))
+    expect(ops('SaveTailoredCvDraft')[0]!.variables.input.content).toMatchObject({
+      language: 'NORWEGIAN'
+    })
+  })
+
+  describe('skill groups', () => {
+    // A Developer-order draft: Vue without a group, Nuxt already grouped.
+    const developerDraft = () => {
+      savedDraft = savedSummary()
+      savedDraft.content.sectionOrder = 'DEVELOPER'
+      savedDraft.content.skills = [
+        { name: 'Vue', level: 4, sourceSkillId: 1, categoryId: null, group: null },
+        { name: 'Nuxt', level: null, sourceSkillId: null, categoryId: null, group: 'Frameworks' }
+      ]
+    }
+    const groupInputs = () =>
+      [
+        ...document.body.querySelectorAll<HTMLInputElement>(
+          '[data-testid="tailored-cv-skill-group"] input, input[data-testid="tailored-cv-skill-group"]'
+        )
+      ].map((input) => input.value)
+
+    it('fills in suggested groups for review, keeping skills the AI left out, and saves them', async () => {
+      developerDraft()
+      groupsReply = {
+        result: { status: 'SUCCEEDED', error: null, groups: [{ name: 'Vue', group: 'Frontend' }] },
+        errors: null
+      }
+      await mountPage()
+      await vi.waitFor(() => expect(groupInputs()).toEqual(['', 'Frameworks']))
+
+      await click('tailored-cv-suggest-groups')
+      await vi.waitFor(() => expect(el('skill-groups-run')).not.toBeNull())
+      await click('skill-groups-run')
+      await vi.waitFor(() => expect(groupInputs()).toEqual(['Frontend', 'Frameworks']))
+      expect(ops('SuggestTailoredCvSkillGroups')[0]!.variables).toMatchObject({
+        skillNames: ['Vue', 'Nuxt'],
+        language: 'ENGLISH'
+      })
+      expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+
+      await click('tailored-cv-save')
+      await vi.waitFor(() => expect(ops('SaveTailoredCvDraft')).toHaveLength(1))
+      expect(ops('SaveTailoredCvDraft')[0]!.variables.input.content).toMatchObject({
+        skills: [
+          { name: 'Vue', group: 'Frontend' },
+          { name: 'Nuxt', group: 'Frameworks' }
+        ]
+      })
+    })
+
+    it('shows why a suggestion failed and leaves the groups alone', async () => {
+      developerDraft()
+      groupsReply = {
+        result: { status: 'FAILED', error: 'Model timed out', groups: null },
+        errors: null
+      }
+      await mountPage()
+      await vi.waitFor(() => expect(el('tailored-cv-suggest-groups')).not.toBeNull())
+
+      await click('tailored-cv-suggest-groups')
+      await vi.waitFor(() => expect(el('skill-groups-run')).not.toBeNull())
+      await click('skill-groups-run')
+      await vi.waitFor(() =>
+        expect(el('skill-groups-error')!.textContent).toContain('Model timed out')
+      )
+      expect(groupInputs()).toEqual(['', 'Frameworks'])
+    })
+
+    it('fills in groups from a pasted own-AI reply in a code fence, ignoring unknown names', async () => {
+      developerDraft()
+      document.cookie = 'ai-method=own; path=/'
+      await mountPage()
+      await vi.waitFor(() => expect(el('tailored-cv-suggest-groups')).not.toBeNull())
+
+      await click('tailored-cv-suggest-groups')
+      await vi.waitFor(() => expect(el('skill-groups-json')).not.toBeNull())
+      const prompt = calls.find((c) => c.query.includes('query TailoredCvSkillGroupPrompt'))!
+      expect(prompt.variables).toEqual({ skillNames: ['Vue', 'Nuxt'], language: 'ENGLISH' })
+
+      await type(
+        el('skill-groups-json') as HTMLTextAreaElement,
+        '```json\n{"groups":[{"name":"Vue","group":"Frontend"},{"name":"Go","group":"Backend"}]}\n```'
+      )
+      await click('skill-groups-apply')
+      await vi.waitFor(() => expect(groupInputs()).toEqual(['Frontend', 'Frameworks']))
+      expect(ops('SuggestTailoredCvSkillGroups')).toHaveLength(0)
+    })
+
+    it('says what is wrong with a pasted reply without a groups list', async () => {
+      developerDraft()
+      document.cookie = 'ai-method=own; path=/'
+      await mountPage()
+      await vi.waitFor(() => expect(el('tailored-cv-suggest-groups')).not.toBeNull())
+
+      await click('tailored-cv-suggest-groups')
+      await vi.waitFor(() => expect(el('skill-groups-json')).not.toBeNull())
+      await type(el('skill-groups-json') as HTMLTextAreaElement, 'Sorry, I cannot help.')
+      await click('skill-groups-apply')
+      await vi.waitFor(() => expect(document.body.textContent).toContain('"groups" list'))
+      expect(groupInputs()).toEqual(['', 'Frameworks'])
     })
   })
 

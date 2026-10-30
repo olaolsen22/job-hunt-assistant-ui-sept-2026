@@ -84,6 +84,7 @@ const CONTENT_FIELDS = graphql(`
       level
       sourceSkillId
       categoryId
+      group
     }
     languages {
       name
@@ -110,8 +111,8 @@ const DRAFT = graphql(
 
 const FROM_PROFILE = graphql(
   `
-    query TailoredCvDraftFromProfile($listingId: Int!) {
-      tailoredCvDraftFromProfile(listingId: $listingId) {
+    query TailoredCvDraftFromProfile($listingId: Int!, $language: Language) {
+      tailoredCvDraftFromProfile(listingId: $listingId, language: $language) {
         ...TailoredCvContentFields
       }
     }
@@ -120,8 +121,12 @@ const FROM_PROFILE = graphql(
 )
 
 const PROMPT = graphql(`
-  query TailoredCvExternalPrompt($listingId: Int!, $template: TailoredCvTemplate) {
-    tailoredCvExternalPrompt(listingId: $listingId, template: $template) {
+  query TailoredCvExternalPrompt(
+    $listingId: Int!
+    $template: TailoredCvTemplate
+    $language: Language
+  ) {
+    tailoredCvExternalPrompt(listingId: $listingId, template: $template, language: $language) {
       instructions
     }
   }
@@ -338,9 +343,11 @@ export const useTailoredCvDraft = (
   // Otherwise it waits as a suggestion, so the owner's work is never replaced silently.
   const fillsDirectly = () => !draft.value && !!cv.value && snapshot(cv.value) === seed.value
 
-  // The profile as a candidate, in the posting's language when the listing has one.
-  const fromProfile = (source: ProfileData) =>
-    tailoredCvFromProfile(source, postingLanguage.value ?? source.contentLanguage)
+  // The profile as a candidate in the chosen language; a new CV starts in the posting's language.
+  const fromProfile = (
+    source: ProfileData,
+    language: Language = cv.value?.language ?? postingLanguage.value ?? 'ENGLISH'
+  ) => tailoredCvFromProfile(source, language)
   // No draft and no edits yet: the candidate is just the profile, so "unsaved" would blame the owner.
   const pristine = computed(() => !draft.value && !!cv.value && snapshot(cv.value) === seed.value)
   const matchesProfile = computed(
@@ -354,33 +361,25 @@ export const useTailoredCvDraft = (
     const savedCv = draft.value ? tailoredCvFromContent(draft.value.content) : undefined
     const savedSnapshot = savedCv ? snapshot(savedCv) : null
     cv.value = savedCv ?? fromProfile(profile.value)
-    // A saved draft follows the posting's language too, so the owner's old choice doesn't linger.
-    if (postingLanguage.value) cv.value.language = postingLanguage.value
     seed.value = snapshot(cv.value)
     saved.value = savedSnapshot
     writtenTemplate.value = cv.value.template
     return !draft.value
   }
 
-  // Starts over from the profile, built by the API (translations, language, standard layout). Nothing
-  // is saved: the old draft stays until the owner saves, so leaving or reloading brings it back.
+  // Starts over from the profile, built by the API (translations, language, standard layout), in
+  // the current language or the one the owner switches to. Nothing is saved: the old draft stays
+  // until the owner saves, so leaving or reloading brings it back.
   // Returns an error message, or null once the editor holds the new candidate.
   const resetting = ref(false)
-  const reset = async (): Promise<string | null> => {
+  const reset = async (language = cv.value?.language): Promise<string | null> => {
     resetting.value = true
     try {
-      const { tailoredCvDraftFromProfile } = await gql(FROM_PROFILE, { listingId })
+      const { tailoredCvDraftFromProfile } = await gql(FROM_PROFILE, { listingId, language })
       if (!tailoredCvDraftFromProfile) return 'This listing no longer exists.'
       // The API returns defaults for the three toggles, so the owner's choices stay.
       const { contentStyle, sectionOrder, template, referencesOnRequest } = cv.value ?? {}
-      // A saved draft pins the API to its own language, so an old English draft would rebuild in
-      // English on a Norwegian ad; the client-side build follows the posting instead.
-      const apiFresh = tailoredCvFromContent(tailoredCvDraftFromProfile)
-      const target = postingLanguage.value
-      const fresh =
-        target && apiFresh.language !== target && profile.value
-          ? fromProfile(profile.value)
-          : apiFresh
+      const fresh = tailoredCvFromContent(tailoredCvDraftFromProfile)
       cv.value = {
         ...fresh,
         contentStyle: contentStyle ?? fresh.contentStyle,
@@ -466,7 +465,8 @@ export const useTailoredCvDraft = (
         listingId,
         section: step.section,
         sourceEntryId: step.sourceEntryId,
-        template: cv.value?.template
+        template: cv.value?.template,
+        language: cv.value?.language
       }
       const { result, errors } = await attempt(
         input,
@@ -539,28 +539,37 @@ export const useTailoredCvDraft = (
     }
   }
 
-  // The template the shown prompt was written for; the pasted reply is previewed with the same one.
+  // The template and language the shown prompt was written for; the pasted reply is previewed with
+  // the same ones.
   const promptTemplate = ref<TailoredCv['template']>()
+  const promptLanguage = ref<Language>()
   const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
     async () => {
       // A switch while the request is out fetches again, so the prompt never trails the choice.
       let template
+      let language
       let text
       do {
         template = cv.value?.template
-        text = (await gql(PROMPT, { listingId, template })).tailoredCvExternalPrompt.instructions
-      } while (template !== cv.value?.template)
+        language = cv.value?.language
+        text = (await gql(PROMPT, { listingId, template, language })).tailoredCvExternalPrompt
+          .instructions
+      } while (template !== cv.value?.template || language !== cv.value?.language)
       promptTemplate.value = template
+      promptLanguage.value = language
       return text
     }
   )
-  // A prompt already on screen is fetched again, so the copied text matches the new template. One
-  // loaded before the draft went out without a template, which the API reads as Detailed.
+  // A prompt already on screen is fetched again, so the copied text matches the new template or
+  // language. One loaded before the draft went out without a template, which the API reads as
+  // Detailed, and without a language, which it reads as the saved draft's.
   watch(
-    () => cv.value?.template,
-    (template) => {
-      const shown = promptTemplate.value ?? 'DETAILED'
-      if (instructions.value && !promptLoading.value && template !== shown) void loadPrompt()
+    () => [cv.value?.template, cv.value?.language] as const,
+    ([template, language]) => {
+      const changed =
+        template !== (promptTemplate.value ?? 'DETAILED') ||
+        (!!promptLanguage.value && language !== promptLanguage.value)
+      if (instructions.value && !promptLoading.value && changed) void loadPrompt()
     }
   )
   // Returns the API's error to show next to the pasted JSON, or null when the reply was taken in.
@@ -570,13 +579,19 @@ export const useTailoredCvDraft = (
     if (!cv.value) return null
     previewing.value = true
     try {
+      const language = promptLanguage.value ?? cv.value.language
       const { previewTailoredCvDraft } = await gql(PREVIEW, {
-        input: { listingId, json: json.trim(), template: promptTemplate.value ?? cv.value.template }
+        input: {
+          listingId,
+          json: json.trim(),
+          template: promptTemplate.value ?? cv.value.template,
+          language
+        }
       })
       const { candidate, errors } = previewTailoredCvDraft
       if (!candidate) return errors?.[0]?.message ?? ERROR_MESSAGES.generic
       const next = mergeExternalCandidate(cv.value, tailoredCvFromContent(candidate.content))
-      next.language = postingLanguage.value ?? cv.value.language
+      next.language = language
       if (scope) {
         const value = getCvSection(next, scope)
         if (value === undefined) return 'The reply has nothing for this section.'

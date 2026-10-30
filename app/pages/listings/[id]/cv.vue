@@ -9,7 +9,12 @@ import type {
 } from '~/utils/tailoredCv'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { VueDraggable } from 'vue-draggable-plus'
-import { CV_APPLY_DESCRIPTION, LANGUAGE_OPTIONS, projectKindLabel } from '~/constants/listing'
+import {
+  CV_APPLY_DESCRIPTION,
+  LANGUAGE_OPTIONS,
+  projectKindLabel,
+  type Language
+} from '~/constants/listing'
 
 definePageMeta({ title: 'Tailored CV' })
 
@@ -28,6 +33,40 @@ const { items: categoryItems, known: knownCategory } = useSkillCategories()
 const moveSkill = (from: number, to: number) => {
   const skills = cv.value!.skills
   skills.splice(to, 0, ...skills.splice(from, 1))
+}
+
+// Developer layout: a group label replaces the category name and skills sharing it print on one
+// line, so the field suggests the labels already in use (case-insensitive, first spelling kept).
+const usedGroups = computed(() => {
+  const seen = new Map<string, string>()
+  for (const { group } of cv.value?.skills ?? []) {
+    const label = group?.trim()
+    if (label && !seen.has(label.toLowerCase())) seen.set(label.toLowerCase(), label)
+  }
+  return [...seen.values()]
+})
+const groupsOpen = ref(false)
+const groupsInput = computed(() => ({
+  skillNames: cv.value?.skills.map((s) => s.name) ?? [],
+  language: cv.value?.language ?? 'ENGLISH'
+}))
+// Fills in the AI's groups for review; skills it left out keep theirs, and Undo restores them all.
+const applyGroups = (groups: Map<string, string>) => {
+  const skills = cv.value!.skills
+  const before = skills.map((s) => [s, s.group] as const)
+  for (const skill of skills) skill.group = groups.get(skill.name) ?? skill.group
+  toast.add({
+    title: 'Groups suggested. Review them, then save.',
+    icon: 'i-lucide-sparkles',
+    actions: [
+      {
+        label: 'Undo',
+        color: 'neutral',
+        variant: 'outline',
+        onClick: () => before.forEach(([skill, group]) => (skill.group = group))
+      }
+    ]
+  })
 }
 
 const TEMPLATE_OPTIONS = [
@@ -75,10 +114,6 @@ watch(
     if (!cv.value) state.init()
   },
   { immediate: true }
-)
-// The headings are English whatever the draft is written in, so the page names its language.
-const languageLabel = computed(
-  () => LANGUAGE_OPTIONS.find((option) => option.value === cv.value?.language)?.label
 )
 // Loaded up front, so "Copy prompt" is a direct write (browsers can refuse one after an await).
 onMounted(() => state.loadPrompt())
@@ -162,20 +197,42 @@ const {
   resetting: replacing,
   error: replaceError
 } = useResetTailoredCvDraft(id)
-const resetToProfile = async () => {
-  const error = await state.reset()
-  resetOpen.value = false
+// Both the reset and a language switch rebuild the editor from the profile, saving nothing.
+const rebuild = async (success: { title: string; description?: string }, language?: Language) => {
+  const error = await state.reset(language)
+  resetOpen.value = languageOpen.value = false
   if (error) toast.add({ title: error, color: 'error' })
-  else
-    toast.add({
-      title: 'CV reset to your profile. Remove what you don’t need, then save.',
-      icon: 'i-lucide-rotate-ccw'
-    })
+  else toast.add({ ...success, icon: 'i-lucide-rotate-ccw' })
 }
-// Nothing to lose on an untouched first draft, so it resets without asking.
+const resetToProfile = () =>
+  rebuild({ title: 'CV reset to your profile. Remove what you don’t need, then save.' })
+// Nothing to lose on an untouched first draft, so it resets or switches without asking.
+const nothingToLose = () => state.pristine.value && !suggestions.value.length
 const requestReset = () => {
-  if (state.pristine.value && !suggestions.value.length) resetToProfile()
+  if (nothingToLose()) resetToProfile()
   else resetOpen.value = true
+}
+
+// The select keeps showing the current language until the rebuild succeeds, so a cancelled or
+// failed switch has nothing to undo.
+const languageOpen = ref(false)
+const pendingLanguage = ref<Language>('ENGLISH')
+const languageName = (value: Language) =>
+  LANGUAGE_OPTIONS.find((option) => option.value === value)!.label
+const switchLanguage = () =>
+  rebuild(
+    {
+      title: `CV rebuilt in ${languageName(pendingLanguage.value)}`,
+      description:
+        'Run AI again to tailor it to this listing. Nothing is saved until you click Save.'
+    },
+    pendingLanguage.value
+  )
+const requestLanguage = (language: Language) => {
+  if (language === cv.value?.language) return
+  pendingLanguage.value = language
+  if (nothingToLose()) switchLanguage()
+  else languageOpen.value = true
 }
 // A menu keeps the header narrow on phones; the disabled item says why instead of a tooltip.
 const moreItems = computed<DropdownMenuItem[]>(() => [
@@ -423,14 +480,23 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
               >
                 {{ listing.title }} · {{ listing.company.name }}
               </p>
-              <UBadge
-                v-if="cv && languageLabel"
-                color="neutral"
-                variant="subtle"
-                class="mt-1"
-                data-testid="tailored-cv-language"
-                >Written in {{ languageLabel }}</UBadge
-              >
+              <div v-if="cv" class="mt-2 flex flex-col gap-x-3 gap-y-1 sm:flex-row sm:items-center">
+                <UFormField
+                  label="CV language"
+                  orientation="horizontal"
+                  class="gap-2"
+                  data-testid="tailored-cv-language-field"
+                >
+                  <USelect
+                    :model-value="cv.language"
+                    :items="[...LANGUAGE_OPTIONS]"
+                    :disabled="busy || state.resetting.value"
+                    class="w-40"
+                    @update:model-value="requestLanguage($event as Language)"
+                  />
+                </UFormField>
+                <p class="text-xs text-muted">Section headings in the PDF stay in English.</p>
+              </div>
             </div>
             <UDropdownMenu v-if="cv" :items="moreItems" :content="{ align: 'end' }">
               <UButton
@@ -698,18 +764,31 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                       @click="removeItem('skills', i, skill.name)"
                     />
                     <div class="flex w-full items-center gap-1 sm:w-auto">
-                      <!-- Categories only group skills in the Developer layout. -->
-                      <USelect
-                        v-if="cv.sectionOrder === 'DEVELOPER'"
-                        :model-value="knownCategory(skill.categoryId)"
-                        :items="categoryItems"
-                        size="sm"
-                        :aria-label="`${skill.name} category`"
-                        class="w-40 shrink-0"
-                        @update:model-value="
-                          (choice) => (skill.categoryId = fromCategoryChoice(choice))
-                        "
-                      />
+                      <!-- Categories and groups only group skills in the Developer layout. -->
+                      <template v-if="cv.sectionOrder === 'DEVELOPER'">
+                        <USelect
+                          :model-value="knownCategory(skill.categoryId)"
+                          :items="categoryItems"
+                          size="sm"
+                          :aria-label="`${skill.name} category`"
+                          class="min-w-0 flex-1 sm:w-40 sm:flex-none"
+                          @update:model-value="
+                            (choice) => (skill.categoryId = fromCategoryChoice(choice))
+                          "
+                        />
+                        <!-- A native datalist keeps the field free text while offering used labels. -->
+                        <UInput
+                          :model-value="skill.group ?? ''"
+                          size="sm"
+                          placeholder="Group"
+                          list="tailored-cv-skill-groups"
+                          autocomplete="off"
+                          :aria-label="`${skill.name} group`"
+                          class="min-w-0 flex-1 sm:w-36 sm:flex-none"
+                          data-testid="tailored-cv-skill-group"
+                          @update:model-value="(value) => (skill.group = value)"
+                        />
+                      </template>
                       <UButton
                         icon="i-lucide-chevron-up"
                         color="neutral"
@@ -731,13 +810,29 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                     </div>
                   </li>
                 </VueDraggable>
-                <p class="text-xs text-muted">
-                  {{
-                    cv.sectionOrder === 'DEVELOPER'
-                      ? 'Categories and order apply to this CV only, not your profile.'
-                      : 'The order applies to this CV only. Categories show with the Developer PDF layout.'
-                  }}
-                </p>
+                <datalist id="tailored-cv-skill-groups">
+                  <option v-for="label in usedGroups" :key="label" :value="label" />
+                </datalist>
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <p class="text-xs text-muted">
+                    {{
+                      cv.sectionOrder === 'DEVELOPER'
+                        ? 'A group replaces the category in the PDF, and skills with the same group share a line. Categories, groups and order apply to this CV only.'
+                        : 'The order applies to this CV only. Categories and groups show with the Developer PDF layout.'
+                    }}
+                  </p>
+                  <UButton
+                    v-if="cv.sectionOrder === 'DEVELOPER'"
+                    icon="i-lucide-sparkles"
+                    color="neutral"
+                    variant="outline"
+                    size="sm"
+                    :disabled="busy || !cv.skills.length"
+                    data-testid="tailored-cv-suggest-groups"
+                    @click="groupsOpen = true"
+                    >Suggest groups</UButton
+                  >
+                </div>
               </div>
             </ListingsTailoredCvSection>
 
@@ -1084,6 +1179,14 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
         </AppFormModal>
       </template>
 
+      <!-- Only the Developer layout uses groups, so other drafts don't load the modal. -->
+      <LazyListingsTailoredCvSkillGroupsModal
+        v-if="cv?.sectionOrder === 'DEVELOPER'"
+        v-model:open="groupsOpen"
+        :input="groupsInput"
+        @apply="applyGroups"
+      />
+
       <ListingsTailoredCvAiModal
         v-model:open="aiOpen"
         :ai="state"
@@ -1098,6 +1201,15 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
         :description="`Your edits${suggestions.length ? ` and ${pendingLabel} not yet reviewed` : ''} are replaced with your current profile. The saved draft and PDFs stay as they are until you save.`"
         confirm-label="Reset to profile"
         @confirm="resetToProfile"
+      />
+
+      <AppConfirmModal
+        v-model:open="languageOpen"
+        :title="`Regenerate in ${languageName(pendingLanguage)}?`"
+        :description="`Your edits${suggestions.length ? ` and ${pendingLabel} not yet reviewed` : ''} are replaced with your profile in ${languageName(pendingLanguage)}. The saved draft and PDFs stay as they are until you save.`"
+        confirm-label="Regenerate"
+        :loading="state.resetting.value"
+        @confirm="switchLanguage"
       />
 
       <AppConfirmModal
