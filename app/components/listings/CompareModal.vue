@@ -23,9 +23,9 @@ const confirming = ref(false)
 watch(open, () => (confirming.value = false))
 
 const SIDES = [
-  { label: 'New', color: 'neutral' },
-  { label: 'Existing', color: 'warning' }
-] as const
+  { label: 'New', class: 'text-highlighted' },
+  { label: 'Existing', class: 'text-warning' }
+]
 
 // Compared as displayed text, so e.g. the same locations in another order still match.
 const fields = (l: ComparedListing) => ({
@@ -96,11 +96,12 @@ const summary = computed(() =>
       </UFormField>
 
       <dl class="text-sm">
+        <!-- Names the sides once for every row, and stays in view while the rows scroll. -->
         <div
-          class="hidden grid-cols-[8rem_1fr_1fr] gap-x-4 border-b border-default px-2 pb-2 text-muted sm:grid"
+          class="sticky top-0 z-10 grid grid-cols-2 gap-x-3 border-b border-default bg-default p-2 font-medium sm:grid-cols-[8rem_1fr_1fr] sm:gap-x-4"
         >
-          <span />
-          <span v-for="side in SIDES" :key="side.label">{{ side.label }}</span>
+          <span class="hidden sm:block" />
+          <span v-for="side in SIDES" :key="side.label" :class="side.class">{{ side.label }}</span>
         </div>
         <ListingsCompareRows :rows="differing" :listing="listing" :match="match" />
       </dl>
@@ -129,7 +130,7 @@ const summary = computed(() =>
         data-testid="compare-confirm"
       >
         <p class="text-sm text-highlighted sm:mr-auto">Remove “{{ listing.title }}”?</p>
-        <div class="flex flex-col-reverse gap-2 sm:flex-row">
+        <div class="grid grid-cols-2 gap-2 sm:flex">
           <UButton
             color="neutral"
             variant="ghost"
@@ -149,16 +150,8 @@ const summary = computed(() =>
           >
         </div>
       </div>
-      <div v-else class="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <UButton
-          :to="`/listings/${match.id}`"
-          target="_blank"
-          icon="i-lucide-external-link"
-          color="neutral"
-          variant="ghost"
-          class="justify-center sm:mr-auto"
-          >Open existing</UButton
-        >
+      <!-- Phones: the two decisions side by side, Open existing as a smaller link below. -->
+      <div v-else class="grid w-full grid-cols-2 gap-2 sm:flex sm:justify-end">
         <UButton
           color="neutral"
           variant="subtle"
@@ -174,6 +167,16 @@ const summary = computed(() =>
           data-testid="compare-remove"
           @click="confirming = true"
           >Remove new one</UButton
+        >
+        <UButton
+          :to="`/listings/${match.id}`"
+          target="_blank"
+          icon="i-lucide-external-link"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          class="col-span-2 justify-center sm:order-first sm:mr-auto"
+          >Open existing</UButton
         >
       </div>
     </template>
