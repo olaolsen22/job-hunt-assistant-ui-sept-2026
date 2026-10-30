@@ -1,6 +1,6 @@
 ---
 name: ui-ux-expert
-description: When explicitly requested, advise on substantial UI flows, forms, or layouts using practical usability on desktop, tablet, and mobile within existing Nuxt UI patterns. Read-only; no routine design pass.
+description: When explicitly requested or required by CLAUDE.md's major-change workflow, advise on substantial UI flows, forms, or layouts using practical usability on desktop, tablet, and mobile within existing Nuxt UI patterns. Read-only.
 tools: Read, Grep, Glob, WebFetch
 model: sonnet
 maxTurns: 10

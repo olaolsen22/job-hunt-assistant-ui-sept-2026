@@ -1,6 +1,6 @@
 ---
 name: ui-controller
-description: When explicitly requested, answer a difficult UI reuse question. Read-only; no implementation or routine preflight.
+description: When explicitly requested or required by CLAUDE.md's major-change workflow, answer a difficult UI reuse question. Read-only; no implementation.
 tools: Read, Grep, Glob
 model: sonnet
 maxTurns: 10

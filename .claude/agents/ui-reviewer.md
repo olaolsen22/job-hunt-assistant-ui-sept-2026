@@ -1,6 +1,6 @@
 ---
 name: ui-reviewer
-description: When explicitly requested, review a scoped UI diff for concrete behavior, Nuxt, type, reuse, or accessibility issues. Read-only; no routine review pipeline.
+description: When explicitly requested or required by CLAUDE.md's major-change workflow, review a scoped UI diff for concrete behavior, Nuxt, type, reuse, or accessibility issues. Read-only.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 maxTurns: 10

@@ -33,8 +33,9 @@ SSE subscriptions for parse-job updates.
   Read `docs/REUSABLES.md` for needed prop details and `docs/STATUS.md` for feature scope only.
 - Reuse or extend existing code. New shared abstractions need two real uses.
   Use `ui-controller` for difficult reuse questions, `ui-ux-expert` for substantial new flows/layouts,
-  and `ui-reviewer` only when a meaningful review helps. No mandatory advisor pipeline.
-  Apply their instructions inline; delegate only when the owner asks, including built-in agents
+  and `ui-reviewer` only when a meaningful review helps. No mandatory advisor pipeline, except
+  the major-change workflow below, which requires all three agents. Otherwise apply their
+  instructions inline; delegate only when the owner asks, including built-in agents
   and agent teams. Give delegated agents one question, relevant paths, known findings, and a
   completion criterion. Do not duplicate their investigation or automatically resume a capped run.
 - Efficiency means eliminating redundant work, not dropping requested behavior or useful checks.
@@ -45,6 +46,26 @@ SSE subscriptions for parse-job updates.
   worth preserving. After a verified commit, clear only covered work and record hash + subject.
 - Update the inventory only when reusable exports change. After a notable UI milestone, use
   `log-progress` (`/log-progress` in Claude) to update `docs/STATUS.md`; skip setup-only edits.
+
+## Major changes and new features
+
+Applies to new features, new screens/flows, and changes spanning several screens or shared
+components; not bug fixes, copy/styling tweaks, or docs. This is standing authorization for
+the steps below.
+
+1. Regenerate types: `pnpm gql:gen`; note any `app/graphql-env.d.ts` diff relevant to the work.
+2. Existing feature: build preview, then screenshot the affected screens at phone (375),
+   tablet (768) and desktop (1440) widths, light mode, using the guest account or mocked
+   `/api/auth/me` + `/graphql` responses. Save to the scratchpad, not the repo. New features
+   skip this step.
+3. Analyze the API team's message the owner pasted: what changed, fields/operations to use,
+   breaking changes, and conflicts with the schema. If none was pasted, ask for it once, or
+   proceed when the owner says there is none.
+4. Before coding: run `ui-ux-expert` and `ui-controller` in parallel with the request, the
+   findings from steps 1–3, screenshot paths, and relevant `app/` paths. Fold their advice into
+   the plan or OpenSpec artifacts; note where you disagree and why.
+5. After coding and checks: rebuild preview, take the same screenshots, and run `ui-reviewer`
+   on the diff plus before/after screenshots. Fix confirmed issues; report the rest.
 
 ## Backend and data
 
@@ -93,7 +114,8 @@ SSE subscriptions for parse-job updates.
 - Docs/instructions-only changes: check changed-file formatting and references; skip app tests,
   lint, typecheck, and build. `pnpm format:check` checks the repo; prefer changed-file checks.
 - Never run E2E, Playwright, browser setup, or live UI checks without explicit authorization.
-  Report checks honestly; for UI changes include E2E/UI verification status. Do not claim
+  Screenshots for UI verification and the major-change workflow are authorized (guest account or
+  mock data); the E2E suite still is not. Report checks honestly; for UI changes include E2E/UI verification status. Do not claim
   skill-format validation proves workflow behavior.
 - `pnpm gql:gen` regenerates `app/graphql-env.d.ts` after schema changes; include it in the next
   requested commit. Never run `pnpm dev` / `nuxt dev`.
