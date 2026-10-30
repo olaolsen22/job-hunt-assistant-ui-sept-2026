@@ -96,6 +96,19 @@ describe('TailoredCvPdfModal', () => {
     wrapper.unmount()
   })
 
+  it('saves through the share sheet in an iOS Home Screen app, where download links do nothing', async () => {
+    const share = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, standalone: true, share })
+    const wrapper = await mountOpen()
+    expect(el('cv-pdf-download')!.hasAttribute('href')).toBe(false)
+    el('cv-pdf-download')!.click()
+    await vi.waitFor(() => expect(share).toHaveBeenCalledOnce())
+    const [pdf] = share.mock.calls[0]![0].files
+    expect(pdf.name).toBe('cv.pdf')
+    expect(pdf.type).toBe('application/pdf')
+    wrapper.unmount()
+  })
+
   it('frames a local copy of the PDF, never the download URL', async () => {
     const wrapper = await mountOpen()
     await vi.waitFor(() => expect(el('cv-pdf-frame')).not.toBeNull())
