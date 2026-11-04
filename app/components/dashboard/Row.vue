@@ -1,11 +1,17 @@
 <script setup lang="ts">
-defineProps<{ id: number; title: string; subtitle: string }>()
+// Most widgets list listings; `to` points a row elsewhere (a person for follow-ups).
+const { id, to = undefined } = defineProps<{
+  id: number
+  title: string
+  subtitle: string
+  to?: string
+}>()
 </script>
 
 <template>
   <!-- One link for the whole row: a touch-sized target with nothing clickable nested inside. -->
   <NuxtLink
-    :to="`/listings/${id}`"
+    :to="to ?? `/listings/${id}`"
     class="-mx-2 flex min-h-12 items-center gap-3 rounded-md px-2 py-2 hover:bg-elevated"
     data-testid="dashboard-row"
   >

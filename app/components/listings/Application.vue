@@ -109,7 +109,10 @@ const outcomeOpen = ref(false)
               >
             </div>
             <p class="text-xs text-muted">
-              Created <time :datetime="doc.createdAt">{{ formatDateTime(doc.createdAt) }}</time>
+              Created <time :datetime="doc.createdAt">{{ formatDateTime(doc.createdAt) }}</time
+              ><template v-if="documentOriginLabel(doc)">
+                · <span data-testid="listing-document-origin">{{ documentOriginLabel(doc) }}</span>
+              </template>
             </p>
           </li>
         </ul>

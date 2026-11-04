@@ -325,6 +325,30 @@ export const setCvSection = (cv: TailoredCv, key: TailoredCvSectionKey, value: u
   ;(cv as Record<string, unknown>)[key] = value
 }
 
+export type CvContentStyle = TailoredCv['contentStyle']
+// Concise always prints bullets; the stored choice and paragraphs stay for switching back.
+export const cvEntryStyle = (cv: TailoredCv): CvContentStyle =>
+  cv.template === 'CONCISE' ? 'BULLETS' : cv.contentStyle
+
+// One format for the whole CV. Entries with no paragraph yet start from their bullets joined;
+// bullets stay in the draft either way, since they carry the source ids.
+export const setCvContentStyle = (cv: TailoredCv, style: CvContentStyle) => {
+  cv.contentStyle = style
+  if (style !== 'PARAGRAPH') return
+  for (const e of [...cv.experiences, ...cv.educations, ...cv.certifications, ...cv.projects]) {
+    if (!e.paragraph?.trim()) e.paragraph = e.bullets.map((b) => b.text).join(' ')
+  }
+}
+
+// What the tailored CV page adds to the shared editor's cards and entries. `review` and `section`
+// return props and listeners for v-bind (Vue 3 passes `on*` keys as listeners): `review` for a
+// card's suggestions, `section` also for its own AI run.
+export interface CvEditorAi {
+  review: (key: TailoredCvSectionKey) => Record<string, unknown>
+  section: (key: TailoredCvSectionKey) => Record<string, unknown>
+  analyze: (key: TailoredCvSectionKey, label: string) => void
+}
+
 // The lists whose profile items the owner can remove from this CV and add back.
 export type CvProfileList = 'experiences' | 'educations' | 'certifications' | 'projects' | 'skills'
 // The lists whose items are entries with bullets or a paragraph.
@@ -443,8 +467,10 @@ export const cvSectionFromAnalysis = (
 }
 
 // The external prompt has no contact details or layout, so the previewed candidate keeps the current ones.
+// A reply without a headline (null, read as '') keeps the draft's rather than clearing it.
 export const mergeExternalCandidate = (cv: TailoredCv, external: TailoredCv): TailoredCv => ({
   ...external,
+  headline: external.headline || cv.headline,
   sectionOrder: cv.sectionOrder,
   template: cv.template,
   fullName: cv.fullName,

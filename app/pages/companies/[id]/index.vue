@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { ResultOf } from 'gql.tada'
-import type { CompanyContact } from '~/composables/contactFields'
+import { DELETE_CONTACT, type CompanyContact } from '~/composables/contactFields'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { companyKindLabel, companySizeRange } from '~/constants/company'
 import { LANGUAGE_OPTIONS, WORK_MODE_OPTIONS } from '~/constants/listing'
@@ -92,19 +92,6 @@ const COMPANY_PAGE = graphql(
   `,
   [CONTACT_FIELDS, COMPANY_POSITION]
 )
-
-const DELETE_CONTACT = graphql(`
-  mutation DeleteContact($input: DeleteContactInput!) {
-    deleteContact(input: $input) {
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
 
 const SET_AVOIDED = graphql(`
   mutation SetCompanyAvoided($input: SetCompanyAvoidedInput!) {
@@ -654,7 +641,7 @@ const moreItems = computed<DropdownMenuItem[]>(() =>
           title="Delete this contact?"
           :description="
             deletingContact
-              ? `${deletingContact.name}. Listings linked to them are kept.`
+              ? `${deletingContact.name} and their logged interactions. Listings linked to them are kept.`
               : undefined
           "
           confirm-label="Delete"

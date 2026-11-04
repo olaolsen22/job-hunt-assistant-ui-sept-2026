@@ -2,6 +2,7 @@
 import type { CompanyContact } from '~/composables/contactFields'
 
 // Read-only unless `editable`; the company page manages contacts, the listing page only shows them.
+// Either way the name opens the person's page with their outreach log.
 defineProps<{ contacts: readonly CompanyContact[]; editable?: boolean }>()
 const emit = defineEmits<{ edit: [CompanyContact]; delete: [CompanyContact] }>()
 </script>
@@ -15,8 +16,19 @@ const emit = defineEmits<{ edit: [CompanyContact]; delete: [CompanyContact] }>()
       data-testid="contact"
     >
       <div class="min-w-0 flex-1">
-        <p class="break-words font-medium text-highlighted">{{ c.name }}</p>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <NuxtLink
+            :to="`/contacts/${c.id}`"
+            class="break-words font-medium text-highlighted hover:underline"
+            data-testid="contact-link"
+            >{{ c.name }}</NuxtLink
+          >
+          <ContactsFollowUpChip v-if="c.followUpOn" :follow-up-on="c.followUpOn" />
+        </div>
         <p v-if="c.title" class="break-words text-sm text-muted">{{ c.title }}</p>
+        <p v-if="c.lastInteractionAt" class="text-sm text-muted">
+          Last contacted {{ daysAgoLabel(c.lastInteractionAt) }}
+        </p>
         <div v-if="c.email || c.phone || c.url" class="flex flex-wrap gap-x-3">
           <UButton
             v-if="c.email"

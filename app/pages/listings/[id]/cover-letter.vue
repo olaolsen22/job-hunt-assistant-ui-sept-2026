@@ -504,7 +504,7 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value && !editor.
     <LazyListingsTailoredCvPdfModal
       v-if="pdf"
       v-model:open="pdfOpen"
-      :document-id="pdf.id"
+      :url="`/api/documents/${pdf.id}`"
       :file-name="pdf.fileName"
     />
 

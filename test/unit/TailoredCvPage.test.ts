@@ -54,6 +54,7 @@ registerEndpoint('/graphql', {
               selectedBulletIds: [100],
               selectedSkillIds: [],
               summary: input.section === 'SUMMARY' ? 'Tailored summary' : null,
+              headline: input.section === 'SUMMARY' ? 'Tailored headline' : null,
               error: input.section === 'SKILLS' ? 'Model timed out' : null
             },
             errors: null
@@ -247,6 +248,8 @@ describe('Tailored CV page', () => {
     await flushPromises()
 
     expect(summaryValue()).toBe('Tailored summary')
+    // The summary step's headline lands with it.
+    expect(document.body.textContent).toContain('Tailored headline')
     expect(el('tailored-cv-skills-error')!.textContent).toContain('Model timed out')
     expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
   })
@@ -362,11 +365,14 @@ describe('Tailored CV page', () => {
       'SUMMARY'
     ])
     expect(summaryValue()).toBe('Mine')
-    expect(el('tailored-cv-suggestions')!.textContent).toContain('1 suggestion to review')
-    expect(el('tailored-cv-pending')!.textContent).toContain('1 suggestion to review')
+    // The summary step also suggests a headline.
+    expect(el('tailored-cv-suggestions')!.textContent).toContain('2 suggestions to review')
+    expect(el('tailored-cv-pending')!.textContent).toContain('2 suggestions to review')
     expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(false)
     await click('tailored-cv-accept')
+    await click('tailored-cv-accept')
     expect(summaryValue()).toBe('Tailored summary')
+    expect(document.body.textContent).toContain('Tailored headline')
     expect(el('tailored-cv-suggestions')).toBeNull()
     expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
   })

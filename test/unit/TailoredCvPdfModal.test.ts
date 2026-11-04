@@ -16,7 +16,7 @@ const el = (id: string) => document.body.querySelector<HTMLElement>(`[data-testi
 
 const mountOpen = async (applicable = false) => {
   const wrapper = await mountSuspended(TailoredCvPdfModal, {
-    props: { open: true, documentId: 70, fileName: 'cv.pdf', applicable },
+    props: { open: true, url: '/api/documents/70', fileName: 'cv.pdf', applicable },
     attachTo: document.body
   })
   await flushPromises()

@@ -11,7 +11,7 @@ import {
   tailoredCvToText,
   toTailoredCvInput
 } from '~/utils/tailoredCv'
-import { latestUnsentDocument } from '~/utils/documents'
+import { documentOriginLabel, latestUnsentDocument } from '~/utils/documents'
 import { cvProfile } from '../fixtures/profileCv'
 
 const profile = (): ProfileData => {
@@ -294,6 +294,9 @@ describe('tailored CV candidate', () => {
       sectionOrder: 'DEVELOPER'
     })
     expect(changedCvSections(cv, merged).map((s) => s.key)).toEqual(['summary'])
+    // No headline in the reply keeps the draft's; a new one is offered.
+    expect(mergeExternalCandidate(cv, { ...external, headline: '' }).headline).toBe(cv.headline)
+    expect(mergeExternalCandidate(cv, { ...external, headline: 'Lead' }).headline).toBe('Lead')
   })
 
   it('sends the complete candidate with blanks as null and empty bullets dropped', () => {
@@ -359,6 +362,17 @@ describe('latestUnsentDocument', () => {
     expect(latest?.id).toBe(1)
   })
 
+  it('skips a CV template copy, which is not the listing’s own CV', () => {
+    const latest = latestUnsentDocument(
+      [
+        { ...doc(1, 'CV', '2026-10-01T10:00:00Z'), origin: 'TAILORED' },
+        { ...doc(2, 'CV', '2026-10-05T10:00:00Z'), origin: 'BASE_CV' }
+      ],
+      'CV'
+    )
+    expect(latest?.id).toBe(1)
+  })
+
   it('picks cover letters when asked', () => {
     const latest = latestUnsentDocument(
       [doc(1, 'CV', '2026-10-05T10:00:00Z'), doc(2, 'COVER_LETTER', '2026-10-01T10:00:00Z')],
@@ -371,5 +385,22 @@ describe('latestUnsentDocument', () => {
     expect(
       latestUnsentDocument([doc(1, 'COVER_LETTER', '2026-10-01T10:00:00Z')], 'CV')
     ).toBeUndefined()
+  })
+})
+
+describe('documentOriginLabel', () => {
+  it('names the CV template and version a CV was made from', () => {
+    expect(
+      documentOriginLabel({
+        origin: 'BASE_CV',
+        baseCvVersion: { number: 3, baseCv: { name: 'Frontend (EN)' } }
+      })
+    ).toBe('CV template: Frontend (EN) v3')
+  })
+
+  it('names tailored and uploaded documents, and nothing for ones from before origins', () => {
+    expect(documentOriginLabel({ origin: 'TAILORED' })).toBe('Tailored for this listing')
+    expect(documentOriginLabel({ origin: 'UPLOADED' })).toBe('Uploaded')
+    expect(documentOriginLabel({ origin: null })).toBeUndefined()
   })
 })

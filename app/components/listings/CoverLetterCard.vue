@@ -133,7 +133,7 @@ const pdfOpen = ref(false)
     <LazyListingsTailoredCvPdfModal
       v-if="pdf"
       v-model:open="pdfOpen"
-      :document-id="pdf.id"
+      :url="`/api/documents/${pdf.id}`"
       :file-name="pdf.fileName"
     />
     <AppConfirmModal

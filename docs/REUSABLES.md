@@ -42,7 +42,7 @@ remove it when you delete one.
 - `<DashboardApiHealth state @recheck>` — API health badge (`checking | healthy | databaseDown | unreachable`) + recheck button; the dashboard page owns the `/api/health` fetch.
 - `<DashboardWidget title icon icon-class? to? loading error empty empty-text total? @retry>` — dashboard card shell:
   header with title, count badge and "View all" link; skeleton, "<title> couldn't load." with Retry, or empty text, else the default slot.
-- `<DashboardRow id title subtitle>` — one-link listing row (dashboard widgets, company positions); the default slot is the right-hand detail.
+- `<DashboardRow id title subtitle to?>` — one-link row (dashboard widgets, company positions, a person's listings); links to `/listings/<id>` unless `to` is given (follow-ups link people). The default slot is the right-hand detail.
 - Dashboard widgets (`<DashboardClosingSoon>`, `Interviews`, `Offers`, `Stale`, `Pipeline`, `AppliedThisWeek`, `ToAnalyze`,
   `FavoriteListings`, `FavoriteCompanies`, `LlmUsage`) — each runs its own literal query through `useAsyncData` (client-only).
 - `<DashboardEditor v-model:open :layout @saved>` — `USlideover` editor: copy of the saved layout (reset on each open) with drag,
@@ -53,7 +53,9 @@ remove it when you delete one.
   optimistically and rolled back on an API error; `size` `xs` default, `md` in detail headers and list rows. Test id `${target}-favorite`.
 - `<CompaniesAvoidedBadge label?>` — warning badge for an avoided company; "Avoided" on company surfaces, `label="Avoided company"` on listing ones.
 - `<CompaniesNotesModal v-model:open companyId notes @saved>` — edits a company's Markdown notes; shows the API error inline.
-- `<CompaniesContactList contacts editable? @edit @delete>` — contact rows (title, mailto/tel/link buttons, Markdown notes); edit/delete only when `editable`. Used on the company and listing pages.
+- `<CompaniesContactList contacts editable? @edit @delete>` — contact rows (name links to the person page, follow-up chip, last contacted, title, mailto/tel/link buttons, Markdown notes); edit/delete only when `editable`. Used on the company and listing pages.
+- `<ContactsFollowUpChip follow-up-on>` — badge for a contact's follow-up date: "Overdue 5 d" (error), "Due today" (warning), "Due 5. nov." (neutral). Text from `followUpSummary(iso)` (`utils/followUp.ts`), also used as plain text in the dashboard widget.
+- `<ContactsInteractionModal contact-id interaction v-model:open @changed>` — log (null) or edit (full replace) an interaction; blocks a future date and a follow-up before it. Refetch the contact after `changed`: its follow-up and last contact come from the latest interaction.
 - `<CompaniesContactModal v-model:open companyId contact @changed>` — add (`contact: null`) or replace a contact via `addContact`/`updateContact`; API errors as toasts.
   Uses `@click.prevent.stop`, so it can sit inside a link row.
 - `<ListingsNameCombobox v-model lookup placeholder? countryCode? clear? disabled?>` — debounced search over
@@ -75,10 +77,15 @@ remove it when you delete one.
   active option clears it. Generic over the option value type. Rule in the form: 3 or fewer options use this, more use a
   clearable `USelectMenu` (`USelect` can't go back to empty).
 - `<ListingsFilterPanel :facets v-model:sort v-model:search :quick-counts>` — the `/listings` toolbar (search, sort, "Filters (n)",
-  Favorites toggle), a removable chip per active facet (plus `companyId`, labelled by the optional `company-name` prop) + Clear all, and the facet sheet (`USlideover`, right from `md`,
-  bottom on phones; quick toggles as switches with `quick-counts` on top); edits `facets` in place.
-- `<ListingsFilterCombobox v-model lookup="skills" | "locations" placeholder?>` — multi-select search over
-  existing skills (by name) or locations (by id, labelled `City, Country`); no create option.
+  Favorites toggle), a removable chip per active facet (plus `companyId`, labelled by the optional `company-name` prop) + Clear all, and the facet sheet
+  (quick toggles as switches with `quick-counts` on top); edits `facets` in place.
+- `<CompaniesFilterPanel v-model:facets v-model:search>` — the same toolbar, chips and sheet for `/companies` (hide avoided, has contacts,
+  research any/yes/no, size, industry, skill, location, work mode, working language). Query/URL logic in `utils/companiesQuery.ts`, state in `useCompaniesList(grid)`.
+- `<AppFilterSheet v-model:open testid-prefix clear-disabled @clear>` — the Filters slideover both panels use (right from `md`, bottom on
+  phones, decided on open; Clear filters / Done footer); facet fields in the default slot.
+- `<AppFilterChips :chips testid-prefix @clear-all>` — one removable chip per `{ key, label, clear }`, then Clear all.
+- `<AppFilterCombobox v-model lookup="skills" | "industries" | "locations" placeholder?>` — multi-select search over
+  existing skills or industries (by name) or locations (by id, labelled `City, Country`); no create option.
 - `<ListingsLocationsField v-model>` — `{ countryCode, city }[]` repeater (country picker + city combobox).
 - `<ListingsSkillProfileModal v-model:open skill listing-level @changed>` — add a listing skill (`{ id, name, profileLevel }`) to the profile
   or change its level: level select + experience/project checkboxes (already-tagged entries locked on). Refreshes `'profile'`.
@@ -106,8 +113,18 @@ remove it when you delete one.
 - `<ListingsApplyModal>`, `<ListingsOutcomeModal>`, `<ListingsStatusChangeModal>`,
   `<ListingsInterviewModal>` — `v-model:open` form modals (on `<AppConfirmModal>`) that own their
   mutation and emit `changed`.
-- `<ListingsDocumentPicker v-model:document-id v-model:file label documents required? help?>` — pick an uploaded
-  document or a new PDF (uploaded by the caller on submit); used twice by `<ListingsApplyModal>`.
+- `<ListingsDocumentPicker v-model:document-id v-model:file v-model:base-cv-version-id? label documents required? help? base-cvs?>`
+  — pick an uploaded document or a new PDF (uploaded by the caller on submit); `base-cvs` (the CV picker) also offers
+  a CV template and version, which the caller turns into a document on submit (`GENERATE_BASE_CV_DOCUMENT`) and keeps
+  for a retry. Used twice by `<ListingsApplyModal>`.
+- `<CvContentEditor v-model:cv :profile disabled? :ai?>` — the CV's content cards (contact, summary, entries, skills,
+  languages) and their edit modals, applied to `cv` in place. Shared by the tailored CV page, which passes `ai`
+  (`CvEditorAi`: suggestion and AI-run bindings), and the CV template editor, which doesn't.
+- `<ListingsTailoredCvPdfModal v-model:open url file-name applicable?>` — previews any same-origin PDF: a document
+  (`/api/documents/<id>`) or a CV template version (`baseCvPdfUrl(versionId)`).
+- `<CvTemplatesDetailsModal v-model:open base-cv? @saved>` creates a CV template (prefilled from
+  `baseCvFromProfile(language)`, then opens its editor) or renames one; `<CvTemplatesDeleteModal v-model:open base-cv
+@deleted @archived>` offers Archive instead once the API says the template is in use.
 - `/profile` (`pages/profile.vue`, data from `useProfile()`) is built from `<Profile…>` components, which own their
   mutations and emit `changed` (page refetches) or `saved` (Basics/Preferences return the whole profile):
   `<ProfileSection title icon testid empty empty-message add-label full? clearable? @add @clear>` (card with a centered empty state; header
@@ -133,7 +150,8 @@ remove it when you delete one.
 - `useCollectedJobProcessing(parse)` — page-local sequential runner. `start`, `retry`, `skip`, `stop`, and `invalidate` control `idle`/`running`/`paused`/`finished`/`stopped`; `accepted` holds validated raw drafts in order. `completed`, `skipped`, `unprocessed`, `currentBatch`, `total`, `error`, `errorCode` (the failed batch's `AiSafetyError` code), and `busy` support progress and recovery UI. `markPublished()` is a one-shot guard for appending drafts.
 
 - `LISTING_COMPARE_FIELDS` fragment + `ComparedListing` type (`composables/listingCompareFields.ts`) — fields the compare modal needs.
-- `CONTACT_FIELDS` fragment + `CompanyContact` type (`composables/contactFields.ts`) — contact shape for company and listing queries.
+- `CONTACT_FIELDS` fragment + `CompanyContact` type (`composables/contactFields.ts`) — contact shape for company, listing and People queries; also `DELETE_CONTACT` and `INTERACTION_FIELDS` / `ContactInteraction`.
+- `useCursorPages()` (`composables/useCursorPages.ts`) — numbered pages over a cursor connection: `page`, `after`, `walking`, `reset()` (same tick as a search/filter change), `remember(pageInfo)` after each fetch, `goTo(target, fetchPageInfo)` walks forward to an unknown page. Used by `/companies` and `/contacts`.
 - `useListing(id)` → `{ listing, loading, error, refresh }` — client-only `listingById` query with every
   field (key `listing-${id}`), incl. kind, application status, history, interviews and documents, for the
   detail and edit pages. Usable at once and awaitable (`await useListing(id)` waits for the first load), so a
@@ -183,6 +201,14 @@ remove it when you delete one.
   columns, 5 below `md`; fixed for the page load), then the single fetch starts (`immediate: false`).
   Client-only fetch (`server: false`) since it needs the session cookie. Also exports `ListingListItem`,
   `measurePageSize(grid, cardHeight?, gap?)` (also used by /companies), `emptyFacets()` and `countActiveFacets(facets)`.
+
+- `useListingImports.ts` — job imports (collected-jobs files the API picks up): `usePendingImportCount()` for the sidebar badge, dashboard notice and imports tab badge (refresh with `refreshNuxtData(PENDING_IMPORTS_KEY)`), `fetchListingImports`/`fetchListingImport(id)` (only the single fetch selects `content`), `useSetImportReviewed()`, `useNextImport(currentId)` (`nextImportId`, `load`; first other pending import without an error).
+- `useBaseCvs.ts` — CV templates (the API's base CVs; "template" in CV content is the DETAILED/CONCISE style).
+  `useBaseCvEditor(id)` loads the template (the API has no single-template query, so both lists in one request),
+  keeps an editable `cv` and `dirty`, and `save(note)` returns `{ number, isNew }`: unchanged content returns the
+  latest version, so only `isNew` means a new version. `InvalidTailoredCvDraftError` lands in `invalidContent` for the
+  page's Reload from profile. `useBaseCvActions()` → `setArchived(id, bool)`, `remove(id)` → deleted | in-use |
+  failed. Also `BASE_CV_LIST`, `baseCvFromProfile(language)`, `baseCvPdfUrl(versionId)`.
 
 ## Stores (`app/stores/`)
 

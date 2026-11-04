@@ -79,6 +79,8 @@ export type WorkMode = (typeof WORK_MODE_OPTIONS)[number]['value']
 export type DeadlineType = (typeof DEADLINE_TYPE_OPTIONS)[number]['value']
 export type ListingKind = (typeof LISTING_KIND_OPTIONS)[number]['value']
 export type Language = (typeof LANGUAGE_OPTIONS)[number]['value']
+export const languageLabel = (value: Language) =>
+  LANGUAGE_OPTIONS.find((o) => o.value === value)!.label
 export type CefrLevel = (typeof CEFR_LEVELS)[number]
 export type Proficiency = (typeof PROFICIENCY_OPTIONS)[number]['value']
 export type ProjectKind = (typeof PROJECT_KIND_OPTIONS)[number]['value']

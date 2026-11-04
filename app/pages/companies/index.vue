@@ -1,150 +1,39 @@
 <script setup lang="ts">
-import { parse, print } from '@0no-co/graphql.web'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
-import { companySizeRange } from '~/constants/company'
-import { measurePageSize, pageFromQuery, useCompaniesView } from '~/composables/useListingsList'
+import {
+  COMPANY_SORTS,
+  COMPANY_TABS,
+  companyKindLabel,
+  companySizeRange
+} from '~/constants/company'
 
 definePageMeta({ title: 'Companies' })
 
-// `first: 20` is a placeholder: the page size is measured at runtime and has to be a literal in the
-// query text, because the API's cost check prices any `first` variable as 50 (HC0047).
-const COMPANIES = graphql(`
-  query Companies($search: String, $after: String) {
-    companies(search: $search, first: 20, after: $after, order: { name: ASC }) {
-      nodes {
-        id
-        name
-        listingCount
-        applicationCount
-        favoritedAt
-        avoidedAt
-        sizeBand
-        industry {
-          name
-        }
-        locations {
-          location {
-            city
-            countryCode
-          }
-        }
-      }
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-      totalCount
-    }
-  }
-`)
-
-// Search, Hide avoided and page live in the URL like on /listings, so coming back from a company
-// restores them.
-const route = useRoute()
-const router = useRouter()
-const initialSearch = String(route.query.search ?? '').trim()
-const search = ref(initialSearch)
-// Typing shouldn't refetch on every keystroke, so the query only sees the settled value.
-const settledSearch = ref(initialSearch)
-const hideAvoided = ref(route.query.hideAvoided === '1')
 const grid = useTemplateRef('grid')
-// Same rule as /listings (5 on phones, otherwise what fits the screen, max 12), measured once on mount.
-const pageSize = ref(5)
-// `where` is spliced in as literal text too: a filter-input variable trips the same cost check.
-const companiesQuery = () => {
-  let source = print(COMPANIES).replace('first: 20', `first: ${pageSize.value}`)
-  if (hideAvoided.value)
-    source = source.replace('order:', 'where: { avoidedAt: { eq: null } }, order:')
-  return parse(source) as typeof COMPANIES
-}
-const page = ref(1)
-// `cursors[p - 1]` is the `after` cursor of page p. The API only pages by cursor (no skip), so
-// numbered pages are possible only for pages whose cursor we already know.
-const cursors = ref<(string | null)[]>([null])
-const walking = ref(false)
-const after = computed(() => cursors.value[page.value - 1] ?? null)
-
-watch(
+const {
   search,
-  useDebounce((value: string) => {
-    settledSearch.value = value.trim()
-    // Reset in the same tick, or the refetch would pair the new search with an old cursor.
-    cursors.value = [null]
-    page.value = 1
-  }, 300)
+  settledSearch,
+  tab,
+  sort,
+  facets,
+  page,
+  pageSize,
+  companies,
+  totalCount,
+  loading,
+  error,
+  goTo,
+  clearAll
+} = useCompaniesList(grid)
+
+const tabInfo = computed(() => COMPANY_TABS.find((t) => t.value === tab.value)!)
+const tabItems = COMPANY_TABS.map(({ label, value, icon }) => ({ label, value, icon }))
+const sortItems = COMPANY_SORTS.map(({ label, value }) => ({ label, value }))
+// Anything that can make an empty list mean "no match" rather than "nothing yet".
+const narrowed = computed(() => !!settledSearch.value || countActiveCompaniesFacets(facets) > 0)
+const emptyText = computed(() =>
+  narrowed.value ? 'No companies match.' : `No ${tabInfo.value.noun[1]} yet.`
 )
-
-// Same tick as the toggle, or the refetch would pair the filter with an old cursor.
-watch(hideAvoided, () => {
-  cursors.value = [null]
-  page.value = 1
-})
-
-// `replace`: paging and filtering aren't history entries, so browser back leaves the page.
-// The company page's Back returns to the last of these URLs.
-const lastView = useCompaniesView()
-lastView.value = route.fullPath
-watch([page, settledSearch, hideAvoided], () => {
-  const to = router.resolve({
-    path: route.path,
-    query: {
-      ...(settledSearch.value && { search: settledSearch.value }),
-      ...(hideAvoided.value && { hideAvoided: '1' }),
-      ...(page.value > 1 && { page: String(page.value) })
-    }
-  })
-  lastView.value = to.fullPath
-  router.replace(to)
-})
-
-// Needs the session cookie, so fetched client-only like the listings list.
-const { data, status, error, execute } = useAsyncData(
-  'companies',
-  () => gql(companiesQuery(), { search: settledSearch.value || null, after: after.value }),
-  { watch: [page, settledSearch, hideAvoided], server: false, immediate: false }
-)
-
-// The grid has to be in the DOM to be measured, so the first fetch waits for mount. Row heights are
-// the rendered ones: one line from `lg` up, stacked below (CSS can't be read before rows exist).
-onMounted(async () => {
-  const rowHeight = window.matchMedia('(min-width: 1024px)').matches ? 72 : 132
-  pageSize.value = measurePageSize(grid.value!, rowHeight, 12)
-  // A restored page is fetched by the page watcher; page 1 (also a restored page clamped to it) isn't.
-  const initialPage = pageFromQuery(route.query.page)
-  if (initialPage > 1) await goTo(initialPage)
-  if (page.value === 1) execute()
-})
-
-const companies = computed(() => data.value?.companies?.nodes ?? [])
-const totalCount = computed(() => data.value?.companies?.totalCount ?? 0)
-const pageInfo = computed(() => data.value?.companies?.pageInfo)
-const loading = computed(
-  () => walking.value || status.value === 'pending' || status.value === 'idle'
-)
-
-// Remembers where the next page starts, so Next and later numbered clicks need no extra requests.
-watch(data, () => {
-  if (pageInfo.value?.hasNextPage) cursors.value[page.value] = pageInfo.value.endCursor!
-})
-
-// Jumping past the known cursors walks forward one page at a time (`first` is capped at 50 server-side,
-// so loading N pages in one request is not possible). A page from the URL can be past the end, so the
-// walk stops at the last page.
-const goTo = async (target: number) => {
-  walking.value = true
-  while (cursors.value.length < target) {
-    const { pageInfo } = (
-      await gql(companiesQuery(), {
-        search: settledSearch.value || null,
-        after: cursors.value.at(-1) ?? null
-      })
-    ).companies!
-    if (!pageInfo.hasNextPage) break
-    cursors.value.push(pageInfo.endCursor!)
-  }
-  walking.value = false
-  page.value = Math.min(target, cursors.value.length)
-}
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
@@ -191,64 +80,63 @@ const researchSelected = () => {
 
 <template>
   <div class="space-y-6">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-      <!-- Kept visible while loading, so it doesn't pop in after the first fetch. -->
-      <UInput
-        v-if="loading || companies.length || search"
-        v-model="search"
-        icon="i-lucide-search"
-        placeholder="Search companies"
-        class="w-full sm:max-w-sm"
-        data-testid="companies-search"
-      >
-        <template v-if="search" #trailing>
-          <UButton
-            icon="i-lucide-x"
-            color="neutral"
-            variant="link"
-            data-testid="companies-search-clear"
-            @click="search = ''"
-          />
-        </template>
-      </UInput>
-      <UButton
-        to="/companies/add"
-        icon="i-lucide-plus"
-        class="justify-center sm:ml-auto"
-        data-testid="companies-add"
-      >
-        Add companies
-      </UButton>
-    </div>
-
-    <div
-      v-if="companies.length || search || hideAvoided"
-      class="flex items-center justify-between gap-2"
-    >
-      <div class="flex items-center gap-4">
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex min-w-0 items-center gap-4">
         <p class="text-lg font-semibold text-highlighted" data-testid="companies-total">
-          {{ totalCount }} {{ totalCount === 1 ? 'company' : 'companies' }}
+          <template v-if="loading && !companies.length">&nbsp;</template>
+          <template v-else>{{ totalCount }} {{ tabInfo.noun[totalCount === 1 ? 0 : 1] }}</template>
         </p>
         <UCheckbox
           v-if="companies.length"
           :model-value="selectAllState"
+          :disabled="loading"
           label="Select all shown"
           data-testid="companies-select-all"
           @update:model-value="toggleAllShown"
         />
       </div>
       <UButton
-        size="sm"
-        color="neutral"
-        :variant="hideAvoided ? 'solid' : 'subtle'"
-        icon="i-lucide-eye-off"
-        :aria-pressed="hideAvoided"
-        data-testid="companies-hide-avoided"
-        @click="hideAvoided = !hideAvoided"
+        to="/companies/add"
+        icon="i-lucide-plus"
+        class="shrink-0"
+        data-testid="companies-add"
       >
-        Hide avoided
+        <span class="max-sm:sr-only">Add companies</span>
       </UButton>
     </div>
+
+    <!-- Type and sort: pill tabs from md, two equal selects on phones where three tabs squash. -->
+    <div class="flex items-center gap-2">
+      <UTabs
+        v-model="tab"
+        :items="tabItems"
+        :content="false"
+        variant="pill"
+        size="sm"
+        aria-label="Company type"
+        class="hidden md:block"
+        data-testid="companies-tabs"
+      />
+      <USelect
+        v-model="tab"
+        :items="tabItems"
+        aria-label="Company type"
+        class="min-w-0 flex-1 md:hidden"
+        data-testid="companies-tab-select"
+      />
+      <USelect
+        v-model="sort"
+        :items="sortItems"
+        aria-label="Sort"
+        class="min-w-0 flex-1 md:ml-auto md:w-52 md:flex-none"
+        data-testid="companies-sort"
+      />
+    </div>
+    <p v-if="tab === 'employers'" class="-mt-4 text-sm text-muted" data-testid="companies-tab-hint">
+      Companies without a type yet are under All.
+    </p>
+
+    <CompaniesFilterPanel v-model:facets="facets" v-model:search="search" />
 
     <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />
 
@@ -257,13 +145,29 @@ const researchSelected = () => {
       class="flex flex-col items-center gap-3 py-16 text-center"
       data-testid="companies-empty"
     >
-      <UIcon name="i-lucide-building-2" class="size-10 text-muted" />
-      <p>{{ search || hideAvoided ? 'No companies match.' : 'No companies yet.' }}</p>
-      <UButton v-if="!search && !hideAvoided" to="/companies/add">Add companies</UButton>
+      <UIcon :name="tabInfo.icon" class="size-10 text-muted" />
+      <p>{{ emptyText }}</p>
+      <UButton
+        v-if="narrowed"
+        color="neutral"
+        variant="subtle"
+        data-testid="companies-empty-clear"
+        @click="clearAll"
+        >Clear search and filters</UButton
+      >
+      <UButton v-else-if="tab === 'all'" to="/companies/add">Add companies</UButton>
     </div>
 
     <template v-else>
-      <div ref="grid" class="grid gap-3" data-testid="companies-list">
+      <!-- Rows from the previous tab or filters stay until the new ones arrive; dimmed and inert, so
+           Select all can't act on rows that are about to go. -->
+      <div
+        ref="grid"
+        class="grid gap-3 transition-opacity"
+        :class="{ 'pointer-events-none opacity-50': loading && companies.length }"
+        :aria-busy="loading"
+        data-testid="companies-list"
+      >
         <template v-if="loading && companies.length === 0">
           <USkeleton v-for="i in pageSize" :key="i" class="h-20 w-full lg:h-16" />
         </template>
@@ -286,14 +190,26 @@ const researchSelected = () => {
             </div>
             <div class="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center lg:gap-6">
               <div class="min-w-0 lg:flex-1">
-                <!-- The ::after overlay stretches the link over the card (like ListingsRow), so the
-                   favorite button isn't nested inside an <a>. -->
-                <NuxtLink
-                  :to="`/companies/${c.id}`"
-                  class="block truncate font-medium text-highlighted after:absolute after:inset-0"
-                  data-testid="companies-row-link"
-                  >{{ c.name }}</NuxtLink
-                >
+                <div class="flex min-w-0 items-center gap-2">
+                  <!-- The ::after overlay stretches the link over the card (like ListingsRow), so the
+                     favorite button isn't nested inside an <a>. -->
+                  <NuxtLink
+                    :to="`/companies/${c.id}`"
+                    class="truncate font-medium text-highlighted after:absolute after:inset-0"
+                    data-testid="companies-row-link"
+                    >{{ c.name }}</NuxtLink
+                  >
+                  <!-- The tab already says "consultancy"; an untyped company hasn't been researched. -->
+                  <UBadge
+                    v-if="tab !== 'consultancies'"
+                    :color="c.kind ? 'primary' : 'neutral'"
+                    :variant="c.kind ? 'subtle' : 'outline'"
+                    size="sm"
+                    class="shrink-0"
+                    data-testid="companies-row-kind"
+                    >{{ c.kind ? companyKindLabel(c.kind) : 'Not researched' }}</UBadge
+                  >
+                </div>
                 <!-- Size first, so truncation cuts the industry name rather than the size. -->
                 <p
                   v-if="c.industry || c.sizeBand"
@@ -310,7 +226,7 @@ const researchSelected = () => {
                 <UIcon name="i-lucide-map-pin" class="size-4 shrink-0" />
                 <span class="truncate">{{ formatPlaces(c.locations.map((l) => l.location)) }}</span>
               </p>
-              <div class="flex shrink-0 items-center gap-2">
+              <div class="flex shrink-0 flex-wrap items-center gap-2">
                 <CompaniesAvoidedBadge v-if="c.avoidedAt" />
                 <AppFavoriteButton
                   :id="c.id"
@@ -318,6 +234,8 @@ const researchSelected = () => {
                   :favorited-at="c.favoritedAt"
                   class="relative z-10"
                 />
+                <!-- Listings always show, so "0 listings" says there is nothing open there yet;
+                     the other counts only when they have something. -->
                 <UBadge
                   color="neutral"
                   variant="subtle"
@@ -326,11 +244,20 @@ const researchSelected = () => {
                   >{{ plural(c.listingCount, 'listing') }}</UBadge
                 >
                 <UBadge
+                  v-if="c.applicationCount"
                   color="neutral"
                   variant="subtle"
                   icon="i-lucide-send"
                   data-testid="companies-row-applications"
                   >{{ plural(c.applicationCount, 'application') }}</UBadge
+                >
+                <UBadge
+                  v-if="c.contacts.length"
+                  color="neutral"
+                  variant="subtle"
+                  icon="i-lucide-contact-round"
+                  data-testid="companies-row-contacts"
+                  >{{ plural(c.contacts.length, 'contact') }}</UBadge
                 >
               </div>
             </div>

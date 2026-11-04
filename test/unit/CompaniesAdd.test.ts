@@ -67,7 +67,8 @@ describe('Add companies', () => {
         kind: 'CONSULTANCY',
         sizeBand: 'tiny',
         websiteUrl: 'https://bekk.no',
-        skills: ['Kotlin', 'kotlin', 'React']
+        skills: ['Kotlin', 'kotlin', 'React'],
+        contacts: [{ name: 'Kari Nordmann', title: 'Recruiter' }]
       },
       { name: 'Vipps', industryName: null, locations: [] },
       { name: 'Kahoot', locations: [] }
@@ -78,7 +79,7 @@ describe('Add companies', () => {
     const rows = wrapper.findAll('[data-testid="companies-add-row"]')
     expect(rows).toHaveLength(3)
     expect(rows[0]!.get('[data-testid="companies-add-row-research"]').text()).toBe(
-      'Research included: Consultancy · 2 skills · website'
+      'Research included: Consultancy · 2 skills · 1 contact · website'
     )
     // An unknown size would fail the whole request, so it is dropped and said so.
     expect(rows[0]!.get('[data-testid="companies-add-row-ignored"]').text()).toBe(
@@ -101,7 +102,10 @@ describe('Add companies', () => {
         kind: 'CONSULTANCY',
         sizeBand: null,
         websiteUrl: 'https://bekk.no',
-        skills: ['Kotlin', 'React']
+        skills: ['Kotlin', 'React'],
+        contacts: [
+          { name: 'Kari Nordmann', title: 'Recruiter', email: null, phone: null, url: null }
+        ]
       },
       { name: 'Vipps', industryName: null, locations: [], skills: [] },
       { name: 'Kahoot', industryName: null, locations: [] }

@@ -4,6 +4,7 @@ import AppliedThisWeek from '~/components/dashboard/AppliedThisWeek.vue'
 import ClosingSoon from '~/components/dashboard/ClosingSoon.vue'
 import FavoriteCompanies from '~/components/dashboard/FavoriteCompanies.vue'
 import FavoriteListings from '~/components/dashboard/FavoriteListings.vue'
+import FollowUps from '~/components/dashboard/FollowUps.vue'
 import Interviews from '~/components/dashboard/Interviews.vue'
 import LlmUsage from '~/components/dashboard/LlmUsage.vue'
 import Offers from '~/components/dashboard/Offers.vue'
@@ -28,6 +29,7 @@ export const DASHBOARD_WIDGETS: Record<
   },
   OFFERS_TO_ANSWER: { label: 'Offers to answer', icon: 'i-lucide-handshake', component: Offers },
   STALE_LISTINGS: { label: 'Stale listings', icon: 'i-lucide-hourglass', component: Stale },
+  CONTACT_FOLLOW_UPS: { label: 'Follow-ups due', icon: 'i-lucide-bell-ring', component: FollowUps },
   PIPELINE: { label: 'Pipeline', icon: 'i-lucide-kanban', component: Pipeline, span: 'full' },
   APPLIED_THIS_WEEK: {
     label: 'Applied this week',

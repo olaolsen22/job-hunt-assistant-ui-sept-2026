@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { readBody } from 'h3'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import FilterCombobox from '~/components/listings/FilterCombobox.vue'
+import FilterCombobox from '~/components/app/FilterCombobox.vue'
 
 describe('FilterCombobox', () => {
   it('emits every picked location id', async () => {
@@ -39,6 +40,33 @@ describe('FilterCombobox', () => {
       .click()
 
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([[1, 2]])
+    wrapper.unmount()
+  })
+
+  it('picks industries by name from the industry search', async () => {
+    const queries: string[] = []
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: async (event) => {
+        queries.push((await readBody(event)).query)
+        return { data: { industries: { nodes: [{ name: 'Consulting' }, { name: 'Software' }] } } }
+      }
+    })
+
+    const wrapper = await mountSuspended(FilterCombobox, {
+      props: { lookup: 'industries', modelValue: [] },
+      attachTo: document.body
+    })
+    await wrapper.get('input').setValue('s')
+    await new Promise((r) => setTimeout(r, 250))
+    await flushPromises()
+
+    ;[...document.body.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((o) => o.textContent?.includes('Software'))!
+      .click()
+
+    expect(queries.at(-1)).toContain('industries(')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([['Software']])
     wrapper.unmount()
   })
 })

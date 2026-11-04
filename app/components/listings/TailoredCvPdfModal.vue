@@ -7,13 +7,14 @@ import { PHONE_FULLSCREEN_MODAL } from '~/constants/ui'
 // failed preview is handled with timers and the fetch result, surfacing Open PDF instead.
 // A browser without a built-in PDF viewer (phones, or one set to download PDFs) would still save a
 // framed PDF on its own, so it gets a notice instead of the frame. `applicable` offers Apply with
-// this CV (Saved listings).
+// this CV (Saved listings). `url` is the PDF's same-origin path: a stored document or a rendered
+// CV template version.
 const {
-  documentId,
+  url,
   fileName,
   applicable = false
 } = defineProps<{
-  documentId: number
+  url: string
   fileName: string
   applicable?: boolean
 }>()
@@ -22,7 +23,6 @@ const emit = defineEmits<{ apply: [] }>()
 
 // Only read in the browser, where the dialog's body renders (it's closed during SSR).
 const viewer = import.meta.client ? navigator.pdfViewerEnabled !== false : true
-const url = computed(() => `/api/documents/${documentId}`)
 // An app added to the iOS Home Screen ignores `download` links, so Download does nothing there;
 // it saves through the share sheet (Save to Files) instead. `standalone` exists only on iOS.
 const shareToSave = import.meta.client
@@ -63,7 +63,7 @@ watch(
       setTimeout(() => (gaveUp.value = true), GIVE_UP_MS)
     ]
     try {
-      const data = await $fetch<Blob>(url.value, { responseType: 'blob' })
+      const data = await $fetch<Blob>(url, { responseType: 'blob' })
       if (current !== request || !open.value) return
       file.value = new File([data], fileName, { type: 'application/pdf' })
       blobUrl.value = URL.createObjectURL(file.value)
@@ -90,7 +90,7 @@ const save = async () => {
   try {
     const pdf =
       file.value ??
-      new File([await $fetch<Blob>(url.value, { responseType: 'blob' })], fileName, {
+      new File([await $fetch<Blob>(url, { responseType: 'blob' })], fileName, {
         type: 'application/pdf'
       })
     await navigator.share({ files: [pdf] })

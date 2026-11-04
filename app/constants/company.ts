@@ -5,7 +5,9 @@ export const COMPANY_KIND_OPTIONS = [
   { label: 'In-house IT', value: 'IN_HOUSE' },
   { label: 'Public sector', value: 'PUBLIC_SECTOR' },
   { label: 'Agency', value: 'AGENCY' },
-  { label: 'Startup', value: 'STARTUP' }
+  { label: 'Startup', value: 'STARTUP' },
+  { label: 'Recruitment agency', value: 'RECRUITMENT' },
+  { label: 'Consultant broker', value: 'BROKER' }
 ] as const
 
 // `label` names the band with its range for the select; `range` is the short form for badges.
@@ -29,3 +31,51 @@ export const companySizeRange = (size?: CompanySize | null) =>
 export const DESCRIPTION_MAX = 500
 export const SKILLS_MAX = 50
 export const FOUNDED_MIN = 1800
+
+// The /companies type tabs. Employers lists the hiring types rather than "not consultancy", so a
+// company without a type yet (not researched) shows only under All, as do recruiters and brokers.
+export const COMPANY_TABS = [
+  { label: 'All', value: 'all', icon: 'i-lucide-building-2', noun: ['company', 'companies'] },
+  {
+    label: 'Consultancies',
+    value: 'consultancies',
+    icon: 'i-lucide-briefcase-business',
+    noun: ['consultancy', 'consultancies']
+  },
+  {
+    label: 'Employers',
+    value: 'employers',
+    icon: 'i-lucide-factory',
+    noun: ['employer', 'employers']
+  }
+] as const
+
+export type CompaniesTab = (typeof COMPANY_TABS)[number]['value']
+
+export const EMPLOYER_KINDS = COMPANY_KIND_OPTIONS.map((o) => o.value).filter(
+  (kind) => kind !== 'CONSULTANCY' && kind !== 'RECRUITMENT' && kind !== 'BROKER'
+)
+
+// Literal `order` arguments; ties fall back to the name. The API's SQLite treats null as the smallest
+// value, so the descending sorts put companies without that value last.
+export const COMPANY_SORTS = [
+  { label: 'Name A–Z', value: 'name', order: '[{ name: ASC }]' },
+  { label: 'Largest first', value: 'size', order: '[{ sizeBand: DESC }, { name: ASC }]' },
+  {
+    label: 'Recently founded',
+    value: 'founded',
+    order: '[{ foundedYear: DESC }, { name: ASC }]'
+  },
+  {
+    label: 'Recently researched',
+    value: 'researched',
+    order: '[{ researchedAt: DESC }, { name: ASC }]'
+  },
+  {
+    label: 'Recently favorited',
+    value: 'favorited',
+    order: '[{ favoritedAt: DESC }, { name: ASC }]'
+  }
+] as const
+
+export type CompaniesSort = (typeof COMPANY_SORTS)[number]['value']

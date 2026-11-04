@@ -99,12 +99,6 @@ const clearAll = () => Object.assign(facets.value, emptyFacets())
 const clearSheet = () => Object.assign(facets.value, { ...emptyFacets(), ...outsideToggles() })
 
 const open = ref(false)
-// A side sheet from tablet up, a bottom sheet on phones. Decided on click, so SSR never needs it.
-const side = ref<'right' | 'bottom'>('right')
-const openSheet = () => {
-  side.value = window.matchMedia('(min-width: 768px)').matches ? 'right' : 'bottom'
-  open.value = true
-}
 </script>
 
 <template>
@@ -154,154 +148,121 @@ const openSheet = () => {
         icon="i-lucide-sliders-horizontal"
         class="shrink-0"
         data-testid="listings-filters-toggle"
-        @click="openSheet"
+        @click="open = true"
       >
         <span class="max-lg:sr-only">Filters</span>
         <UBadge v-if="sheetCount" size="sm">{{ sheetCount }}</UBadge>
       </UButton>
     </div>
 
-    <div v-if="anyActive" class="flex flex-wrap items-center gap-2" data-testid="listings-active">
-      <UButton
-        v-for="chip in chips"
-        :key="chip.key"
-        color="neutral"
-        variant="soft"
-        size="sm"
-        trailing-icon="i-lucide-x"
-        :aria-label="`Remove filter ${chip.label}`"
-        :data-testid="`listings-chip-${chip.key}`"
-        @click="chip.clear"
-        >{{ chip.label }}</UButton
-      >
-      <UButton
-        color="neutral"
-        variant="link"
-        size="sm"
-        data-testid="listings-filters-clear"
-        @click="clearAll"
-        >Clear all</UButton
-      >
-    </div>
+    <AppFilterChips
+      v-if="anyActive"
+      :chips="chips"
+      testid-prefix="listings"
+      @clear-all="clearAll"
+    />
 
-    <USlideover
+    <AppFilterSheet
       v-model:open="open"
-      :side="side"
-      title="Filters"
-      description="Narrow the list. Changes apply right away."
+      testid-prefix="listings"
+      :clear-disabled="!sheetCount"
+      @clear="clearSheet"
     >
-      <template #body>
-        <div class="space-y-4">
-          <div class="space-y-3">
-            <USwitch
-              v-for="t in QUICK_TOGGLES"
-              :key="t.key"
-              v-model="facets[t.facet]"
-              :data-testid="`listings-facet-${t.key}`"
-            >
-              <template #label>
-                {{ t.label }}
-                <span class="text-muted tabular-nums">{{ quickCounts[t.key] }}</span>
-              </template>
-            </USwitch>
-          </div>
-          <USeparator />
-          <UFormField label="Status">
-            <USelectMenu
-              v-model="facets.statuses"
-              :items="[...APPLICATION_STATUS_OPTIONS]"
-              value-key="value"
-              multiple
-              placeholder="Any status"
-              :search-input="false"
-              class="w-full"
-              data-testid="listings-facet-status"
-            />
-          </UFormField>
-          <UFormField label="Skill">
-            <ListingsFilterCombobox
-              v-model="facets.skills"
-              lookup="skills"
-              placeholder="Any skill"
-              data-testid="listings-facet-skill"
-            />
-          </UFormField>
-          <UFormField label="Location">
-            <ListingsFilterCombobox
-              v-model="facets.locationIds"
-              lookup="locations"
-              placeholder="Any location"
-              data-testid="listings-facet-location"
-            />
-          </UFormField>
-          <UFormField label="Due">
-            <USelect
-              :model-value="facets.dueWithinDays ?? 0"
-              :items="DUE_ITEMS"
-              class="w-full"
-              data-testid="listings-facet-due"
-              @update:model-value="facets.dueWithinDays = $event || null"
-            />
-          </UFormField>
-          <div class="grid grid-cols-2 gap-3">
-            <UFormField label="Posted from">
-              <UInput
-                v-model="facets.postedFrom"
-                type="date"
-                :max="facets.postedTo || undefined"
-                class="w-full"
-                data-testid="listings-facet-postedFrom"
-              />
-            </UFormField>
-            <UFormField label="Posted to">
-              <UInput
-                v-model="facets.postedTo"
-                type="date"
-                :min="facets.postedFrom || undefined"
-                class="w-full"
-                data-testid="listings-facet-postedTo"
-              />
-            </UFormField>
-          </div>
-          <UFormField label="Posting language">
-            <USelectMenu
-              v-model="facets.postingLanguages"
-              :items="[...LANGUAGE_OPTIONS]"
-              value-key="value"
-              multiple
-              placeholder="Any"
-              :search-input="false"
-              class="w-full"
-              data-testid="listings-facet-postingLanguage"
-            />
-          </UFormField>
-          <UFormField label="Required language">
-            <USelectMenu
-              v-model="facets.languages"
-              :items="[...LANGUAGE_OPTIONS]"
-              value-key="value"
-              multiple
-              placeholder="Any"
-              :search-input="false"
-              class="w-full"
-              data-testid="listings-facet-requiredLanguage"
-            />
-          </UFormField>
-        </div>
-      </template>
-      <template #footer>
-        <div class="flex w-full justify-between gap-2">
-          <UButton
-            color="neutral"
-            variant="ghost"
-            :disabled="!sheetCount"
-            data-testid="listings-sheet-clear"
-            @click="clearSheet"
-            >Clear filters</UButton
-          >
-          <UButton data-testid="listings-sheet-done" @click="open = false">Done</UButton>
-        </div>
-      </template>
-    </USlideover>
+      <div class="space-y-3">
+        <USwitch
+          v-for="t in QUICK_TOGGLES"
+          :key="t.key"
+          v-model="facets[t.facet]"
+          :data-testid="`listings-facet-${t.key}`"
+        >
+          <template #label>
+            {{ t.label }}
+            <span class="text-muted tabular-nums">{{ quickCounts[t.key] }}</span>
+          </template>
+        </USwitch>
+      </div>
+      <USeparator />
+      <UFormField label="Status">
+        <USelectMenu
+          v-model="facets.statuses"
+          :items="[...APPLICATION_STATUS_OPTIONS]"
+          value-key="value"
+          multiple
+          placeholder="Any status"
+          :search-input="false"
+          class="w-full"
+          data-testid="listings-facet-status"
+        />
+      </UFormField>
+      <UFormField label="Skill">
+        <AppFilterCombobox
+          v-model="facets.skills"
+          lookup="skills"
+          placeholder="Any skill"
+          data-testid="listings-facet-skill"
+        />
+      </UFormField>
+      <UFormField label="Location">
+        <AppFilterCombobox
+          v-model="facets.locationIds"
+          lookup="locations"
+          placeholder="Any location"
+          data-testid="listings-facet-location"
+        />
+      </UFormField>
+      <UFormField label="Due">
+        <USelect
+          :model-value="facets.dueWithinDays ?? 0"
+          :items="DUE_ITEMS"
+          class="w-full"
+          data-testid="listings-facet-due"
+          @update:model-value="facets.dueWithinDays = $event || null"
+        />
+      </UFormField>
+      <div class="grid grid-cols-2 gap-3">
+        <UFormField label="Posted from">
+          <UInput
+            v-model="facets.postedFrom"
+            type="date"
+            :max="facets.postedTo || undefined"
+            class="w-full"
+            data-testid="listings-facet-postedFrom"
+          />
+        </UFormField>
+        <UFormField label="Posted to">
+          <UInput
+            v-model="facets.postedTo"
+            type="date"
+            :min="facets.postedFrom || undefined"
+            class="w-full"
+            data-testid="listings-facet-postedTo"
+          />
+        </UFormField>
+      </div>
+      <UFormField label="Posting language">
+        <USelectMenu
+          v-model="facets.postingLanguages"
+          :items="[...LANGUAGE_OPTIONS]"
+          value-key="value"
+          multiple
+          placeholder="Any"
+          :search-input="false"
+          class="w-full"
+          data-testid="listings-facet-postingLanguage"
+        />
+      </UFormField>
+      <UFormField label="Required language">
+        <USelectMenu
+          v-model="facets.languages"
+          :items="[...LANGUAGE_OPTIONS]"
+          value-key="value"
+          multiple
+          placeholder="Any"
+          :search-input="false"
+          class="w-full"
+          data-testid="listings-facet-requiredLanguage"
+        />
+      </UFormField>
+    </AppFilterSheet>
   </div>
 </template>

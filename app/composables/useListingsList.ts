@@ -2,6 +2,12 @@ import type { ShallowRef } from 'vue'
 import type { ResultOf, TadaDocumentNode } from 'gql.tada'
 import { parse, print } from '@0no-co/graphql.web'
 import { graphql } from '~/utils/graphql'
+import {
+  dateParam as isoDate,
+  intParam as positiveInt,
+  knownParams as known,
+  listParam as list
+} from '~/utils/urlQuery'
 import { APPLICATION_STATUS_OPTIONS, LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 
 const LISTING_ITEM = graphql(`
@@ -125,20 +131,6 @@ export interface ListingsView {
   page: number
 }
 
-const list = (value: unknown) =>
-  String(value ?? '')
-    .split(',')
-    .filter(Boolean)
-const known = <T extends string>(values: readonly T[], value: unknown) =>
-  list(value).filter((v): v is T => (values as readonly string[]).includes(v))
-
-const isoDate = (value: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(value)) ? String(value) : '')
-
-const positiveInt = (value: unknown) => {
-  const n = Number(value)
-  return Number.isInteger(n) && n > 0 ? n : null
-}
-
 export const pageFromQuery = (value: unknown) => {
   const page = Number(value)
   return Number.isInteger(page) && page > 1 ? page : 1
@@ -207,6 +199,7 @@ export const toListingsQuery = ({ search, sort, filter, facets, page }: Listings
 export const useListingsView = () => useState('listingsView', () => '/listings')
 // Same for /companies, read by the company page's Back.
 export const useCompaniesView = () => useState('companiesView', () => '/companies')
+export const useContactsView = () => useState('contactsView', () => '/contacts')
 
 type ListingsResult = {
   listings: { items: ListingListItem[]; totalCount: number } | null

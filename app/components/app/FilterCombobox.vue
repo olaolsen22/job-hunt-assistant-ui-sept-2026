@@ -2,8 +2,12 @@
 import { COUNTRY_OPTIONS } from '~/constants/countries'
 
 // Unlike NameCombobox: several values, only existing ones (no "create"), and locations by id.
-const props = defineProps<{ lookup: 'skills' | 'locations'; placeholder?: string }>()
-// T is the value type: skill names (string) or location ids (number).
+// Used by the /listings and /companies filter sheets.
+const props = defineProps<{
+  lookup: 'skills' | 'locations' | 'industries'
+  placeholder?: string
+}>()
+// T is the value type: skill or industry names (string), or location ids (number).
 const model = defineModel<T[]>({ required: true })
 
 interface Item {
@@ -15,6 +19,15 @@ const QUERIES = {
   skills: graphql(`
     query SkillFilterSearch($q: String) {
       skills(search: $q, first: 20, order: { name: ASC }) {
+        nodes {
+          name
+        }
+      }
+    }
+  `),
+  industries: graphql(`
+    query IndustryFilterSearch($q: String) {
+      industries(search: $q, first: 20, order: { name: ASC }) {
         nodes {
           name
         }
@@ -42,6 +55,10 @@ const fetchItems = async (q: string | null): Promise<Item[]> => {
   if (props.lookup === 'skills') {
     const { skills } = await gql(QUERIES.skills, { q })
     return skills?.nodes?.map((n) => ({ label: n.name, value: n.name as T })) ?? []
+  }
+  if (props.lookup === 'industries') {
+    const { industries } = await gql(QUERIES.industries, { q })
+    return industries?.nodes?.map((n) => ({ label: n.name, value: n.name as T })) ?? []
   }
   const { locations } = await gql(QUERIES.locations, { q })
   return (

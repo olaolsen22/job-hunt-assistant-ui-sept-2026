@@ -35,7 +35,30 @@ const copyText = computed(() =>
 )
 
 const prompt = useParsePrompt('companyParsePrompt')
-const { loadPrompt, copy, parsing, parse, needsConfirm, safetyMessage, confirmRetry } = prompt
+const {
+  loadPrompt,
+  copy,
+  parsing,
+  parse,
+  parsingNewUrl,
+  parseNewUrl,
+  needsConfirm,
+  safetyMessage,
+  confirmRetry
+} = prompt
+const busy = computed(() => parsing.value || parsingNewUrl.value)
+
+// One company can also be researched from a page about it (its site, a LinkedIn or register page),
+// like the listing modal's From link. Built-in only: your own AI may not be able to open pages.
+type Source = 'name' | 'link'
+const source = ref<Source>('name')
+const SOURCES = [
+  { label: 'Company name', value: 'name' },
+  { label: 'From link', value: 'link' }
+]
+const link = ref('')
+const fromLink = computed(() => single.value && source.value === 'link')
+const canRun = computed(() => (fromLink.value ? isHttpUrl(link.value.trim()) : !!text.value.trim()))
 
 // Fetched on open and after each parse, so the counter shows what this parse just used.
 
@@ -54,7 +77,7 @@ const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(o
   }
 })
 
-watch([json, text], () => (error.value = ''))
+watch([json, text, link, source], () => (error.value = ''))
 watch(error, (value) => {
   if (!value) errorDetail.value = ''
 })
@@ -68,12 +91,13 @@ const applyReply = (reply: string) => {
   method.value = tab.value === 'own' ? 'own' : 'builtin'
   text.value = ''
   json.value = ''
+  link.value = ''
   open.value = false
 }
 
 const parseBuiltIn = async () => {
   error.value = ''
-  const reply = await parse(text.value)
+  const reply = fromLink.value ? await parseNewUrl(link.value) : await parse(text.value)
   refreshUsage()
   if ('error' in reply) {
     error.value = reply.error
@@ -94,13 +118,37 @@ const retryConfirmed = () => {
     v-model:open="open"
     :title="copyText.title"
     :description="copyText.description"
-    :busy="parsing"
+    :busy="busy"
   >
-    <AppAiMethodTabs v-model="tab" :disabled="parsing" />
+    <AppAiMethodTabs v-model="tab" :disabled="busy" />
 
     <template v-if="tab === 'builtin'">
+      <!-- Locked while a retry waits, so the retry belongs to the input that was sent. -->
+      <URadioGroup
+        v-if="single"
+        v-model="source"
+        legend="Research from"
+        :items="SOURCES"
+        orientation="horizontal"
+        variant="card"
+        :disabled="busy || needsConfirm"
+        data-testid="companies-parse-source"
+      />
+      <UFormField
+        v-if="fromLink"
+        label="Page about the company"
+        :help="`Its website, LinkedIn or a register page. Takes up to 25 seconds. ${copyText.help}`"
+      >
+        <UInput
+          v-model="link"
+          type="url"
+          placeholder="https://"
+          class="w-full"
+          data-testid="companies-parse-link"
+        />
+      </UFormField>
       <!-- One company: its name (editable, e.g. to add the town); a list: names or a page. -->
-      <UFormField v-if="single" label="Company" :help="copyText.help">
+      <UFormField v-else-if="single" label="Company" :help="copyText.help">
         <UInput
           v-model="text"
           placeholder="Company name"
@@ -128,8 +176,8 @@ const retryConfirmed = () => {
       <AppAiRetryConfirm
         v-if="needsConfirm"
         :message="safetyMessage"
-        :loading="parsing"
-        :disabled="!text.trim()"
+        :loading="busy"
+        :disabled="!canRun"
         @retry="retryConfirmed"
       />
       <AppAiErrorAlert
@@ -180,8 +228,8 @@ const retryConfirmed = () => {
       <UButton
         v-if="tab === 'builtin'"
         icon="i-lucide-sparkles"
-        :loading="parsing"
-        :disabled="!text.trim() || needsConfirm"
+        :loading="busy"
+        :disabled="!canRun || needsConfirm"
         data-testid="companies-parse-run"
         @click="parseBuiltIn"
         >{{ copyText.run }}</UButton

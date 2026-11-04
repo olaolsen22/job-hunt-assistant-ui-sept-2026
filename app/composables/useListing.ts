@@ -57,6 +57,15 @@ const LISTING = graphql(
           fileName
           createdAt
           sentAt
+          origin
+          baseCvVersion {
+            id
+            number
+            baseCv {
+              id
+              name
+            }
+          }
         }
         locations {
           location {

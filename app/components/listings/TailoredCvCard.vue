@@ -158,7 +158,7 @@ const openApply = () => {
     <LazyListingsTailoredCvPdfModal
       v-if="pdf"
       v-model:open="pdfOpen"
-      :document-id="pdf.id"
+      :url="`/api/documents/${pdf.id}`"
       :file-name="pdf.fileName"
       :applicable="canApply"
       @apply="openApply"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FormError } from '@nuxt/ui'
 import type { ListingLocation } from '~/composables/useListingForm'
+import type { CompanyResearch } from '~/utils/companyResearch'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import {
   COMPANY_KIND_OPTIONS,
@@ -151,6 +152,9 @@ watch(
 // What the last AI reply did to the form, so the fill-only-empty rule is visible. Like the listing's
 // "Filled from the ad", it stays until dismissed or saved.
 const analysis = ref<{ filled: string[]; kept: string[]; ignored: string[] } | null>(null)
+// People from the last research, sent with the next save. The API adds new names and fills only
+// empty fields of known ones, so nothing here can overwrite or remove a saved contact.
+const researchedContacts = ref<NonNullable<CompanyResearch['contacts']>>([])
 
 // Called by the parse modal; a returned message keeps the modal open with it. The prompt asks for a
 // list, so the reply may hold other companies: use the row for this one (or the only row).
@@ -167,6 +171,7 @@ const applyReply = (reply: string) => {
   skillsField.value?.commit()
   const fromBasics = fillEmptyBasics(state, basics)
   const fromResearch = fillEmptyResearch(state, research)
+  researchedContacts.value = research.contacts ?? []
   analysis.value = {
     filled: [...fromBasics.filled, ...fromResearch.filled],
     kept: [...fromBasics.kept, ...fromResearch.kept],
@@ -227,7 +232,8 @@ const onSave = async () => {
           description: state.description.trim() || null,
           workMode: state.workMode ?? null,
           workingLanguage: state.workingLanguage ?? null,
-          skills: state.skills
+          skills: state.skills,
+          ...(researchedContacts.value.length && { contacts: researchedContacts.value })
         }
       }
     })
@@ -321,7 +327,9 @@ const onSave = async () => {
         variant="subtle"
         icon="i-lucide-sparkles"
         :title="
-          analysis.filled.length ? 'Filled from the research' : 'Nothing new from the research'
+          analysis.filled.length || researchedContacts.length
+            ? 'Filled from the research'
+            : 'Nothing new from the research'
         "
         close
         class="w-full max-w-3xl"
@@ -332,6 +340,11 @@ const onSave = async () => {
           <p>Only empty fields are filled; your saved values were kept. Nothing is saved yet.</p>
           <p v-if="analysis.filled.length">Filled: {{ analysis.filled.join(', ') }}.</p>
           <p v-if="analysis.kept.length">Kept: {{ analysis.kept.join(', ') }}.</p>
+          <p v-if="researchedContacts.length" data-testid="edit-company-research-contacts">
+            {{ researchedContacts.length }}
+            {{ researchedContacts.length === 1 ? 'contact' : 'contacts' }} will be added or
+            completed when you save: {{ researchedContacts.map((c) => c.name).join(', ') }}.
+          </p>
           <p v-if="analysis.ignored.length">Ignored: {{ analysis.ignored.join(', ') }}.</p>
         </template>
       </UAlert>

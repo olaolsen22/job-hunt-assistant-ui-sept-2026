@@ -30,6 +30,22 @@ const CREATE_LISTING = graphql(`
   }
 `)
 
+// "Start open application" on a person's page links here with ?contact=<id>.
+const CONTACT_FOR_LISTING = graphql(`
+  query ContactForListing($id: Int!) {
+    contactById(id: $id) {
+      name
+      title
+      email
+      phone
+      url
+      company {
+        name
+      }
+    }
+  }
+`)
+
 const { state, validate, toInput, fillDraft } = useListingForm()
 const { checkNewNames } = provideNewNames()
 
@@ -39,6 +55,26 @@ const parseOpen = ref(false)
 const listingForm = useTemplateRef('listingForm')
 
 const filledFromAd = ref(false)
+
+// An open application to that person: their company, and them as the first linked contact, which
+// the cover letter is addressed to. The row stays removable like any other contact.
+const route = useRoute()
+const contactId = Number(route.query.contact) || null
+const addressedTo = ref('')
+const backTo = computed(() => (contactId ? `/contacts/${contactId}` : listingsView.value))
+onMounted(async () => {
+  if (!contactId) return
+  try {
+    const { contactById: c } = await gql(CONTACT_FOR_LISTING, { id: contactId })
+    if (!c) return
+    state.kind = 'OPEN_INVITATION'
+    state.companyName = c.company.name
+    state.contacts = [{ name: c.name, title: c.title, email: c.email, phone: c.phone, url: c.url }]
+    addressedTo.value = c.name
+  } catch {
+    toast.add({ title: ERROR_MESSAGES.generic, color: 'error', icon: 'i-lucide-circle-alert' })
+  }
+})
 
 const onDraft = (draft: Record<string, unknown>, url?: string) => {
   fillDraft(draft)
@@ -107,7 +143,7 @@ const onConfirm = async () => {
       class="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
     >
       <UButton
-        :to="listingsView"
+        :to="backTo"
         icon="i-lucide-arrow-left"
         variant="ghost"
         color="neutral"
@@ -140,12 +176,23 @@ const onConfirm = async () => {
       @update:open="filledFromAd = $event"
     />
 
+    <UAlert
+      v-if="addressedTo && state.contacts[0]?.name === addressedTo"
+      color="info"
+      variant="subtle"
+      icon="i-lucide-send"
+      title="Open application"
+      :description="`The cover letter will be addressed to ${addressedTo}. Add a title and role, then save.`"
+      class="w-full max-w-3xl"
+      data-testid="open-application-notice"
+    />
+
     <ListingsForm
       ref="listingForm"
       v-model="state"
       :validate="validate"
       submit-label="Add listing"
-      cancel-to="/listings"
+      :cancel-to="contactId ? backTo : '/listings'"
       data-testid="add-listing-form"
       @submit="confirmOpen = true"
     >

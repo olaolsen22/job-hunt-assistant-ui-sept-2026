@@ -77,8 +77,8 @@ const PARSE_LISTING_FROM_URL = graphql(`
 `)
 
 const PARSE_URL = graphql(`
-  mutation ParseUrl($url: String!, $requestId: UUID) {
-    parseUrl(input: { url: $url, requestId: $requestId }) {
+  mutation ParseUrl($url: String!, $mode: ParseMode!, $requestId: UUID) {
+    parseUrl(input: { url: $url, mode: $mode, requestId: $requestId }) {
       parseJob {
         status
         result
@@ -201,15 +201,17 @@ export const useParsePrompt = (name: PromptName) => {
         (await gql(PARSE_LISTING_FROM_URL, { listingId, requestId })).parseListingFromUrl
     )
 
-  // Same as parseFromUrl but for an unsaved listing: the API reads the given URL (always a FULL
-  // parse) and saves nothing.
+  // Same as parseFromUrl but for any page: an unsaved listing's ad, or a company's own page
+  // (COMPANIES mode). The API reads the given URL and saves nothing.
   const parsingNewUrl = ref(false)
-  const parseNewUrl = (url: string) =>
-    run(
+  const parseNewUrl = (url: string) => {
+    const input = { url: url.trim(), mode: PARSE_MODES[name] }
+    return run(
       parsingNewUrl,
-      { url: url.trim() },
-      async (requestId) => (await gql(PARSE_URL, { url: url.trim(), requestId })).parseUrl
+      input,
+      async (requestId) => (await gql(PARSE_URL, { ...input, requestId })).parseUrl
     )
+  }
 
   return {
     instructions,

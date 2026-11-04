@@ -6,6 +6,9 @@ import { readBody } from 'h3'
 import QuickAddPage from '~/pages/listings/quick-add.vue'
 import { llmModels, unknownModelError } from '../fixtures/llmModels'
 
+// Mounting at a route runs the auth middleware.
+registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
+
 const { navigation, routing } = vi.hoisted(() => ({
   navigation: vi.fn(),
   routing: { guard: undefined as undefined | ((to: { fullPath: string }) => boolean) }
@@ -53,7 +56,7 @@ const failed = {
 
 // Each test sets how the batch's rows come back; saves are counted to catch accidental ones.
 const mockApi = (results: unknown[]) => {
-  const saves = { count: 0, variables: {} as Record<string, unknown> }
+  const saves = { count: 0, variables: {} as Record<string, unknown>, deleted: [] as number[] }
   registerEndpoint('/graphql', {
     method: 'POST',
     handler: async (event) => {
@@ -62,6 +65,10 @@ const mockApi = (results: unknown[]) => {
         return { data: { prompt: { instructions: 'x' } } }
       }
       if (query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
+      if (query.includes('DeleteListing')) {
+        saves.deleted.push(variables.id)
+        return { data: { deleteListing: { errors: null } } }
+      }
       if (query.includes('QuickAddListings')) {
         saves.count++
         saves.variables = variables
@@ -232,6 +239,27 @@ describe('Quick add', () => {
     expect(w.get('[data-testid="quick-add-added-toggle"]').text()).toBe('2 listings added')
   })
 
+  it('removes the existing listing from the compare modal and keeps the new row', async () => {
+    const saves = mockApi([duplicate(1)])
+    const w = await pasteRows(1)
+    await save(w)
+
+    await w.get('[data-testid="quick-add-row-compare"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="compare-remove-existing"]')!.click()
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="compare-confirm"]')!.textContent).toContain(
+      'Remove existing “Job 90”?'
+    )
+    document.body.querySelector<HTMLElement>('[data-testid="compare-confirm-remove"]')!.click()
+    await flushPromises()
+
+    // The mock endpoint answers after the click's flush, so wait for the row to settle.
+    await vi.waitFor(() => expect(w.find('[data-testid="quick-add-review"]').exists()).toBe(false))
+    expect(saves.deleted).toEqual([90])
+    expect(w.get('[data-testid="quick-add-added-toggle"]').text()).toBe('1 listing added')
+  })
+
   it('clears an applied-before note with Got it', async () => {
     mockApi([appliedBefore(1)])
     const w = await pasteRows(1)
@@ -258,6 +286,7 @@ const collectedApi = (
     modes: [] as string[],
     models: [] as (string | undefined)[],
     requestIds: [] as string[],
+    reviewed: [] as unknown[],
     saves: 0
   }
   registerEndpoint('/graphql', {
@@ -309,6 +338,22 @@ const collectedApi = (
         return {
           data: Object.fromEntries(Object.keys(variables).map((_, i) => [`r${i}`, saved(i + 1)]))
         }
+      }
+      if (query.includes('query ListingImport(')) {
+        return { data: { listingImports: { nodes: storedImport ? [storedImport] : [] } } }
+      }
+      if (query.includes('query ListingImports(')) {
+        const nodes = [
+          { id: 7, error: null },
+          { id: 8, error: 'Not a JSON array' },
+          { id: 9, error: null }
+        ]
+        return { data: { listingImports: { nodes } } }
+      }
+      if (query.includes('SetListingImportReviewed')) {
+        requests.reviewed.push(variables)
+        const listingImport = { id: variables.id, reviewedAt: '2026-11-03T10:00:00Z' }
+        return { data: { setListingImportReviewed: { listingImport, errors: null } } }
       }
       return { data: {} }
     }
@@ -384,6 +429,16 @@ describe('Quick add collected jobs', () => {
       .setValue(JSON.stringify(collection.slice(0, 1)))
     expect(w.find('[data-testid="quick-add-check-summary"]').exists()).toBe(false)
     expect(w.get('[data-testid="quick-add-copy-prompt"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('adds checked jobs as rows without the AI', async () => {
+    const requests = collectedApi(eligible)
+    const w = await openCollected()
+    await checkCollection(w)
+    await w.get('[data-testid="quick-add-add-collected"]').trigger('click')
+    await vi.waitFor(() => expect(w.findAll('[data-testid="quick-add-row"]')).toHaveLength(1))
+    expect(requests.parses).toEqual([])
+    expect(routing.guard!({ fullPath: '/listings' })).toBe(false)
   })
 
   it('sends only retained jobs to the built-in parser after checking', async () => {
@@ -508,7 +563,7 @@ describe('Quick add collected batch processing', () => {
     await startCollected(w)
     await vi.waitFor(() => expect(requests.parses).toHaveLength(2))
     expect(w.get('[data-testid="quick-add-stages"]').text()).toBe(
-      'Check duplicates → Process jobs → Review → Save'
+      'Check duplicates → Add as rows → Review → Save'
     )
     const status = w.get('[data-testid="quick-add-progress-status"]')
     expect(status.text()).toContain('20 of 43 jobs processed · Batch 2 of 3')
@@ -782,5 +837,99 @@ describe('Quick add unsaved work protection', () => {
     await save(w)
     expect(w.find('[data-testid="quick-add-view-listings"]').exists()).toBe(true)
     expect(routing.guard!({ fullPath: '/listings' })).toBe(true)
+  })
+})
+
+let storedImport: Record<string, unknown> | null = null
+const listingImport = (content: string | null, error: string | null = null) => ({
+  id: 7,
+  kind: 'it',
+  generatedAt: '2026-11-03T08:30:00Z',
+  itemCount: 2,
+  content,
+  error,
+  reviewedAt: null
+})
+const openImport = async () => {
+  wrapper = await mountSuspended(QuickAddPage, {
+    route: '/listings/quick-add?import=7',
+    attachTo: document.body
+  })
+  await flushPromises()
+  return wrapper
+}
+
+describe('Quick add from a job import', () => {
+  afterEach(() => (storedImport = null))
+
+  it('offers skipping to the next pending import, past this one and broken files', async () => {
+    storedImport = listingImport(JSON.stringify(collection))
+    const requests = collectedApi(eligible)
+    const w = await openImport()
+    await vi.waitFor(() =>
+      expect(w.find('[data-testid="quick-add-next-import"]').exists()).toBe(true)
+    )
+    await w.get('[data-testid="quick-add-next-import"]').trigger('click')
+    // Unsaved rows: the leave guard asks first, and skipping leaves the import pending.
+    expect(navigation).not.toHaveBeenCalled()
+    expect(requests.reviewed).toEqual([])
+    expect(w.find('[data-testid="quick-add-paste-more"]').exists()).toBe(false)
+    expect(w.find('[data-testid="quick-add-back"]').exists()).toBe(false)
+  })
+
+  it('turns the import’s new jobs straight into rows, without the AI, and marks it reviewed only once saved', async () => {
+    storedImport = listingImport(JSON.stringify(collection))
+    const requests = collectedApi(eligible)
+    const w = await openImport()
+    await vi.waitFor(() => expect(w.findAll('[data-testid="quick-add-row"]')).toHaveLength(1))
+    expect(requests.checks).toEqual([collection.map((r) => r.url)])
+    expect(requests.parses).toEqual([])
+    expect(w.get('[data-testid="quick-add-import"]').text()).toContain('From import: it')
+    expect(w.get('[data-testid="quick-add-paste-summary"]').text()).toContain(
+      'Added 1 collected job.'
+    )
+    const row = w.get('[data-testid="quick-add-row"]')
+    expect((row.get('input').element as HTMLInputElement).value).toBe('Seasonal Waiter')
+    // Only viewing it: leaving now must keep the import pending.
+    await flushPromises()
+    expect(requests.reviewed).toEqual([])
+    await w.get('[data-testid="quick-add-save"]').trigger('click')
+    await vi.waitFor(() => expect(requests.reviewed).toEqual([{ id: 7, isReviewed: true }]))
+    expect(requests.saves).toBe(1)
+    // A lone listing doesn't open: the done state leads on to the next import instead.
+    const done = w.get('[data-testid="quick-add-import-done"]')
+    expect(done.text()).toContain('Import done')
+    expect(done.text()).toContain('1 listing saved.')
+    expect(w.find('[data-testid="quick-add-row"]').exists()).toBe(false)
+    expect(w.find('[data-testid="quick-add-save"]').exists()).toBe(false)
+    await done.get('[data-testid="quick-add-done-next"]').trigger('click')
+    expect(navigation).toHaveBeenCalledWith('/listings/quick-add?import=9')
+  })
+
+  it('lets an import with nothing new be marked reviewed by hand', async () => {
+    storedImport = listingImport(JSON.stringify(collection))
+    const requests = collectedApi((urls) =>
+      eligible(urls).map((r) => ({ ...r, shouldProcess: false }))
+    )
+    const w = await openImport()
+    await vi.waitFor(() =>
+      expect(w.find('[data-testid="quick-add-check-empty"]').exists()).toBe(true)
+    )
+    await w.get('[data-testid="quick-add-import-reviewed"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(w.find('[data-testid="quick-add-import-reviewed"]').exists()).toBe(false)
+    )
+    expect(requests.reviewed).toEqual([{ id: 7, isReviewed: true }])
+  })
+
+  it('shows a failed import’s error instead of filling anything in', async () => {
+    storedImport = listingImport(null, 'Not a JSON array')
+    const requests = collectedApi(allEligible)
+    const w = await openImport()
+    await vi.waitFor(() =>
+      expect(w.get('[data-testid="quick-add-import-error"]').text()).toContain('Not a JSON array')
+    )
+    expect(w.find('[data-testid="quick-add-collected"]').exists()).toBe(false)
+    expect(requests.checks).toEqual([])
   })
 })

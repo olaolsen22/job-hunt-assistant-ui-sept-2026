@@ -4,6 +4,10 @@ import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import DefaultLayout from '~/layouts/default.vue'
 
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
+registerEndpoint('/graphql', {
+  method: 'POST',
+  handler: () => ({ data: { pendingListingImportCount: 3 } })
+})
 
 // A one-finger swipe from (x1, y) to (x2, y), as the browser reports it.
 const swipe = (target: EventTarget, x1: number, x2: number, y = 300) => {
@@ -18,8 +22,9 @@ const swipe = (target: EventTarget, x1: number, x2: number, y = 300) => {
   fire('touchend', x2)
 }
 
-const mountLayout = async (slot = '<p data-testid="page">Page</p>') => {
+const mountLayout = async (slot = '<p data-testid="page">Page</p>', route = '/') => {
   const wrapper = await mountSuspended(DefaultLayout, {
+    route,
     slots: { default: () => h('div', { innerHTML: slot }) },
     attachTo: document.body
   })
@@ -74,6 +79,30 @@ describe('Opening the phone menu by swiping', () => {
     expect(wrapper.vm.sidebarOpen).toBe(true)
     swipe(document.body, 300, 160)
     expect(wrapper.vm.sidebarOpen).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+describe('Pending job imports', () => {
+  it('badges the sidebar entry with the pending count', async () => {
+    const wrapper = await mountLayout(undefined, '/listings')
+    const link = wrapper.get('a[href="/listings/imports"]')
+    expect(link.text()).toContain('Job imports')
+    expect(link.text()).toContain('3')
+    wrapper.unmount()
+  })
+
+  it('also says so on the dashboard, with a link to the imports', async () => {
+    const wrapper = await mountLayout()
+    const notice = wrapper.get('[data-testid="imports-notice"]')
+    expect(notice.text()).toContain('3 job imports to review')
+    expect(notice.get('a').attributes('href')).toBe('/listings/imports')
+    wrapper.unmount()
+  })
+
+  it('keeps the notice off other pages', async () => {
+    const wrapper = await mountLayout(undefined, '/listings')
+    expect(wrapper.find('[data-testid="imports-notice"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })

@@ -5,7 +5,8 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { Language } from '~/constants/listing'
 import type { TailoredCv, TailoredCvSectionKey } from '~/utils/tailoredCv'
 
-const CONTENT_FIELDS = graphql(`
+// Shared with the CV template (base CV) queries, whose versions hold the same content.
+export const CV_CONTENT_FIELDS = graphql(`
   fragment TailoredCvContentFields on TailoredCvContent {
     fullName
     headline
@@ -106,7 +107,7 @@ const DRAFT = graphql(
       }
     }
   `,
-  [CONTENT_FIELDS]
+  [CV_CONTENT_FIELDS]
 )
 
 const FROM_PROFILE = graphql(
@@ -117,7 +118,7 @@ const FROM_PROFILE = graphql(
       }
     }
   `,
-  [CONTENT_FIELDS]
+  [CV_CONTENT_FIELDS]
 )
 
 const PROMPT = graphql(`
@@ -142,6 +143,7 @@ const ANALYZE = graphql(`
         selectedBulletIds
         selectedSkillIds
         summary
+        headline
         paragraph
         technologies
         bullets {
@@ -182,7 +184,7 @@ const PREVIEW = graphql(
       }
     }
   `,
-  [CONTENT_FIELDS]
+  [CV_CONTENT_FIELDS]
 )
 
 const SAVE = graphql(
@@ -205,7 +207,7 @@ const SAVE = graphql(
       }
     }
   `,
-  [CONTENT_FIELDS]
+  [CV_CONTENT_FIELDS]
 )
 
 const GENERATE = graphql(`
@@ -494,6 +496,8 @@ export const useTailoredCvDraft = (
         return 'failed'
       }
       offer(value.key, value.value, direct)
+      // The summary step may suggest a headline too; null keeps the current one.
+      if (result?.headline) offer('headline', result.headline, direct)
       return 'ok'
     } catch (e) {
       sectionErrors.value[step.key] = ERROR_MESSAGES.generic

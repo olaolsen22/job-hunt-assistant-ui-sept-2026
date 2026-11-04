@@ -6,11 +6,13 @@ import type { FormError } from '@nuxt/ui'
 import { print } from '@0no-co/graphql.web'
 import type { ResultOf } from 'gql.tada'
 import type { ListingLocation } from '~/composables/useListingForm'
+import type { ListingImportDetail } from '~/composables/useListingImports'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { DEADLINE_TYPE_OPTIONS } from '~/constants/listing'
 import type { DeadlineType, ListingKind } from '~/constants/listing'
 
-definePageMeta({ title: 'Quick add listings' })
+// Keyed by URL so moving to the next import remounts the page (import id is read once at setup).
+definePageMeta({ title: 'Quick add listings', key: (route) => route.fullPath })
 
 const RESULT_FRAGMENT = graphql(
   `
@@ -197,6 +199,8 @@ const checkError = ref('')
 const prepared = ref<PreparedJobs | null>(null)
 const collectedError = ref('')
 const publishedKeys = ref<number[]>([])
+// Set when the checked jobs went straight into rows, without the AI.
+const addedDirectly = ref(false)
 const processing = batchRun.busy
 const runStatus = batchRun.status
 const runProgress = batchRun.completed
@@ -217,7 +221,7 @@ const runTitle = computed(() => {
 const hasUnsavedWork = computed(
   () =>
     pending.value.length > 0 ||
-    (!!prepared.value && !batchRun.published.value) ||
+    (!!prepared.value && !batchRun.published.value && !addedDirectly.value) ||
     processing.value ||
     (batchRun.published.value && (batchRun.skipped.value > 0 || batchRun.unprocessed.value > 0))
 )
@@ -247,6 +251,71 @@ const checkJobs = async () => {
     checking.value = false
   }
 }
+// Collected jobs are already listing JSON, so the checked ones become rows as they are; the AI run
+// below stays for files that only have links or raw text. The import counts as reviewed only once
+// a save leaves nothing unsaved, so opening it and leaving keeps it pending.
+const addCollectedRows = async () => {
+  if (!prepared.value?.rows.length || batchRun.status.value !== 'idle' || saving.value) return
+  const rows = prepared.value.rows.map(toRow)
+  publishedKeys.value = rows.map((row) => row.key)
+  if (!(await appendRows(rows))) return
+  addedDirectly.value = true
+  pasteOpen.value = false
+}
+
+// ?import=<id> (from /listings/imports) loads that file's jobs, checks them and adds the new ones
+// as rows, like a paste followed by Check jobs and Add as rows.
+const route = useRoute()
+const importId = Number(route.query.import) || null
+const importInfo = ref<ListingImportDetail | null>(null)
+const importError = ref('')
+const importReviewed = ref(false)
+// Set once the opened import's rows are in, so a reviewed one doesn't flash as done while loading.
+const importLoaded = ref(false)
+const { setReviewed, loading: markingReviewed } = useSetImportReviewed()
+const loadImport = async (id: number) => {
+  try {
+    importInfo.value = await fetchListingImport(id)
+  } catch {
+    importError.value = ERROR_MESSAGES.generic
+    return
+  }
+  if (!importInfo.value) importError.value = 'That import no longer exists.'
+  else if (importInfo.value.error) importError.value = importInfo.value.error
+  if (!importInfo.value?.content) return
+  importReviewed.value = !!importInfo.value.reviewedAt
+  inputMode.value = 'collected'
+  collected.value = importInfo.value.content
+  // The collected watcher clears a check, so it has to run before this one starts.
+  await nextTick()
+  await checkJobs()
+  await addCollectedRows()
+  importLoaded.value = true
+}
+// The next pending import, so catching up is one click away.
+const { nextImportId, load: loadNextImport } = useNextImport(importId ?? 0)
+if (importId) {
+  onMounted(async () => {
+    await loadImport(importId)
+    await loadNextImport()
+  })
+}
+const markImportReviewed = async () => {
+  if (importId && !importReviewed.value && (await setReviewed(importId, true)))
+    importReviewed.value = true
+}
+// Reviewed with nothing left to save: the rows give way to a done state that leads on. A check
+// that found no new jobs counts as unsaved input elsewhere, but leaves nothing to do here.
+const importDone = computed(
+  () =>
+    importLoaded.value &&
+    importReviewed.value &&
+    !importError.value &&
+    !checkError.value &&
+    !collectedError.value &&
+    (!hasUnsavedWork.value || (prepared.value?.remaining === 0 && !pending.value.length))
+)
+
 const copyPrompt = () => {
   if (!aiDisabled.value) return copy(posting.value)
 }
@@ -370,9 +439,11 @@ const onSave = async () => {
     if (savedCount) {
       clearNuxtState('name-lookups')
       toastSuccess(`${savedCount} ${savedCount === 1 ? 'listing' : 'listings'} added`)
-      // A lone, unflagged listing has nothing left to review here, so open it.
+      if (!hasUnsavedWork.value) await markImportReviewed()
+      // A lone, unflagged listing has nothing left to review here, so open it. Not for an
+      // import: its done state leads on to the next one.
       const [only] = state.rows
-      if (state.rows.length === 1 && only?.saved && !isFlagged(only)) {
+      if (!importId && state.rows.length === 1 && only?.saved && !isFlagged(only)) {
         await navigateTo(`/listings/${only.saved.id}`)
       }
     }
@@ -396,12 +467,18 @@ const requestLeave = (destination: string) => {
 }
 onBeforeRouteLeave((to) => requestLeave(to.fullPath))
 const onBack = () => {
-  if (requestLeave('/listings')) return navigateTo('/listings')
+  const destination = importId ? '/listings/imports' : '/listings'
+  if (requestLeave(destination)) return navigateTo(destination)
+}
+const onNextImport = () => {
+  const destination = `/listings/quick-add?import=${nextImportId.value}`
+  if (requestLeave(destination)) return navigateTo(destination)
 }
 const editCollected = () => {
   // A replacement drops only this run's unsaved drafts, keeping earlier edits and saved rows.
   state.rows = state.rows.filter((row) => row.saved || !publishedKeys.value.includes(row.key))
   publishedKeys.value = []
+  addedDirectly.value = false
   batchRun.invalidate()
   prepared.value = null
   collectedError.value = ''
@@ -459,31 +536,48 @@ const onCompareKeep = () => {
   toastSuccess('Kept both listings')
 }
 
-// The compare modal confirms in its own footer; it unmounts when the row is removed.
-const onCompareRemove = () => {
-  toRemove.value = compareRow.value
-  return onConfirmRemove()
+// Returns whether the listing was deleted, so callers only update rows on success.
+const deleteById = async (id: number) => {
+  deleting.value = true
+  try {
+    const { deleteListing } = await gql(DELETE_LISTING, { id })
+    if (deleteListing.errors?.length) {
+      toast.add({ title: deleteListing.errors.map((e) => e.message).join(' '), color: 'error' })
+      return false
+    }
+    return true
+  } catch {
+    toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
+    return false
+  } finally {
+    deleting.value = false
+  }
+}
+
+// The compare modal confirms in its own footer. Removing the new row unmounts it; removing
+// an existing match shows the next one, or closes once none are left.
+const onCompareRemove = async (side: 'new' | 'existing') => {
+  const row = compareRow.value!
+  if (side === 'new') {
+    toRemove.value = row
+    return onConfirmRemove()
+  }
+  const id = compareId.value
+  if (!(await deleteById(id))) return
+  const rest = row.duplicates!.filter((m) => m.id !== id)
+  if (rest.length) compareId.value = rest[0]!.id
+  else compareOpen.value = false
+  row.duplicates = rest.length ? rest : undefined
+  toastSuccess('Existing listing removed')
 }
 
 const onConfirmRemove = async () => {
   const row = toRemove.value!
-  deleting.value = true
-  try {
-    const { deleteListing } = await gql(DELETE_LISTING, {
-      id: row.saved!.id
-    })
-    if (deleteListing.errors?.length) {
-      toast.add({ title: deleteListing.errors.map((e) => e.message).join(' '), color: 'error' })
-      return
-    }
+  if (await deleteById(row.saved!.id)) {
     removeRow(row)
     toastSuccess('Listing removed')
-  } catch {
-    toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
-  } finally {
-    deleting.value = false
-    confirmOpen.value = false
   }
+  confirmOpen.value = false
 }
 </script>
 
@@ -496,21 +590,102 @@ const onConfirmRemove = async () => {
     data-testid="quick-add-form"
     @submit="onSave"
   >
-    <!-- Standalone (home-screen) mode has no browser Back, and the bottom one is a long scroll away. -->
-    <UButton
-      icon="i-lucide-arrow-left"
-      variant="ghost"
-      color="neutral"
-      data-testid="quick-add-back-top"
-      @click="onBack"
+    <!-- Standalone (home-screen) mode has no browser Back, and the bottom one is a long scroll away.
+         In import mode this is the only exit, sticky on phones, so catching up never needs a scroll. -->
+    <div
+      class="flex items-center justify-between gap-2"
+      :class="
+        importId
+          ? 'sticky top-0 z-10 -mx-4 border-b border-default bg-default px-4 py-2 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0'
+          : ''
+      "
     >
-      Back
-    </UButton>
+      <UButton
+        icon="i-lucide-arrow-left"
+        :variant="importId ? 'outline' : 'ghost'"
+        color="neutral"
+        data-testid="quick-add-back-top"
+        @click="onBack"
+      >
+        {{ importId ? 'Back to imports' : 'Back' }}
+      </UButton>
+      <!-- Hidden once done: the done state's primary button takes over. -->
+      <UButton
+        v-if="importId && nextImportId && !importDone"
+        trailing-icon="i-lucide-arrow-right"
+        color="neutral"
+        variant="ghost"
+        data-testid="quick-add-next-import"
+        @click="onNextImport"
+      >
+        Skip to next
+      </UButton>
+    </div>
 
-    <p v-if="collectedMode" class="text-sm text-muted" data-testid="quick-add-stages">
-      Check duplicates → Process jobs → Review → Save
+    <p v-if="collectedMode && !importId" class="text-sm text-muted" data-testid="quick-add-stages">
+      Check duplicates → Add as rows → Review → Save
     </p>
-    <UCard v-if="pasteOpen" data-testid="quick-add-paste">
+    <UAlert
+      v-if="importError"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-circle-alert"
+      :title="importInfo ? 'This file couldn’t be imported' : 'Couldn’t open the import'"
+      :description="importError"
+      :actions="[
+        { label: 'Back to imports', to: '/listings/imports', color: 'neutral', variant: 'outline' },
+        ...(nextImportId
+          ? [
+              {
+                label: 'Next import',
+                to: `/listings/quick-add?import=${nextImportId}`,
+                color: 'neutral' as const,
+                variant: 'outline' as const
+              }
+            ]
+          : [])
+      ]"
+      data-testid="quick-add-import-error"
+    />
+    <p v-else-if="importInfo" class="text-sm text-muted" data-testid="quick-add-import">
+      From import: {{ importLabel(importInfo) }} · {{ importInfo.itemCount }}
+      {{ importInfo.itemCount === 1 ? 'job' : 'jobs' }}
+    </p>
+
+    <UCard v-if="importDone" data-testid="quick-add-import-done">
+      <div class="flex flex-col items-center gap-3 py-6 text-center" role="status">
+        <UIcon name="i-lucide-circle-check" class="size-10 text-success" />
+        <div>
+          <h2 class="font-semibold text-highlighted">
+            {{ nextImportId ? 'Import done' : 'All caught up' }}
+          </h2>
+          <p class="text-sm text-muted">
+            <template v-if="savedCount"
+              >{{ savedCount }} {{ savedCount === 1 ? 'listing' : 'listings' }} saved. </template
+            >Marked as reviewed.
+          </p>
+        </div>
+        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row-reverse">
+          <UButton
+            v-if="nextImportId"
+            trailing-icon="i-lucide-arrow-right"
+            class="justify-center"
+            data-testid="quick-add-done-next"
+            @click="onNextImport"
+            >Next import</UButton
+          >
+          <UButton
+            to="/listings"
+            :variant="nextImportId ? 'outline' : 'solid'"
+            :color="nextImportId ? 'neutral' : 'primary'"
+            class="justify-center"
+            >View listings</UButton
+          >
+        </div>
+      </div>
+    </UCard>
+
+    <UCard v-if="pasteOpen && !importDone" data-testid="quick-add-paste">
       <div class="space-y-6">
         <!-- A column, not space-y: inline buttons would sit side by side, offset. -->
         <div class="flex flex-col gap-3">
@@ -598,6 +773,16 @@ const onConfirmRemove = async () => {
               · {{ prepared.remaining }} ready
             </p>
             <UButton
+              v-if="prepared?.remaining && runStatus === 'idle'"
+              icon="i-lucide-rows-3"
+              :disabled="saving"
+              class="max-sm:justify-center sm:self-start"
+              data-testid="quick-add-add-collected"
+              @click="addCollectedRows"
+              >Add {{ prepared.remaining }} {{ prepared.remaining === 1 ? 'job' : 'jobs' }} as
+              rows</UButton
+            >
+            <UButton
               v-if="prepared && runStatus !== 'finished' && runStatus !== 'stopped'"
               color="neutral"
               variant="ghost"
@@ -614,6 +799,18 @@ const onConfirmRemove = async () => {
             >
               <UIcon name="i-lucide-check-check" class="mb-2 size-8" />
               <p>No new jobs remain.</p>
+              <!-- Nothing left to process, so no run will mark the import reviewed. -->
+              <UButton
+                v-if="importInfo && !importReviewed"
+                icon="i-lucide-check"
+                color="neutral"
+                variant="subtle"
+                :loading="markingReviewed"
+                class="mt-3"
+                data-testid="quick-add-import-reviewed"
+                @click="markImportReviewed"
+                >Mark import reviewed</UButton
+              >
             </div>
           </template>
           <UButton
@@ -689,18 +886,22 @@ const onConfirmRemove = async () => {
     </UCard>
 
     <div
-      v-else
+      v-else-if="!importDone"
       class="flex items-center justify-between gap-2"
       data-testid="quick-add-paste-summary"
     >
       <p class="text-sm text-muted">
         <template v-if="runStatus !== 'idle'">Prepared {{ pastedCount }} drafts.</template>
+        <template v-else-if="addedDirectly"
+          >Added {{ pastedCount }} collected {{ pastedCount === 1 ? 'job' : 'jobs' }}.</template
+        >
         <template v-else
           >Pasted {{ pastedCount }} {{ pastedCount === 1 ? 'listing' : 'listings' }}.</template
         >
         {{ pending.length ? 'Check them below, then save.' : 'All saved.' }}
       </p>
       <UButton
+        v-if="!importId"
         icon="i-lucide-clipboard-paste"
         color="neutral"
         variant="ghost"
@@ -1122,7 +1323,7 @@ const onConfirmRemove = async () => {
       :title="saveError"
     />
 
-    <div class="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+    <div v-if="!importDone" class="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
       <UButton
         icon="i-lucide-plus"
         color="neutral"
@@ -1143,7 +1344,9 @@ const onConfirmRemove = async () => {
           >View listings</UButton
         >
         <template v-else>
+          <!-- An import's only exit is the top bar, so Save stands alone here. -->
           <UButton
+            v-if="!importId"
             color="neutral"
             variant="ghost"
             class="justify-center"

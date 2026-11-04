@@ -54,17 +54,22 @@ const unsent = (kind: Kind) => listing.documents.filter((d) => d.kind === kind &
 
 const cvId = ref<number>()
 const cvFile = ref<File | null>(null)
+const cvVersionId = ref<number>()
 const coverId = ref<number>()
 const coverFile = ref<File | null>(null)
 const appliedAt = ref('')
 const now = ref('')
 const note = ref('')
 
+// Declared before resetForm, which the immediate `open` watcher below calls during setup.
+let generated: { versionId: number; documentId: number } | undefined
 const initialized = ref(false)
 const resetForm = () => {
   cvId.value = cvDocumentId
   coverId.value = latestUnsentDocument(listing.documents, 'COVER_LETTER')?.id
   cvFile.value = coverFile.value = null
+  cvVersionId.value = undefined
+  generated = undefined
   appliedAt.value = toDateTimeLocal()
   note.value = ''
 }
@@ -106,8 +111,25 @@ const upload = async (kind: Kind, file: File) => {
 
 const { run, loading } = useMutation(() => emit('changed'))
 
+// A CV template version becomes a document only now, so an abandoned dialog leaves none behind.
+// The made document is remembered for that version, so a retry after a failed apply doesn't make
+// another, while the picker keeps showing the template the owner chose.
+const generateCv = async () => {
+  const versionId = cvVersionId.value
+  if (!versionId || generated?.versionId === versionId) return []
+  const { generateBaseCvDocument } = await gql(GENERATE_BASE_CV_DOCUMENT, {
+    listingId: listing.id,
+    baseCvVersionId: versionId
+  })
+  const document = generateBaseCvDocument.document
+  if (document) generated = { versionId, documentId: document.id }
+  return generateBaseCvDocument.errors ?? []
+}
+
 const submit = async () => {
   const ok = await run(async () => {
+    const generateErrors = await generateCv()
+    if (generateErrors.length) return generateErrors
     const results = await Promise.allSettled([
       cvFile.value ? upload('CV', cvFile.value) : null,
       coverFile.value ? upload('COVER_LETTER', coverFile.value) : null
@@ -134,7 +156,7 @@ const submit = async () => {
     const { applyToListing } = await gql(APPLY, {
       input: {
         listingId: listing.id,
-        cvDocumentId: cvId.value ?? null,
+        cvDocumentId: (cvVersionId.value ? generated?.documentId : cvId.value) ?? null,
         coverLetterDocumentId: coverId.value ?? null,
         appliedAt: new Date(appliedAt.value).toISOString(),
         note: note.value
@@ -174,6 +196,8 @@ const submit = async () => {
       <ListingsDocumentPicker
         v-model:document-id="cvId"
         v-model:file="cvFile"
+        v-model:base-cv-version-id="cvVersionId"
+        base-cvs
         label="CV"
         help="Optional. No CV? Say how you applied in the note."
         :documents="unsent('CV')"

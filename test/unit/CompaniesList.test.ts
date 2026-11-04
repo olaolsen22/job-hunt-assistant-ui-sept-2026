@@ -12,6 +12,8 @@ const company = (id: number, name: string, avoidedAt: string | null = null) => (
   id,
   name,
   avoidedAt,
+  kind: 'CONSULTANCY' as string | null,
+  contacts: [] as { id: number }[],
   sizeBand: null as string | null,
   listingCount: 3,
   applicationCount: 1,
@@ -140,34 +142,134 @@ describe('Companies list', () => {
     wrapper.unmount()
   })
 
-  it('filters avoided companies out server-side when Hide avoided is on', async () => {
-    const queries: string[] = []
+  // Records each request; `nodes` decides the reply.
+  const record = (nodes: (query: string) => ReturnType<typeof company>[]) => {
+    const requests: { query: string; variables: Record<string, unknown> }[] = []
     registerEndpoint('/graphql', {
       method: 'POST',
       handler: async (event) => {
-        queries.push((await readBody(event)).query)
+        const { query, variables } = await readBody(event)
+        requests.push({ query, variables })
+        const list = nodes(query)
         return {
           data: {
             companies: {
-              nodes: [company(1, 'Bekk')],
-              pageInfo: { hasNextPage: false, endCursor: 'c1' },
-              totalCount: 1
+              nodes: list,
+              pageInfo: { hasNextPage: false, endCursor: null },
+              totalCount: list.length
             }
           }
         }
       }
     })
-    const wrapper = await mountSuspended(CompaniesPage, { route: '/companies' })
-    await vi.waitFor(() => expect(queries).toHaveLength(1))
-    expect(queries[0]).not.toMatch(/avoidedAt: \{/)
+    return requests
+  }
 
-    await wrapper.get('[data-testid="companies-hide-avoided"]').trigger('click')
+  it('keeps old Hide avoided links working and drops the filter from its chip', async () => {
+    const requests = record(() => [company(1, 'Bekk')])
+    const wrapper = await mountSuspended(CompaniesPage, { route: '/companies?hideAvoided=1' })
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]!.query).toMatch(/avoidedAt: \{\s*eq: null\s*\}/)
 
-    await vi.waitFor(() => expect(queries.at(-1)).toMatch(/avoidedAt: \{\s*eq: null\s*\}/))
-    await vi.waitFor(() =>
-      expect(useRouter().currentRoute.value.query).toEqual({ hideAvoided: '1' })
+    await wrapper.get('[data-testid="companies-chip-hideAvoided"]').trigger('click')
+
+    await vi.waitFor(() => expect(requests.at(-1)!.query).not.toMatch(/avoidedAt: \{/))
+    await vi.waitFor(() => expect(useRouter().currentRoute.value.query).toEqual({}))
+    expect(useCompaniesView().value).toBe('/companies')
+    wrapper.unmount()
+  })
+
+  it('switches to consultancies by type and keeps the tab in the URL', async () => {
+    const requests = record((query) =>
+      query.includes('CONSULTANCY')
+        ? [company(2, 'Bekk')]
+        : [company(1, 'Acme'), company(2, 'Bekk')]
     )
-    expect(useCompaniesView().value).toBe('/companies?hideAvoided=1')
+    const wrapper = await mountSuspended(CompaniesPage, { route: '/companies' })
+    await vi.waitFor(() => expect(wrapper.findAll('[data-testid="companies-row"]')).toHaveLength(2))
+    expect(requests[0]!.query).not.toContain('kind:')
+    expect(wrapper.get('[data-testid="companies-total"]').text()).toBe('2 companies')
+
+    // Reka tabs switch on mousedown.
+    await wrapper.findAll('[data-testid="companies-tabs"] [role="tab"]')[1]!.trigger('mousedown')
+
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="companies-total"]').text()).toBe('1 consultancy')
+    )
+    expect(requests.at(-1)!.query).toMatch(/kind: \{\s*eq: CONSULTANCY\s*\}/)
+    // The tab already says it, so rows don't repeat the type.
+    expect(wrapper.find('[data-testid="companies-row-kind"]').exists()).toBe(false)
+    await vi.waitFor(() =>
+      expect(useRouter().currentRoute.value.query).toEqual({ tab: 'consultancies' })
+    )
+    wrapper.unmount()
+  })
+
+  it('lists every other type under Employers and says where untyped companies are', async () => {
+    const requests = record(() => [])
+    const wrapper = await mountSuspended(CompaniesPage, { route: '/companies?tab=employers' })
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="companies-empty"]').exists()).toBe(true)
+    )
+
+    expect(requests[0]!.query).toMatch(
+      /kind: \{\s*in: \[PRODUCT, IN_HOUSE, PUBLIC_SECTOR, AGENCY, STARTUP\]/
+    )
+    expect(wrapper.get('[data-testid="companies-tab-hint"]').text()).toBe(
+      'Companies without a type yet are under All.'
+    )
+    expect(wrapper.get('[data-testid="companies-empty"]').text()).toContain('No employers yet.')
+    wrapper.unmount()
+  })
+
+  it('applies facets from the URL as variables, shows them as chips and clears them', async () => {
+    const requests = record(() => [])
+    const wrapper = await mountSuspended(CompaniesPage, {
+      route: '/companies?skill=Vue&size=SMALL,MEDIUM&researched=no'
+    })
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="companies-empty"]').exists()).toBe(true)
+    )
+
+    expect(requests[0]!.variables).toMatchObject({
+      skills: ['Vue'],
+      sizeBands: ['SMALL', 'MEDIUM']
+    })
+    // User values only travel as variables.
+    expect(requests[0]!.query).not.toContain('"Vue"')
+    expect(wrapper.get('[data-testid="companies-chip-skill"]').text()).toBe('Skill: Vue')
+    expect(wrapper.get('[data-testid="companies-chip-size"]').text()).toBe('Size: 11–50, 51–200')
+    expect(wrapper.get('[data-testid="companies-chip-researched"]').text()).toBe('Not researched')
+    expect(wrapper.get('[data-testid="companies-filters-toggle"]').text()).toContain('3')
+    expect(wrapper.get('[data-testid="companies-empty"]').text()).toContain('No companies match.')
+
+    await wrapper.get('[data-testid="companies-empty-clear"]').trigger('click')
+    await vi.waitFor(() => expect(useRouter().currentRoute.value.query).toEqual({}))
+    expect(requests.at(-1)!.variables).not.toHaveProperty('skills')
+    wrapper.unmount()
+  })
+
+  it('shows the type, contacts, listings even at zero and other counts only when non-zero', async () => {
+    record(() => [
+      {
+        ...company(1, 'Acme'),
+        kind: 'PRODUCT',
+        listingCount: 0,
+        applicationCount: 0,
+        contacts: [{ id: 4 }, { id: 5 }]
+      },
+      { ...company(2, 'Fresh'), kind: null }
+    ])
+    const wrapper = await mountSuspended(CompaniesPage, { route: '/companies' })
+    await vi.waitFor(() => expect(wrapper.findAll('[data-testid="companies-row"]')).toHaveLength(2))
+
+    const [acme, fresh] = wrapper.findAll('[data-testid="companies-row"]')
+    expect(acme!.get('[data-testid="companies-row-kind"]').text()).toBe('Product company')
+    expect(acme!.get('[data-testid="companies-row-contacts"]').text()).toBe('2 contacts')
+    expect(acme!.get('[data-testid="companies-row-listings"]').text()).toBe('0 listings')
+    expect(acme!.find('[data-testid="companies-row-applications"]').exists()).toBe(false)
+    expect(fresh!.get('[data-testid="companies-row-kind"]').text()).toBe('Not researched')
+    expect(fresh!.get('[data-testid="companies-row-listings"]').text()).toBe('3 listings')
     wrapper.unmount()
   })
 

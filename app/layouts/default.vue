@@ -8,14 +8,25 @@ const route = useRoute()
 const title = computed(() => route.meta.title)
 useHead({ title })
 
-const items: NavigationMenuItem[] = [
+// Asked once when the app opens; reviewing an import refreshes it by key.
+const pendingImports = usePendingImportCount()
+
+const items = computed<NavigationMenuItem[]>(() => [
   { label: 'Dashboard', icon: 'i-lucide-layout-dashboard', to: '/' },
   { label: 'Job listings', icon: 'i-lucide-file-text', to: '/listings' },
+  {
+    label: 'Job imports',
+    icon: 'i-lucide-inbox',
+    to: '/listings/imports',
+    badge: pendingImports.value || undefined
+  },
   { label: 'Companies', icon: 'i-lucide-building-2', to: '/companies' },
+  { label: 'People', icon: 'i-lucide-contact-round', to: '/contacts' },
   { label: 'Skills', icon: 'i-lucide-tags', to: '/skills' },
+  { label: 'CV templates', icon: 'i-lucide-files', to: '/cv-templates' },
   { label: 'Profile', icon: 'i-lucide-user-round', to: '/profile' },
   { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' }
-]
+])
 
 const colorMode = useColorMode()
 // A nav item, not UColorModeButton, so it matches the links above it.
@@ -40,6 +51,9 @@ const userItems = computed<DropdownMenuItem[][]>(() => [
   ],
   [{ label: 'Log out', icon: 'i-lucide-log-out', onSelect: logout }]
 ])
+
+// The sidebar badge is out of sight on phones, so the dashboard also says when imports wait.
+const showImportsNotice = computed(() => pendingImports.value > 0 && route.path === '/')
 
 // Asks before leaving any page while a built-in AI request is still running.
 const { open: aiLeaveOpen, leave: leaveDuringAi } = useAiLeaveGuard()
@@ -138,6 +152,17 @@ const { coordsStart, lengthX } = useSwipe(window, {
       <template #body>
         <!-- Width cap only; UDashboardPanel's body already supplies the side padding. -->
         <div class="mx-auto w-full max-w-(--ui-container)">
+          <UAlert
+            v-if="showImportsNotice"
+            color="info"
+            variant="subtle"
+            icon="i-lucide-inbox"
+            :title="`${pendingImports} job ${pendingImports === 1 ? 'import' : 'imports'} to review`"
+            :actions="[{ label: 'Review imports', to: '/listings/imports', color: 'info' }]"
+            orientation="horizontal"
+            class="mb-4"
+            data-testid="imports-notice"
+          />
           <slot />
         </div>
       </template>

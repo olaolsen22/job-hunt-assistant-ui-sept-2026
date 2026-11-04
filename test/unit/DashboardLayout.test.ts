@@ -208,6 +208,7 @@ describe('Dashboard editor', () => {
       'UPCOMING_INTERVIEWS',
       'OFFERS_TO_ANSWER',
       'STALE_LISTINGS',
+      'CONTACT_FOLLOW_UPS',
       'PIPELINE',
       'APPLIED_THIS_WEEK',
       'TO_ANALYZE',

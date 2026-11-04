@@ -40,11 +40,21 @@ const mountEdit = async (
   overrides: Partial<typeof company> = {}
 ) => {
   const inputs: unknown[] = []
+  const urlParses: unknown[] = []
   registerEndpoint('/graphql', {
     method: 'POST',
     handler: async (event) => {
       const { query, variables } = await readBody(event)
       if (query.includes('CompanyParsePrompt')) return { data: { prompt: { instructions: 'x' } } }
+      if (query.includes('mutation ParseUrl')) {
+        urlParses.push({ url: variables.url, mode: variables.mode })
+        const result = JSON.stringify([{ name: 'Acme', contacts: [{ name: 'Kari Nordmann' }] }])
+        return {
+          data: {
+            parseUrl: { parseJob: { status: 'SUCCEEDED', result, error: null }, errors: null }
+          }
+        }
+      }
       if (query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
       if (query.includes('LlmUsage')) return { data: { llmUsageToday: null } }
       if (query.includes('updateCompany')) {
@@ -70,7 +80,7 @@ const mountEdit = async (
       wrapper.get<HTMLInputElement>('input[data-testid="edit-company-name"]').element.value
     ).toBe('Acme')
   )
-  return { wrapper, inputs }
+  return { wrapper, inputs, urlParses }
 }
 
 describe('Editing a company', () => {
@@ -225,6 +235,62 @@ describe('Editing a company', () => {
     })
     wrapper.unmount()
     document.cookie = 'ai-method=; Max-Age=0; path=/'
+  })
+
+  it('sends the researched contacts with the save and says so before saving', async () => {
+    document.cookie = 'ai-method=own; path=/'
+    const { wrapper, inputs } = await mountEdit(null)
+
+    await pasteReply(wrapper, [
+      {
+        name: 'Acme',
+        contacts: [
+          { name: 'Kari Nordmann', title: 'Recruiter', email: 'kari@acme.no' },
+          { name: 'Ola Hansen' }
+        ]
+      }
+    ])
+
+    expect(wrapper.get('[data-testid="edit-company-analysis"]').text()).toContain(
+      '2 contacts will be added or completed when you save: Kari Nordmann, Ola Hansen.'
+    )
+    await wrapper.get('[data-testid="edit-company-form"]').trigger('submit')
+    await vi.waitFor(() => expect(inputs).toHaveLength(1))
+    expect(
+      (inputs[0] as { details: { details: { contacts: unknown } } }).details.details.contacts
+    ).toEqual([
+      { name: 'Kari Nordmann', title: 'Recruiter', email: 'kari@acme.no', phone: null, url: null },
+      { name: 'Ola Hansen', title: null, email: null, phone: null, url: null }
+    ])
+    wrapper.unmount()
+    document.cookie = 'ai-method=; Max-Age=0; path=/'
+  })
+
+  it('researches the company from a page link in companies mode', async () => {
+    const { wrapper, urlParses } = await mountEdit(null, null, '/companies/3/edit?analyze')
+    await vi.waitFor(() => expect(inBody('companies-parse-source')).not.toBeNull())
+
+    // Company name, then From link.
+    document.body
+      .querySelectorAll<HTMLButtonElement>(
+        '[data-testid="companies-parse-source"] [role="radio"]'
+      )[1]!
+      .click()
+    await flushPromises()
+    const link = inBody<HTMLInputElement>('companies-parse-link')!
+    expect(inBody<HTMLButtonElement>('companies-parse-run')!.disabled).toBe(true)
+    link.value = 'https://acme.no/about'
+    link.dispatchEvent(new Event('input'))
+    await flushPromises()
+    inBody('companies-parse-run')!.click()
+
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="edit-company-analysis"]').text()).toContain(
+        '1 contact will be added or completed when you save: Kari Nordmann.'
+      )
+    )
+    expect(urlParses).toEqual([{ url: 'https://acme.no/about', mode: 'COMPANIES' }])
+    wrapper.unmount()
   })
 
   it('keeps the modal open when the reply is about other companies only', async () => {

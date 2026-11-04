@@ -10,7 +10,8 @@ const { listing, matches } = defineProps<{
 }>()
 const open = defineModel<boolean>('open', { required: true })
 const matchId = defineModel<number>('matchId', { required: true })
-const emit = defineEmits<{ keep: []; remove: [] }>()
+// 'existing' removes the match on screen; the parent then shows the next one or closes.
+const emit = defineEmits<{ keep: []; remove: [side: 'new' | 'existing'] }>()
 
 const match = computed(() => matches.find((m) => m.id === matchId.value) ?? matches[0]!)
 const matchItems = computed(() =>
@@ -19,8 +20,11 @@ const matchItems = computed(() =>
 const matchNumber = computed(() => matches.findIndex((m) => m.id === match.value.id) + 1)
 
 // Remove is confirmed in the footer so cancelling keeps the comparison on screen.
-const confirming = ref(false)
-watch(open, () => (confirming.value = false))
+const confirming = ref<'new' | 'existing'>()
+watch([open, matchId], () => (confirming.value = undefined))
+const confirmTitle = computed(() =>
+  confirming.value === 'new' ? listing.title : match.value.title
+)
 
 const SIDES = [
   { label: 'New', class: 'text-highlighted' },
@@ -129,7 +133,9 @@ const summary = computed(() =>
         class="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end"
         data-testid="compare-confirm"
       >
-        <p class="text-sm text-highlighted sm:mr-auto">Remove “{{ listing.title }}”?</p>
+        <p class="text-sm text-highlighted sm:mr-auto">
+          Remove {{ confirming }} “{{ confirmTitle }}”?
+        </p>
         <div class="grid grid-cols-2 gap-2 sm:flex">
           <UButton
             color="neutral"
@@ -137,7 +143,7 @@ const summary = computed(() =>
             class="justify-center"
             :disabled="loading"
             data-testid="compare-confirm-cancel"
-            @click="confirming = false"
+            @click="confirming = undefined"
             >Cancel</UButton
           >
           <UButton
@@ -145,17 +151,17 @@ const summary = computed(() =>
             class="justify-center"
             :loading="loading"
             data-testid="compare-confirm-remove"
-            @click="emit('remove')"
+            @click="emit('remove', confirming)"
             >Remove</UButton
           >
         </div>
       </div>
-      <!-- Phones: the two decisions side by side, Open existing as a smaller link below. -->
+      <!-- Phones: Keep both on its own row, the two removals side by side, Open existing below. -->
       <div v-else class="grid w-full grid-cols-2 gap-2 sm:flex sm:justify-end">
         <UButton
           color="neutral"
           variant="subtle"
-          class="justify-center"
+          class="col-span-2 justify-center"
           data-testid="compare-keep"
           @click="emit('keep')"
           >Keep both</UButton
@@ -165,8 +171,16 @@ const summary = computed(() =>
           variant="soft"
           class="justify-center"
           data-testid="compare-remove"
-          @click="confirming = true"
-          >Remove new one</UButton
+          @click="confirming = 'new'"
+          >Remove new</UButton
+        >
+        <UButton
+          color="error"
+          variant="soft"
+          class="justify-center"
+          data-testid="compare-remove-existing"
+          @click="confirming = 'existing'"
+          >Remove existing</UButton
         >
         <UButton
           :to="`/listings/${match.id}`"

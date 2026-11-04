@@ -10,6 +10,8 @@ let sentInput: Record<string, unknown> | undefined
 let tailoredCvDraft: unknown = null
 let uploadKinds: string[] = []
 let failCoverUpload = false
+let generated: Record<string, unknown>[] = []
+let failApplyOnce = false
 registerEndpoint('/graphql', {
   method: 'POST',
   handler: async (event) => {
@@ -27,6 +29,41 @@ registerEndpoint('/graphql', {
       }
     }
     if (body.query.includes('query TailoredCvDraft')) return { data: { tailoredCvDraft } }
+    if (body.query.includes('query BaseCvs('))
+      return {
+        data: {
+          baseCvs: [
+            {
+              id: 4,
+              name: 'Frontend (EN)',
+              description: null,
+              language: 'ENGLISH',
+              archivedAt: null,
+              updatedAt: '2026-10-30T10:00:00Z',
+              latestVersion: { id: 42, number: 2 },
+              versions: [
+                { id: 42, number: 2, note: null, createdAt: '2026-10-30T10:00:00Z' },
+                { id: 41, number: 1, note: null, createdAt: '2026-10-20T10:00:00Z' }
+              ]
+            }
+          ]
+        }
+      }
+    if (body.query.includes('mutation GenerateBaseCvDocument')) {
+      generated.push(body.variables)
+      return { data: { generateBaseCvDocument: { document: { id: 90 }, errors: null } } }
+    }
+    if (failApplyOnce) {
+      failApplyOnce = false
+      return {
+        data: {
+          applyToListing: {
+            listing: null,
+            errors: [{ __typename: 'InvalidApplicationError', message: 'Try again' }]
+          }
+        }
+      }
+    }
     sentInput = body.variables.input
     return { data: { applyToListing: { listing: { id: 5 }, errors: null } } }
   }
@@ -141,6 +178,32 @@ describe('ApplyModal', () => {
     await flushPromises()
     expect(document.body.textContent).toContain('Applied at')
     expect(document.body.querySelector('[data-testid="apply-tailor-cv"]')).toBeNull()
+    wrapper.unmount()
+  })
+  it('makes a CV template version into the CV only on submit, once even when retried', async () => {
+    generated = []
+    failApplyOnce = true
+    const wrapper = await mountOpen()
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Or use a CV template'))
+    expect(generated).toEqual([])
+
+    // The picker's template choice sets the version, defaulting to the latest.
+    wrapper.findAllComponents(DocumentPicker)[0]!.vm.$emit('update:baseCvVersionId', 42)
+    await flushPromises()
+    const confirm = () =>
+      document.body.querySelector<HTMLButtonElement>('[data-testid="confirm-modal-confirm"]')!
+    confirm().click()
+    await vi.waitFor(() => expect(generated).toHaveLength(1))
+    await flushPromises()
+    expect(generated[0]).toEqual({ listingId: 5, baseCvVersionId: 42 })
+    expect(wrapper.emitted('changed')).toBeFalsy()
+    // The failed apply leaves the chosen template on show.
+    expect(wrapper.findAllComponents(DocumentPicker)[0]!.props('baseCvVersionId')).toBe(42)
+
+    confirm().click()
+    await vi.waitFor(() => expect(wrapper.emitted('changed')).toBeTruthy())
+    expect(generated).toHaveLength(1)
+    expect(sentInput).toMatchObject({ cvDocumentId: 90 })
     wrapper.unmount()
   })
   it('offers a generated unsent CV, but not one that was already sent', async () => {

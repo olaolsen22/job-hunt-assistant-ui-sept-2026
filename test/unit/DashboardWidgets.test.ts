@@ -5,6 +5,7 @@ import Stale from '~/components/dashboard/Stale.vue'
 import Interviews from '~/components/dashboard/Interviews.vue'
 import FavoriteCompanies from '~/components/dashboard/FavoriteCompanies.vue'
 import ClosingSoon from '~/components/dashboard/ClosingSoon.vue'
+import FollowUps from '~/components/dashboard/FollowUps.vue'
 
 // useAsyncData caches by key across mounts in the same app, so each test starts from a clean cache.
 beforeEach(() => clearNuxtData())
@@ -202,5 +203,46 @@ describe('Favorited companies links', () => {
     expect(more.text()).toBe('+2 more')
     expect(more.attributes('href')).toBe('/listings?company=7')
     expect(wrapper.get('a[href="/companies/7"]').text()).toBe('Bekk')
+  })
+})
+
+describe('Follow-ups widget', () => {
+  it('asks for follow-ups due by today and links each person with how late it is', async () => {
+    let seen: { query: string; variables: Record<string, unknown> } | undefined
+    respond((query, variables) => {
+      seen = { query, variables }
+      return {
+        data: {
+          contacts: {
+            nodes: [
+              { id: 7, name: 'Kari Nordmann', followUpOn: daysAgo(3), company: { name: 'Acme' } },
+              { id: 8, name: 'Ola Hansen', followUpOn: daysAgo(0), company: { name: 'Bekk' } }
+            ],
+            totalCount: 6
+          }
+        }
+      }
+    })
+
+    const wrapper = await mountSuspended(FollowUps)
+    await vi.waitFor(() => expect(wrapper.findAll('[data-testid="dashboard-row"]')).toHaveLength(2))
+
+    const rows = wrapper.findAll('[data-testid="dashboard-row"]')
+    expect(rows[0]!.attributes('href')).toBe('/contacts/7')
+    expect(rows[0]!.text()).toContain('Overdue 3 d')
+    expect(rows[1]!.text()).toContain('Due today')
+    expect(wrapper.get('[data-testid="dashboard-widget-total"]').text()).toBe('6')
+    expect(seen!.variables).toEqual({ today: daysAgo(0) })
+    expect(seen!.query).toMatch(/followUpOn: \{\s*lte: \$today/)
+  })
+
+  it('says when nothing is due', async () => {
+    respond(() => ({ data: { contacts: { nodes: [], totalCount: 0 } } }))
+    const wrapper = await mountSuspended(FollowUps)
+    await vi.waitFor(() =>
+      expect(wrapper.get('[data-testid="dashboard-widget-empty"]').text()).toBe(
+        'No follow-ups due.'
+      )
+    )
   })
 })

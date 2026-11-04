@@ -62,6 +62,25 @@ export const researchFromJson = (d: Record<string, unknown>) => {
   if (skills.length > SKILLS_MAX)
     ignored.push(`${skills.length - SKILLS_MAX} skills over ${SKILLS_MAX}`)
 
+  // People the AI found. The API adds new names and only fills empty fields of known ones, so a row
+  // without a name is useless; a bad link is dropped rather than failing the whole save.
+  const contacts: NonNullable<CompanyResearch['contacts']> = []
+  for (const c of Array.isArray(d.contacts) ? d.contacts : []) {
+    if (!c || typeof c !== 'object') continue
+    const raw = c as Record<string, unknown>
+    const name = text(raw.name)
+    if (!name || contacts.some((k) => k.name.toLowerCase() === name.toLowerCase())) continue
+    const link = text(raw.url)
+    if (link && !isHttpUrl(link)) ignored.push(`link for ${name} “${link}”`)
+    contacts.push({
+      name,
+      title: text(raw.title) || null,
+      email: text(raw.email) || null,
+      phone: text(raw.phone) || null,
+      url: isHttpUrl(link) ? link : null
+    })
+  }
+
   const research: CompanyResearch = {
     orgNumber: keep('org.nr', d.orgNumber, isValidOrgNumber(orgNumber) ? orgNumber : undefined),
     websiteUrl: keep('website', d.websiteUrl, url(d.websiteUrl)),
@@ -85,12 +104,13 @@ export const researchFromJson = (d: Record<string, unknown>) => {
       d.workingLanguage,
       option(LANGUAGE_OPTIONS, d.workingLanguage)
     ),
-    skills: skills.slice(0, SKILLS_MAX)
+    skills: skills.slice(0, SKILLS_MAX),
+    contacts
   }
   return { research, ignored }
 }
 
-// One line for a pasted row, e.g. "Consultancy · 51–200 · Hybrid · 6 skills · website, careers".
+// One line for a pasted row, e.g. "Consultancy · 51–200 · Hybrid · 6 skills · 2 contacts · website".
 // Empty when the row has no research.
 export const researchSummary = (r: CompanyResearch) => {
   const extras = [
@@ -107,6 +127,8 @@ export const researchSummary = (r: CompanyResearch) => {
     WORK_MODE_OPTIONS.find((o) => o.value === r.workMode)?.label,
     LANGUAGE_OPTIONS.find((o) => o.value === r.workingLanguage)?.label,
     r.skills.length && `${r.skills.length} ${r.skills.length === 1 ? 'skill' : 'skills'}`,
+    r.contacts?.length &&
+      `${r.contacts.length} ${r.contacts.length === 1 ? 'contact' : 'contacts'}`,
     extras.join(', ')
   ]
     .filter(Boolean)

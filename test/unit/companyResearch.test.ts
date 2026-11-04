@@ -36,8 +36,38 @@ describe('company research from AI JSON', () => {
       description: 'Makes things.',
       workMode: 'HYBRID',
       workingLanguage: 'NORWEGIAN',
-      skills: ['Vue', 'C#']
+      skills: ['Vue', 'C#'],
+      contacts: []
     })
+  })
+
+  it('keeps named contacts once each, with empty values as null and bad links dropped', () => {
+    const { research, ignored } = researchFromJson({
+      contacts: [
+        {
+          name: ' Kari Nordmann ',
+          title: 'Recruiter',
+          email: 'kari@acme.no',
+          url: 'https://x.no/k'
+        },
+        { name: 'kari nordmann', title: 'Duplicate' },
+        { title: 'No name' },
+        { name: 'Ola', phone: ' ', url: 'linkedin.com/in/ola' },
+        'not a contact'
+      ]
+    })
+    expect(research.contacts).toEqual([
+      {
+        name: 'Kari Nordmann',
+        title: 'Recruiter',
+        email: 'kari@acme.no',
+        phone: null,
+        url: 'https://x.no/k'
+      },
+      { name: 'Ola', title: null, email: null, phone: null, url: null }
+    ])
+    expect(ignored).toEqual(['link for Ola “linkedin.com/in/ola”'])
+    expect(researchSummary(research)).toBe('2 contacts')
   })
 
   it('drops values the API would reject and lists them', () => {
