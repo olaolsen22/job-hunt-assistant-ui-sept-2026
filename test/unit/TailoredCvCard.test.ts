@@ -4,7 +4,8 @@ import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import TailoredCvCard from '~/components/listings/TailoredCvCard.vue'
 import type { ListingDetail } from '~/composables/useListing'
-import { tailoredCvFromProfile, toTailoredCvInput } from '~/utils/tailoredCv'
+import { toTailoredCvInput } from '~/utils/tailoredCv'
+import { tailoredCvFromProfile } from '../fixtures/tailoredCv'
 import { cvProfile } from '../fixtures/profileCv'
 
 let savedDraft: unknown

@@ -116,15 +116,22 @@ remove it when you delete one.
   — pick an uploaded document or a new PDF (uploaded by the caller on submit); `base-cvs` (the CV picker) also offers
   a CV template and version, which the caller turns into a document on submit (`GENERATE_BASE_CV_DOCUMENT`) and keeps
   for a retry. Used twice by `<ListingsApplyModal>`.
-- `<CvContentEditor v-model:cv v-model:flagged? :flag-language? :profile disabled? :ai?>` — the CV's content cards (contact, summary, entries, skills,
+- `<CvContentEditor v-model:cv v-model:flagged? :flag-language? :source disabled? :ai?>` — the CV's content cards (contact, summary, entries, skills,
   languages) and their edit modals, applied to `cv` in place. Shared by the tailored CV page, which passes `ai`
   (`CvEditorAi`: suggestion and AI-run bindings), and the CV template editor, which doesn't. `flagged` content paths
   (a translated template) show as "Still in English" badges on their cards (`data-flagged` for scrolling) and clear
-  when that card's edit applies.
+  when that card's edit applies. `source` is the API's prefill in the CV's language (`tailoredCvDraftFromProfile` or
+  `baseCvFromProfile`), which the Add menus offer back.
+- `<CvStyleFields v-model:cv disabled?>` (two grid cells: CV style, entry format), `<CvPdfLayoutField v-model:cv disabled?>`,
+  `<CvPdfLatestRow pdf current older-than testid-prefix @preview @delete>` — shared by the tailored CV, cover letter and
+  CV template editors. `<AppSaveBar status status-testid changed warn align?>` — the editors' sticky bottom bar; buttons in the default
+  slot, `#status` beside the status, `#above` over it.
+- `<ListingsPossibleDuplicates matches disabled? testid-prefix @compare @keep @remove>` — the Possible duplicate alert, in quick add's
+  review rows and `<ListingsDuplicateNotice listing-id>` on the listing page (reads `usePossibleDuplicates()`).
 - `<ListingsTailoredCvPdfModal v-model:open url file-name applicable?>` — previews any same-origin PDF: a document
   (`/api/documents/<id>`) or a CV template version (`baseCvPdfUrl(versionId)`).
 - `<CvTemplatesDetailsModal v-model:open base-cv? @saved>` creates a CV template (prefilled from
-  `baseCvFromProfile(language)`, then opens its editor, with `?ai=1` when started as an AI draft) or renames one; `<CvTemplatesDeleteModal v-model:open base-cv
+  `baseCvFromProfile(language)`, then opens its editor; started as an AI draft, it goes to `/cv-templates/new` and creates nothing) or renames one; `<CvTemplatesDeleteModal v-model:open base-cv
 @deleted @archived>` offers Archive instead once the API says the template is in use.
 - `<CvTemplatesAiDraftModal v-model:open editor>` — the own-AI draft of a template's current language: target role, notes and CV style build the prompt ("Create prompt"; a changed detail needs "Update prompt", the pasted reply stays), the reply goes through `previewBaseCv` and into `editor.replaceContent`, unsaved. Test ids `cv-ai-draft-*`.
 - `/profile` (`pages/profile.vue`, data from `useProfile()`) is built from `<Profile…>` components, which own their
@@ -162,7 +169,7 @@ remove it when you delete one.
 - `useMutation(onStale?)` → `{ run, loading }` — `run(async () => payload.errors)` toasts the API's
   error message (or a generic one on a network error) and resolves `true` on success; a
   `*NotFoundError` calls `onStale` to refetch.
-- `useListingForm()` → `{ state, validate, toInput, fill, fillDraft, mergeDraft }` — listing form state (incl. `kind`, sent on
+- `toListingInput(fields)` builds the full-replace `ListingInput` (form and quick-add rows); `emptyListing()` is its starting value. `useListingForm()` → `{ state, validate, toInput, fill, fillDraft, mergeDraft }` — listing form state (incl. `kind`, sent on
   every save since `updateListing` is a full replace), `UForm` validator,
   mapping to the API's `ListingInput`, `fill(listing: ListingDetail)` to load an existing one, and
   `fillDraft(json)` to load a parsed draft (keeps only valid values, leaves `url`), and
@@ -205,6 +212,8 @@ remove it when you delete one.
   `measurePageSize(grid, cardHeight?, gap?)` (also used by /companies), `emptyFacets()` and `countActiveFacets(facets)`.
 
 - `useListingImports.ts` — job imports (collected-jobs files the API picks up): `usePendingImportCount()` for the sidebar badge, dashboard notice and imports tab badge (refresh with `refreshNuxtData(PENDING_IMPORTS_KEY)`), `fetchListingImports`/`fetchListingImport(id)` (only the single fetch selects `content`), `useSetImportReviewed()`, `useNextImport(currentId)` (`nextImportId`, `load`; first other pending import without an error).
+- `useDeleteListing()` → `{ remove(id), deleting }`; shows the API's refusal as a toast and returns whether it worked.
+- `useQuickAddRows(revalidate)`, `useQuickAddPaste(rows, startsClosed)`, `useQuickAddImport(importId, rows, paste)` — the quick add page's state, one concern each.
 - `useBaseCvs.ts` — CV templates (the API's base CVs; "template" in CV content is the DETAILED/CONCISE style).
   `useBaseCvEditor(id)` loads the template (the API has no single-template query, so both lists in one request,
   with both languages' latest content), edits one `language` at a time (`?lang=en|no`, `switchTo`), keeps an
@@ -212,7 +221,7 @@ remove it when you delete one.
   language, and unchanged content returns the latest one, so only `isNew` means a new version. `addLanguage(lang)`
   loads the API's unsaved translation as a `draft` with `flagged` paths still in the source language. `replaceContent(next)` loads an AI draft unsaved (keeps the section order and references choice; `aiDrafted` until saved, discarded or replaced). `InvalidTailoredCvDraftError` lands in `invalidContent` for the
   page's Reload from profile. `useBaseCvActions()` → `setArchived(id, bool)`, `remove(id)` → deleted | in-use |
-  failed. Also `BASE_CV_LIST`, `baseCvFromProfile(language)`, `baseCvPdfUrl(versionId)`, `languageCode` (EN/NO),
+  failed. `useNewBaseCv(language)` is the unsaved new template behind `/cv-templates/new` (`source`, `cv`, `dirty`, `aiDrafted`, `replaceContent`, `discardAiDraft`, `save(name, description)`). Also `BASE_CV_LIST`, `baseCvFromProfile(language)`, `baseCvPdfUrl(versionId)`, `languageCode` (EN/NO),
   `versionsIn`/`latestIn(versions, language)`.
 
 ## Stores (`app/stores/`)
@@ -224,7 +233,7 @@ remove it when you delete one.
 - `companyResearch.ts` — `researchFromJson(d)` → `{ research, ignored }`: the research fields of an external AI's company JSON, keeping only values the API accepts (enums, http(s) URLs, mod-11 org.nr, 1800..now year, ≤500 description, ≤50 unique skills) and naming the dropped ones; `researchSummary(research)` one-line summary (empty when none); `fillEmptyResearch(form, research)` fills only the empty fields of the edit form → `{ filled, kept }`; `parseCompaniesReply(reply)` → `{ rows }` or `{ error }`; `basicsFromJson(d)` (industry + valid locations, bad country codes listed) / `fillEmptyBasics(form, basics)` (empty industry; locations only when none); `hasCompanyResearch(company)` (any research field or skill; not `researchedAt`, which an edit save leaves); `isValidOrgNumber`, `formatOrgNumber`; `CompanyResearch` (= `CompanyDetailsInput`), `ResearchForm`.
 - `providerLabel(provider)` (`aiProviders.ts`) — display name of an AI provider id (`openai` → OpenAI), the id itself when unknown.
 - `collectedJobs.ts` — `parseCollectedJobs(source)` validates full listing JSON objects by URL, preserving every field without requiring text; `prepareCollectedJobs(source)` checks authenticated URL batches (≤100), maps indexes and filters normalized repeats across batches, returns `{ rows, remaining, skipped }` only after all succeed; `collectedJobsPosting(rows)` serializes the retained complete objects as JSON (empty rows yield no payload). Exports `CollectedJob`, `PreparedJobs`.
-- `collectedJobBatches.ts` — `planCollectedJobBatches(rows)` preserves full objects and input order in consecutive batches of at most 20 jobs and 12,000 compact JSON characters; throws `OversizedCollectedJobError(index)` before processing if one object cannot fit. `collectedJobBatchPosting(batch)` is the exact compact request text. `decodeCollectedJobReply(reply, expectedCount)` extracts a JSON array and accepts only the expected count of object values. Exports the two limit constants and `OversizedCollectedJobError`.
+- `collectedJobBatches.ts` — `planCollectedJobBatches(rows)` preserves full objects and input order in consecutive batches of at most 20 jobs (our choice) and 100,000 compact JSON characters (the API's QUICK cap); throws `OversizedCollectedJobError(index)` before processing if one object cannot fit. `collectedJobBatchPosting(batch)` is the exact compact request text. `decodeCollectedJobReply(reply, expectedCount)` extracts a JSON array and accepts only the expected count of object values. Exports the two limit constants and `OversizedCollectedJobError`.
 
 - ``graphql(`...`, [fragments])`` — gql.tada document; result/variable types inferred from the API schema
   (`app/graphql-env.d.ts`, regenerate with `pnpm gql:gen`). Use `ResultOf<typeof DOC>` for derived types.

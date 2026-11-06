@@ -190,6 +190,9 @@ export const useCoverLetterDraft = (listingId: number) => {
   const toast = useToast()
   const toastSuccess = useSuccessToast()
   const draft = query.data
+  // A saved CV is the letter's evidence. The API still writes without one, just more generically.
+  const { data: savedCv, status: savedCvStatus } = useTailoredCvDraftQuery(listingId)
+  const noSavedCv = computed(() => savedCvStatus.value === 'success' && !savedCv.value)
   const letter = ref<CoverLetter>()
   // The last saved state; null until the first save, so the profile prefill counts as unsaved.
   const saved = ref<string | null>(null)
@@ -383,6 +386,7 @@ export const useCoverLetterDraft = (listingId: number) => {
   return {
     query,
     draft,
+    noSavedCv,
     letter,
     dirty,
     pristine,

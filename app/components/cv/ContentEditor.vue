@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { VueDraggable } from 'vue-draggable-plus'
-import type { ProfileData } from '~/composables/useProfile'
 import { CV_APPLY_DESCRIPTION, projectKindLabel } from '~/constants/listing'
 import type {
   CvEditorAi,
@@ -15,12 +14,13 @@ import type {
 // entries, skills and languages, each edited in its own modal on a copy and applied to `cv`.
 // `ai` adds the tailored page's suggestions and AI runs; without it the cards are plain editors.
 const {
-  profile,
+  source,
   disabled = false,
   ai = undefined,
   flagLanguage = ''
 } = defineProps<{
-  profile: ProfileData | null | undefined
+  // The API's prefill in this CV's language: what the Add menus offer back.
+  source: TailoredCv | null | undefined
   disabled?: boolean
   ai?: CvEditorAi
   // The language that `flagged` text is still in, for its badges ("Still in English").
@@ -173,18 +173,19 @@ type ProfileListItem = TailoredCv[CvProfileList][number]
 // Recomputed only when a list's items or the CV language change, not on every keystroke.
 const missing = computed(() => {
   const draft = cv.value
-  if (!profile) return undefined
+  if (!source) return undefined
   return Object.fromEntries(
-    PROFILE_LISTS.map((list) => [list, missingFromProfile(draft, profile, list)])
+    PROFILE_LISTS.map((list) => [list, missingFromProfile(draft, source, list)])
   ) as Record<CvProfileList, ProfileListItem[]>
 })
 const addItems = (list: CvProfileList): DropdownMenuItem[] => {
-  const items = missing.value?.[list] ?? []
+  if (!missing.value) return [{ label: 'Your profile isn’t loaded yet', disabled: true }]
+  const items = missing.value[list]
   if (!items.length)
     return [{ label: 'Everything from your profile is already here', disabled: true }]
   return items.map((item) => ({
     label: 'employer' in item ? experienceName(item) : 'school' in item ? item.school : item.name,
-    onSelect: () => addFromProfile(cv.value, profile!, list, item)
+    onSelect: () => addFromProfile(cv.value, source!, list, item)
   }))
 }
 const emptyMessage = (list: CvProfileList, none: string) => {

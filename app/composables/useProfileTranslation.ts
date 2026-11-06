@@ -12,6 +12,10 @@ type ProfileTranslationState = {
   nextUntranslated: (key: string) => string | null
 }
 
+// A translation is always into the language the profile isn't written in.
+export const translationTarget = (contentLanguage: Language | undefined): Language =>
+  contentLanguage === 'ENGLISH' ? 'NORWEGIAN' : 'ENGLISH'
+
 // Bullets, job titles and education share one editing slot, so Enter can hand on across them.
 export const translationKey = (kind: 'bullet' | 'experience' | 'education', id: number) =>
   `${kind}-${id}`

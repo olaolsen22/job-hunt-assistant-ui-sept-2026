@@ -18,6 +18,7 @@ const LISTING = graphql(
         }
         seniority
         employmentType
+        positionPercent
         schedule
         workMode
         description

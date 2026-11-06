@@ -3,7 +3,8 @@ import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import CvTemplatePage from '~/pages/cv-templates/[id].vue'
-import { tailoredCvFromProfile, toTailoredCvInput } from '~/utils/tailoredCv'
+import { toTailoredCvInput } from '~/utils/tailoredCv'
+import { tailoredCvFromProfile } from '../fixtures/tailoredCv'
 import { cvProfile } from '../fixtures/profileCv'
 
 type Body = { query: string; variables: { input?: Record<string, unknown> } }
@@ -277,13 +278,6 @@ describe('Draft with AI', () => {
     await vi.waitFor(() =>
       expect(wrapper.get('[data-testid="tailored-cv-summary-text"]').text()).toBe('AI summary')
     )
-    wrapper.unmount()
-  })
-
-  it('opens from ?ai=1 once and drops it from the URL', async () => {
-    const wrapper = await mountPage('/cv-templates/7?ai=1')
-    await vi.waitFor(() => expect(inBody('cv-ai-draft-role')).not.toBeNull())
-    await vi.waitFor(() => expect(useRouter().currentRoute.value.fullPath).toBe('/cv-templates/7'))
     wrapper.unmount()
   })
 

@@ -91,7 +91,7 @@ export default defineNuxtConfig({
   // The SPA shell as a real index.html, so the service worker can precache it for offline starts.
   nitro: { prerender: { routes: ['/'] } },
 
-  // Same-origin proxy: the HttpOnly session cookie and SSE work without CORS.
+  // Same-origin proxy: the HttpOnly session cookie works without CORS.
   routeRules: {
     '/api/**': { proxy: `${apiUrl}/api/**` },
     '/graphql': { proxy: `${apiUrl}/graphql` }

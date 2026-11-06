@@ -1,7 +1,9 @@
 import type { CollectedJob } from './collectedJobs'
 
+// Our own choice, not an API limit: a failed batch loses less, and progress and retries stay useful.
 export const COLLECTED_JOB_BATCH_SIZE = 20
-export const COLLECTED_JOB_TEXT_LIMIT = 12_000
+// The API's input cap for one QUICK parse (200,000 once its code-review-pass branch is merged).
+export const COLLECTED_JOB_TEXT_LIMIT = 100_000
 
 export class OversizedCollectedJobError extends Error {
   constructor(readonly index: number) {
@@ -10,7 +12,7 @@ export class OversizedCollectedJobError extends Error {
   }
 }
 
-/** Greedily plan consecutive, complete listing objects within both API limits. */
+/** Greedily plan consecutive, complete listing objects within both limits. */
 export const planCollectedJobBatches = (jobs: CollectedJob[]): CollectedJob[][] => {
   const batches: CollectedJob[][] = []
   let current: CollectedJob[] = []

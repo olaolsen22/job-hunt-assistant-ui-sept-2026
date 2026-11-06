@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
+import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import ListingPage from '~/pages/listings/[id]/index.vue'
 
+const { navigateTo } = vi.hoisted(() => ({ navigateTo: vi.fn() }))
+mockNuxtImport('navigateTo', () => navigateTo)
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
 
 const listing = {
@@ -51,6 +53,19 @@ const listing = {
   contacts: [] as { contact: Record<string, unknown> }[]
 }
 
+const compared = (id: number) => ({
+  id,
+  title: `Job ${id}`,
+  url: `https://jobs.example/${id}`,
+  postedOn: '2026-10-20',
+  deadlineType: 'UNSPECIFIED' as const,
+  deadlineOn: null,
+  status: 'SAVED' as const,
+  company: { name: 'Acme' },
+  jobRole: { name: 'Developer' },
+  locations: []
+})
+
 const queries: string[] = []
 const mountPage = async (overrides: Partial<typeof listing> = {}) => {
   queries.length = 0
@@ -71,6 +86,72 @@ const mountPage = async (overrides: Partial<typeof listing> = {}) => {
 }
 
 describe('Listing page', () => {
+  it('shows the position share only when the ad states one', async () => {
+    const stated = await mountPage({ positionPercent: 80 } as Partial<typeof listing>)
+    expect(stated.get('[data-testid="listing-key-facts"]').text()).toContain('80%')
+    stated.unmount()
+
+    const silent = await mountPage()
+    expect(silent.get('[data-testid="listing-key-facts"]').text()).not.toContain('Position')
+    silent.unmount()
+  })
+
+  describe('possible duplicates from the add page', () => {
+    afterEach(() => {
+      usePossibleDuplicates().value = null
+      navigateTo.mockReset()
+    })
+    const pending = (listingId = 5) => {
+      usePossibleDuplicates().value = { listing: compared(listingId), matches: [compared(8)] }
+    }
+
+    it('stays until the owner keeps both', async () => {
+      pending()
+      const wrapper = await mountPage()
+      const notice = wrapper.get('[data-testid="listing-duplicates"]')
+      expect(notice.text()).toContain('Job 8')
+      await notice
+        .findAll('button')
+        .find((b) => b.text() === 'Keep both')!
+        .trigger('click')
+      expect(wrapper.find('[data-testid="listing-duplicates"]').exists()).toBe(false)
+      expect(usePossibleDuplicates().value).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('only shows on the listing it is about', async () => {
+      pending(99)
+      const wrapper = await mountPage()
+      expect(wrapper.find('[data-testid="listing-duplicates"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('removes the new listing after confirming, then leaves its page', async () => {
+      pending()
+      const wrapper = await mountPage()
+      const deleted: unknown[] = []
+      registerEndpoint('/graphql', {
+        method: 'POST',
+        handler: async (event) => {
+          const { query, variables } = await readBody(event)
+          if (query.includes('mutation DeleteListing')) {
+            deleted.push(variables.id)
+            return { data: { deleteListing: { errors: null } } }
+          }
+          return { data: { listingById: listing } }
+        }
+      })
+      await wrapper.get('[data-testid="listing-remove-duplicate"]').trigger('click')
+      await flushPromises()
+      expect(deleted).toEqual([])
+      document.body.querySelector<HTMLElement>('[data-testid="confirm-modal-confirm"]')!.click()
+      await vi.waitFor(() => expect(navigateTo).toHaveBeenCalled())
+      expect(deleted).toEqual([5])
+      expect(usePossibleDuplicates().value).toBeNull()
+      wrapper.unmount()
+    })
+  })
+
   // The CV card, its reset and the Apply modal all read one draft; they used to fetch it each.
   it('fetches the tailored CV draft once', async () => {
     const wrapper = await mountPage()

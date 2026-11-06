@@ -1,5 +1,5 @@
 import type { ResultOf } from 'gql.tada'
-import { CV_CONTENT_FIELDS } from '~/composables/useTailoredCvDraft'
+import { CV_CONTENT_FIELDS } from '~/composables/cvContentFields'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { Language } from '~/constants/listing'
 import type { TailoredCv } from '~/utils/tailoredCv'
@@ -267,6 +267,9 @@ export const latestIn = (versions: BaseCvVersion[], language: Language) =>
   versions.find((v) => v.language === language)
 
 const LANGUAGE_PARAMS: Record<string, Language> = { en: 'ENGLISH', no: 'NORWEGIAN' }
+export const languageParam = (language: Language) => languageCode(language).toLowerCase()
+export const languageFromParam = (param: unknown): Language | undefined =>
+  LANGUAGE_PARAMS[String(param)]
 
 export const baseCvPdfUrl = (versionId: number) => `/api/base-cv-versions/${versionId}/pdf`
 
@@ -291,7 +294,7 @@ export const useBaseCvEditor = (id: number) => {
   )
   // Seeded from the URL once, then set by the tabs; the URL only follows, so a refresh or Back
   // returns to it. A language the template doesn't have falls back to its first one.
-  const selected = ref<Language | undefined>(LANGUAGE_PARAMS[String(route.query.lang)])
+  const selected = ref<Language | undefined>(languageFromParam(route.query.lang))
   const language = computed<Language | undefined>(() =>
     draft.value
       ? draft.value.language
@@ -307,6 +310,16 @@ export const useBaseCvEditor = (id: number) => {
 
   const draft = ref<{ language: Language; fromLanguage: Language }>()
   const flagged = ref<string[]>([])
+  // The profile in the language being edited: what the Add menus offer back. The editor works
+  // without. Hidden while a language switch is loading, so nothing is added in the old language.
+  const sourceQuery = useAsyncData(
+    `base-cv-source-${id}`,
+    () => (language.value ? baseCvFromProfile(language.value) : Promise.resolve(null)),
+    { server: false, watch: [language] }
+  )
+  const source = computed(() =>
+    sourceQuery.status.value === 'success' ? sourceQuery.data.value : undefined
+  )
   const cv = ref<TailoredCv>()
   const saved = ref('')
   // A draft is unsaved until its first version, even before any edit.
@@ -329,7 +342,7 @@ export const useBaseCvEditor = (id: number) => {
   )
 
   const setParam = (lang: Language) =>
-    router.replace({ query: { ...route.query, lang: languageCode(lang).toLowerCase() } })
+    router.replace({ query: { ...route.query, lang: languageParam(lang) } })
   // The page confirms first when there are unsaved edits; switching drops them and any draft.
   const switchTo = (lang: Language) => {
     draft.value = undefined
@@ -428,9 +441,7 @@ export const useBaseCvEditor = (id: number) => {
     if (!cv.value || !language.value) return false
     reloading.value = true
     try {
-      const fresh = await baseCvFromProfile(language.value)
-      const { contentStyle, sectionOrder, template, referencesOnRequest } = cv.value
-      cv.value = { ...fresh, contentStyle, sectionOrder, template, referencesOnRequest }
+      cv.value = withLayoutFrom(await baseCvFromProfile(language.value), cv.value)
       invalidContent.value = undefined
       // Fresh profile text in this language: nothing left from the source language to flag.
       flagged.value = []
@@ -449,6 +460,7 @@ export const useBaseCvEditor = (id: number) => {
     baseCv,
     language,
     latest,
+    source,
     draft,
     flagged,
     switchTo,
@@ -463,6 +475,75 @@ export const useBaseCvEditor = (id: number) => {
     reloading,
     aiDrafted,
     replaceContent
+  }
+}
+
+// A new template drafted with AI: unsaved until the owner has reviewed it. It starts as the profile,
+// the AI's draft replaces that in the editor, and Save creates the template with it as its first
+// version, so nothing exists if the owner walks away.
+export const useNewBaseCv = (lang: Language) => {
+  const source = ref<TailoredCv>()
+  const cv = ref<TailoredCv>()
+  const seed = ref('')
+  const loadError = ref('')
+  const dirty = computed(() => !!cv.value && snapshot(cv.value) !== seed.value)
+  const aiDrafted = ref(false)
+
+  const start = (from: TailoredCv) => {
+    cv.value = cloneCv(from)
+    seed.value = snapshot(cv.value)
+    aiDrafted.value = false
+  }
+  onMounted(async () => {
+    try {
+      source.value = await baseCvFromProfile(lang)
+      start(source.value)
+    } catch (e) {
+      loadError.value = genericError(e)
+    }
+  })
+
+  const replaceContent = (next: TailoredCv) => {
+    const { sectionOrder, referencesOnRequest } = cv.value!
+    cv.value = { ...next, sectionOrder, referencesOnRequest }
+    aiDrafted.value = true
+  }
+  const discardAiDraft = () => start(source.value!)
+
+  const saving = ref(false)
+  const save = async (name: string, description: string | null) => {
+    saving.value = true
+    try {
+      const { createBaseCv } = await gql(CREATE_BASE_CV, {
+        input: { name, description, language: lang, content: toTailoredCvInput(cv.value!) }
+      })
+      const error = createBaseCv.errors?.[0]
+      if (error)
+        return {
+          error: error.message,
+          duplicate: error.__typename === 'DuplicateBaseCvError',
+          existingId:
+            error.__typename === 'DuplicateBaseCvError' ? error.existingBaseCvId : undefined
+        }
+      return { id: createBaseCv.baseCv!.id }
+    } catch (e) {
+      return { error: genericError(e), duplicate: false }
+    } finally {
+      saving.value = false
+    }
+  }
+
+  return {
+    language: computed<Language | undefined>(() => lang),
+    source,
+    cv,
+    dirty,
+    loadError,
+    aiDrafted,
+    replaceContent,
+    discardAiDraft,
+    saving,
+    save
   }
 }
 

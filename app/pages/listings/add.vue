@@ -7,28 +7,35 @@ definePageMeta({ title: 'Add listing' })
 
 const listingsView = useListingsView()
 
-const CREATE_LISTING = graphql(`
-  mutation CreateListing($listing: ListingInput!) {
-    createListing(input: { listing: $listing }) {
-      listing {
-        id
-      }
-      previousAttempts {
-        id
-        status
-      }
-      errors {
-        __typename
-        ... on Error {
-          message
+const CREATE_LISTING = graphql(
+  `
+    mutation CreateListing($listing: ListingInput!) {
+      createListing(input: { listing: $listing }) {
+        listing {
+          ...ListingCompareFields
         }
-        ... on DuplicateListingError {
-          existingListingId
+        previousAttempts {
+          id
+          status
+        }
+        possibleDuplicates {
+          ...ListingCompareFields
+          archivedAt
+        }
+        errors {
+          __typename
+          ... on Error {
+            message
+          }
+          ... on DuplicateListingError {
+            existingListingId
+          }
         }
       }
     }
-  }
-`)
+  `,
+  [LISTING_COMPARE_FIELDS]
+)
 
 // "Start open application" on a person's page links here with ?contact=<id>.
 const CONTACT_FOR_LISTING = graphql(`
@@ -83,6 +90,7 @@ const onDraft = (draft: Record<string, unknown>, url?: string) => {
   filledFromAd.value = true
   checkNewNames(state)
 }
+const possibleDuplicates = usePossibleDuplicates()
 const submitting = ref(false)
 const errorMessages = ref<string[]>([])
 const confirmOpen = ref(false)
@@ -101,6 +109,10 @@ const onConfirm = async () => {
       return
     }
     clearNuxtState('name-lookups')
+    // The new listing's page asks what to do about them.
+    possibleDuplicates.value = createListing.possibleDuplicates?.length
+      ? { listing: createListing.listing!, matches: [...createListing.possibleDuplicates] }
+      : null
     // Newest first, so [0] is the latest earlier attempt at this posting.
     const previous = createListing.previousAttempts?.[0]
     toast.add(

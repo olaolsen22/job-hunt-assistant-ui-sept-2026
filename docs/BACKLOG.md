@@ -5,14 +5,14 @@ item once it ships; feature status lives in `STATUS.md`.
 
 ## API features the UI doesn't use yet
 
-Checked against the schema on 2026-10-24. Omitted fields keep their saved values, so none of these
-is changed by a UI save.
+Checked against the schema on 2026-11-06. `updateListing` is a full replace, so a field the form
+doesn't send is cleared; only `contacts` and `trainingProgram` are kept when omitted.
 
-- Training programs: `Listing.trainingProgram` and `ListingInput.trainingProgram`, plus the
-  `listings(isTrainingProgram:)` filter.
-- Job-role categories: `jobRoleCategories` and create, update and set mutations. The parse prompts
-  also suggest `jobRoleCategoryName`, which the form drops. The listings "IT" toggle already filters
-  by category name.
+- Training programs: `Listing.trainingProgram` and `ListingInput.trainingProgram` (a value in a parse
+  reply or an import file is dropped), plus the `listings(isTrainingProgram:)` filter.
+- Job-role categories: `jobRoleCategories` and create, update and set mutations. Parses and imports
+  send `jobRoleCategoryName`, but the form has no control for it. The listings "IT" toggle already
+  filters by category name.
 - Usage history: `usageDaily(days, credentialId)`. The dashboard shows today only.
 - Unsolicited applications (`ListingKind.UNSOLICITED`: no ad link, posting date or due date). The UI
   shows them and keeps the kind on save, but can't create one: the form requires an ad link.

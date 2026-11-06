@@ -4,25 +4,28 @@ import type { ProfileData } from '~/composables/useProfile'
 import type { ProfileTranslationDraft } from '~/composables/useProfileTranslationAi'
 import type { RewriteRow } from '~/composables/useTextRewriteReview'
 import type { WritingSample } from '~/components/profile/WritingSampleList.vue'
+import { languageLabel } from '~/constants/listing'
 
-// AI translation of an English profile into Norwegian. The API returns only what is missing or
-// out of date; each item is shown next to its English source and can be unticked or edited.
+// AI translation of the profile into the language it isn't written in. The API returns only what
+// is missing or out of date; each item is shown next to its source and can be unticked or edited.
 // Applied translations are saved as machine translations.
 const { profile } = defineProps<{ profile: ProfileData }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
 
-const api = useProfileTranslationAi()
+const target = computed(() => translationTarget(profile.contentLanguage))
+const targetLabel = computed(() => languageLabel(target.value))
+const api = useProfileTranslationAi(target)
 const { busy, needsConfirm, safetyMessage } = api
 const toastSuccess = useSuccessToast()
 
 // The writing sample list on the profile page has already fetched them; null until it has.
 const { data: samples } = useNuxtData<WritingSample[]>('writing-samples')
-const noNorwegianSamples = computed(
-  () => !!samples.value && !samples.value.some((s) => s.language === 'NORWEGIAN')
+const noTargetSamples = computed(
+  () => !!samples.value && !samples.value.some((s) => s.language === target.value)
 )
 
-// existing: replaces a saved Norwegian translation. Job title and education rows carry their
+// existing: replaces a saved translation. Job title and education rows carry their
 // entry; bullet, headline and summary rows use the shared RewriteRow fields.
 type Row = RewriteRow & {
   existing: boolean
@@ -51,7 +54,7 @@ const {
 // Bullet id → its entry's name (so rows say where they belong) and the bullet itself.
 const bulletInfo = computed(() => profileBullets(profile))
 const savedTranslation = computed(() =>
-  profile.translations.find((t) => t.language === 'NORWEGIAN')
+  profile.translations.find((t) => t.language === target.value)
 )
 
 const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState(open, {
@@ -74,8 +77,8 @@ const fieldRow = (field: 'headline' | 'summary', label: string, text: string | n
         }
       ]
 
-const norwegian = <T extends { language: string }>(translations: readonly T[]) =>
-  translations.find((t) => t.language === 'NORWEGIAN')
+const inTarget = <T extends { language: string }>(translations: readonly T[]) =>
+  translations.find((t) => t.language === target.value)
 
 // Row keys in page order, each entry's title rows before its bullets, so one entry's rows stay
 // together. Rows the profile doesn't have go last.
@@ -97,7 +100,7 @@ const pageOrder = computed(() => {
 
 const educationRows = ({ id, degree, field }: ProfileTranslationDraft['educations'][number]) => {
   const entry = profile.educations.find((e) => e.id === id)
-  const saved = entry && norwegian(entry.translations)
+  const saved = entry && inTarget(entry.translations)
   return (
     [
       ['degree', 'Degree', degree],
@@ -136,7 +139,7 @@ const startReview = ({
         label: entry ? `Job title · ${entry.employer}` : 'Job title',
         experienceId: x.id,
         current: entry?.title,
-        existing: !!(entry && norwegian(entry.translations)),
+        existing: !!(entry && inTarget(entry.translations)),
         text: x.title,
         include: !!entry
       }
@@ -150,7 +153,7 @@ const startReview = ({
         label: info?.name ? `Bullet · ${info.name}` : 'Bullet',
         bulletId: b.id,
         current: info?.bullet.text,
-        existing: !!info?.bullet.translations.some((t) => t.language === 'NORWEGIAN'),
+        existing: !!info?.bullet.translations.some((t) => t.language === target.value),
         text: b.text,
         include: !!info
       }
@@ -225,7 +228,7 @@ const goToSamples = () => {
 <template>
   <AppAiModal
     v-model:open="open"
-    title="Translate to Norwegian with AI"
+    :title="`Translate to ${targetLabel} with AI`"
     :description="
       rows
         ? 'Review each translation. Nothing is saved until you apply it.'
@@ -240,7 +243,7 @@ const goToSamples = () => {
         <AppAiReviewEmpty
           v-if="!rows.length"
           icon="i-lucide-languages"
-          text="Your Norwegian translation is up to date. Nothing to change."
+          :text="`Your ${targetLabel} translation is up to date. Nothing to change.`"
           data-testid="translation-ai-empty"
         />
         <template v-else>
@@ -262,7 +265,7 @@ const goToSamples = () => {
                 row.current == null
                   ? 'Not on your profile, so it can’t be applied.'
                   : row.existing
-                    ? 'Replaces your current Norwegian translation.'
+                    ? `Replaces your current ${targetLabel} translation.`
                     : undefined
               "
               :current="row.current"
@@ -275,7 +278,7 @@ const goToSamples = () => {
                   :rows="2"
                   autoresize
                   class="w-full"
-                  :aria-label="`Norwegian ${row.label.toLowerCase()}`"
+                  :aria-label="`${targetLabel} ${row.label.toLowerCase()}`"
                   :color="row.include && !row.text.trim() ? 'error' : undefined"
                   data-testid="translation-ai-text"
                 />
@@ -288,11 +291,11 @@ const goToSamples = () => {
       <template v-else>
         <AppAiMethodTabs v-model="tab" :disabled="busy" />
         <UAlert
-          v-if="noNorwegianSamples"
+          v-if="noTargetSamples"
           color="info"
           variant="subtle"
           icon="i-lucide-info"
-          title="Add a few Norwegian writing samples and the AI will match your tone."
+          :title="`Add a few ${targetLabel} writing samples and the AI will match your tone.`"
           description="You have none yet."
           :actions="[
             {

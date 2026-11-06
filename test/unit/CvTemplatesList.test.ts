@@ -3,7 +3,8 @@ import { flushPromises } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import CvTemplatesPage from '~/pages/cv-templates/index.vue'
-import { tailoredCvFromProfile, toTailoredCvInput } from '~/utils/tailoredCv'
+import { toTailoredCvInput } from '~/utils/tailoredCv'
+import { tailoredCvFromProfile } from '../fixtures/tailoredCv'
 import { cvProfile } from '../fixtures/profileCv'
 
 const { navigateTo } = vi.hoisted(() => ({ navigateTo: vi.fn() }))
@@ -206,7 +207,7 @@ describe('New CV template', () => {
     wrapper.unmount()
   })
 
-  it('starting from an AI draft still creates from the profile, then opens the draft on the editor', async () => {
+  it('starting from an AI draft creates nothing yet and carries the answers to the draft page', async () => {
     const wrapper = await mountPage()
     inBody('cv-templates-new')!.click()
     await flushPromises()
@@ -218,11 +219,17 @@ describe('New CV template', () => {
     )
     aiDraft!.click()
     await flushPromises()
-    expect(document.body.textContent).toContain('Create and draft with AI')
+    expect(document.body.textContent).toContain('Continue to AI draft')
     input.closest('form')!.dispatchEvent(new Event('submit'))
 
-    await vi.waitFor(() => expect(navigateTo).toHaveBeenCalledWith('/cv-templates/9?ai=1'))
-    expect(calls.some((c) => c.query.includes('query BaseCvFromProfile'))).toBe(true)
+    await vi.waitFor(() =>
+      expect(navigateTo).toHaveBeenCalledWith({
+        path: '/cv-templates/new',
+        query: { name: 'Frontend (AI)', description: undefined, lang: 'en' }
+      })
+    )
+    expect(calls.some((c) => c.query.includes('mutation CreateBaseCv'))).toBe(false)
+    expect(calls.some((c) => c.query.includes('query BaseCvFromProfile'))).toBe(false)
     wrapper.unmount()
   })
 

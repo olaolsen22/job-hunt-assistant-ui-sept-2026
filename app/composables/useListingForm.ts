@@ -25,7 +25,7 @@ import type {
   WorkMode
 } from '~/constants/listing'
 
-// Full replace: every field the form doesn't send goes back to its default (see toInput).
+// Full replace: every field the form doesn't send goes back to its default (see toListingInput).
 export const UPDATE_LISTING = graphql(`
   mutation UpdateListing($id: Int!, $listing: ListingInput!) {
     updateListing(input: { id: $id, listing: $listing }) {
@@ -132,8 +132,10 @@ export const cleanListingDraft = (d: Record<string, unknown>) => {
     title: text(d.title),
     companyName: text(d.companyName) || undefined,
     jobRoleName: text(d.jobRoleName) || undefined,
+    jobRoleCategoryName: text(d.jobRoleCategoryName) || undefined,
     seniority: option(SENIORITY_OPTIONS, d.seniority),
     employmentType: option(EMPLOYMENT_TYPE_OPTIONS, d.employmentType),
+    positionPercent: int(d.positionPercent, 1, 100),
     schedule: option(SCHEDULE_OPTIONS, d.schedule),
     workMode: option(WORK_MODE_OPTIONS, d.workMode),
     description: text(d.description),
@@ -190,76 +192,90 @@ export const listingBasicsErrors = (
   return errors
 }
 
+export const emptyListing = () => ({
+  kind: 'VACANCY' as ListingKind,
+  title: '',
+  companyName: undefined as string | undefined,
+  jobRoleName: undefined as string | undefined,
+  // A hint from a parse or an import file: the API fills an uncategorized role from it.
+  jobRoleCategoryName: undefined as string | undefined,
+  seniority: undefined as Seniority | undefined,
+  employmentType: undefined as EmploymentType | undefined,
+  positionPercent: undefined as number | null | undefined,
+  schedule: undefined as Schedule | undefined,
+  workMode: undefined as WorkMode | undefined,
+  description: '',
+  url: '',
+  postedOn: todayIso(),
+  deadlineType: 'UNSPECIFIED' as DeadlineType,
+  deadlineOn: '',
+  postingLanguage: undefined as Language | undefined,
+  // Most ads name a place, so start with one row. Empty city = the whole country.
+  locations: [{ countryCode: 'NO', city: '' }] as ListingLocation[],
+  languages: [] as ListingLanguage[],
+  skills: [] as ListingSkill[],
+  contacts: [] as ListingContact[],
+  isAnalyzed: false,
+  reanalyzed: false
+})
+
+export type ListingFields = ReturnType<typeof emptyListing>
+
+// updateListing replaces the whole listing, so every field goes out. Only trainingProgram (no
+// control yet) is left out, which the API keeps; contacts are always sent, so a removed row
+// unlinks that contact.
+export const toListingInput = (l: ListingFields) => ({
+  // An omitted kind would mean VACANCY.
+  kind: l.kind,
+  title: l.title.trim(),
+  // Callers validate first, which requires both.
+  companyName: l.companyName!,
+  jobRoleName: l.jobRoleName!,
+  jobRoleCategoryName: l.jobRoleCategoryName ?? null,
+  seniority: l.seniority ?? null,
+  employmentType: l.employmentType ?? null,
+  positionPercent: l.positionPercent ?? null,
+  schedule: l.schedule ?? null,
+  workMode: l.workMode ?? null,
+  description: orNull(l.description),
+  // Empty only for an unsolicited application, which has neither.
+  url: orNull(l.url),
+  postedOn: l.postedOn || null,
+  deadlineType: l.deadlineType,
+  // The API rejects a date unless the type is DATE.
+  deadlineOn: l.deadlineType === 'DATE' ? l.deadlineOn : null,
+  postingLanguage: l.postingLanguage ?? null,
+  locations: l.locations.map((location) => ({ ...location, city: orNull(location.city) })),
+  languages: l.languages.map((language) => ({ ...language, level: language.level ?? null })),
+  skills: l.skills.map((skill) => ({
+    ...skill,
+    minYears: skill.minYears ?? null,
+    categoryName: skill.categoryName ?? null
+  })),
+  // Leaving this out would clear the marker.
+  isAnalyzed: l.isAnalyzed,
+  // Makes the API stamp reanalyzedAt; a first analysis keeps it null.
+  reanalyzed: l.reanalyzed,
+  // Blank rows are dropped.
+  contacts: l.contacts
+    .filter((c) => c.name.trim())
+    .map((c) => ({
+      name: c.name.trim(),
+      title: orNull(c.title ?? ''),
+      email: orNull(c.email ?? ''),
+      phone: orNull(c.phone ?? ''),
+      url: orNull(c.url ?? '')
+    }))
+})
+
 export const useListingForm = () => {
-  const state = reactive({
-    kind: 'VACANCY' as ListingKind,
-    title: '',
-    companyName: undefined as string | undefined,
-    jobRoleName: undefined as string | undefined,
-    seniority: undefined as Seniority | undefined,
-    employmentType: undefined as EmploymentType | undefined,
-    schedule: undefined as Schedule | undefined,
-    workMode: undefined as WorkMode | undefined,
-    description: '',
-    url: '',
-    postedOn: todayIso(),
-    deadlineType: 'UNSPECIFIED' as DeadlineType,
-    deadlineOn: '',
-    postingLanguage: undefined as Language | undefined,
-    // Most ads name a place, so start with one row. Empty city = the whole country.
-    locations: [{ countryCode: 'NO', city: '' }] as ListingLocation[],
-    languages: [] as ListingLanguage[],
-    skills: [] as ListingSkill[],
-    contacts: [] as ListingContact[],
-    isAnalyzed: false,
-    reanalyzed: false
-  })
+  const state = reactive(emptyListing())
   // Whether the loaded listing was analyzed already, which makes a merged parse a re-analysis.
   let analyzedBefore = false
 
   const validate = (s: typeof state) => listingBasicsErrors(s)
 
-  const toInput = () => ({
-    // updateListing replaces the whole listing, and an omitted kind would mean VACANCY.
-    kind: state.kind,
-    title: state.title.trim(),
-    // Callers validate() first, which requires both.
-    companyName: state.companyName!,
-    jobRoleName: state.jobRoleName!,
-    seniority: state.seniority ?? null,
-    employmentType: state.employmentType ?? null,
-    schedule: state.schedule ?? null,
-    workMode: state.workMode ?? null,
-    description: orNull(state.description),
-    // Empty only for an unsolicited application, which has neither.
-    url: orNull(state.url),
-    postedOn: state.postedOn || null,
-    deadlineType: state.deadlineType,
-    // The API rejects a date unless the type is DATE.
-    deadlineOn: state.deadlineType === 'DATE' ? state.deadlineOn : null,
-    postingLanguage: state.postingLanguage ?? null,
-    locations: state.locations.map((l) => ({ ...l, city: orNull(l.city) })),
-    languages: state.languages.map((l) => ({ ...l, level: l.level ?? null })),
-    skills: state.skills.map((s) => ({
-      ...s,
-      minYears: s.minYears ?? null,
-      categoryName: s.categoryName ?? null
-    })),
-    // updateListing replaces the whole listing, so leaving this out would clear the marker.
-    isAnalyzed: state.isAnalyzed,
-    // Makes the API stamp reanalyzedAt; a first analysis keeps it null.
-    reanalyzed: state.reanalyzed,
-    // Always sent, so a removed row unlinks that contact. Blank rows are dropped.
-    contacts: state.contacts
-      .filter((c) => c.name.trim())
-      .map((c) => ({
-        name: c.name.trim(),
-        title: orNull(c.title ?? ''),
-        email: orNull(c.email ?? ''),
-        phone: orNull(c.phone ?? ''),
-        url: orNull(c.url ?? '')
-      }))
-  })
+  const toInput = () => toListingInput(state)
 
   // Inverse of toInput: the API's nulls become the form's empty values.
   const fill = (listing: ListingDetail) => {
@@ -271,6 +287,7 @@ export const useListingForm = () => {
       jobRoleName: listing.jobRole.name,
       seniority: listing.seniority ?? undefined,
       employmentType: listing.employmentType ?? undefined,
+      positionPercent: listing.positionPercent ?? undefined,
       schedule: listing.schedule ?? undefined,
       workMode: listing.workMode ?? undefined,
       description: listing.description ?? '',

@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, ref } from 'vue'
+import { defineComponent, h } from 'vue'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import { useTailoredCvDraft } from '~/composables/useTailoredCvDraft'
-import { tailoredCvFromProfile, toTailoredCvInput } from '~/utils/tailoredCv'
+import { toTailoredCvInput } from '~/utils/tailoredCv'
+import { tailoredCvFromProfile } from '../fixtures/tailoredCv'
 import { cvProfile } from '../fixtures/profileCv'
 import { llmModels, unknownModelError } from '../fixtures/llmModels'
 
@@ -14,6 +15,9 @@ let calls: Body[] = []
 let generateReply: () => unknown
 let saveErrors: unknown = null
 let analyze: (input: Record<string, unknown>) => unknown
+// What the API builds its prefill from.
+let apiProfile = cvProfile()
+let postingLanguage: 'ENGLISH' | 'NORWEGIAN' | undefined
 
 const succeeded = (input: Record<string, unknown>) => ({
   result: {
@@ -34,14 +38,17 @@ registerEndpoint('/graphql', {
     const body = (await readBody(event)) as Body
     calls.push(body)
     if (body.query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
-    // Like the API: the profile in the asked language, else the saved draft's.
+    // Like the API: the asked language, else the saved draft's, else the posting's, else English.
     if (body.query.includes('query TailoredCvDraftFromProfile')) {
-      const language = (body.variables as { language?: 'ENGLISH' | 'NORWEGIAN' }).language
+      const language =
+        (body.variables as { language?: 'ENGLISH' | 'NORWEGIAN' }).language ??
+        (savedDraft as { content: { language: 'ENGLISH' | 'NORWEGIAN' } } | null)?.content
+          .language ??
+        postingLanguage ??
+        'ENGLISH'
       return {
         data: {
-          tailoredCvDraftFromProfile: toTailoredCvInput(
-            tailoredCvFromProfile(cvProfile(), language ?? 'ENGLISH')
-          )
+          tailoredCvDraftFromProfile: toTailoredCvInput(tailoredCvFromProfile(apiProfile, language))
         }
       }
     }
@@ -86,17 +93,19 @@ registerEndpoint('/graphql', {
   }
 })
 
-const setup = async (profile = cvProfile(), postingLanguage?: 'ENGLISH' | 'NORWEGIAN') => {
+const setup = async (profile = cvProfile(), posting?: 'ENGLISH' | 'NORWEGIAN') => {
+  apiProfile = profile
+  postingLanguage = posting
   let state!: ReturnType<typeof useTailoredCvDraft>
   await mountSuspended(
     defineComponent({
       setup() {
-        state = useTailoredCvDraft(5, ref(profile), ref(postingLanguage))
+        state = useTailoredCvDraft(5)
         return () => h('div')
       }
     })
   )
-  await state.query.refresh()
+  await Promise.all([state.query.refresh(), state.sourceQuery.refresh()])
   return state
 }
 
@@ -389,13 +398,14 @@ describe('useTailoredCvDraft', () => {
     expect(await state.reset('NORWEGIAN')).toBeNull()
     const sent = (name: string) =>
       calls.filter((c) => c.query.includes(name)).map((c) => c.variables)
-    expect(sent('query TailoredCvDraftFromProfile')[0]).toEqual({
+    expect(sent('query TailoredCvDraftFromProfile').at(-1)).toEqual({
       listingId: 5,
       language: 'NORWEGIAN'
     })
     expect(state.cv.value!.language).toBe('NORWEGIAN')
     expect(state.cv.value!.sectionOrder).toBe('DEVELOPER')
-    expect(state.matchesProfile.value).toBe(false)
+    // Reset keeps the layout, so resetting again would change nothing.
+    expect(state.matchesProfile.value).toBe(true)
     expect(operations()).not.toContain('SaveTailoredCvDraft:')
 
     await state.analyzeSection('summary')

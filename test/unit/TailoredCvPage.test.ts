@@ -6,7 +6,8 @@ import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import { USelect } from '#components'
 import CvPage from '~/pages/listings/[id]/cv.vue'
-import { tailoredCvFromProfile, toTailoredCvInput } from '~/utils/tailoredCv'
+import { toTailoredCvInput } from '~/utils/tailoredCv'
+import { tailoredCvFromProfile } from '../fixtures/tailoredCv'
 import { cvProfile } from '../fixtures/profileCv'
 import { llmModels } from '../fixtures/llmModels'
 
@@ -15,6 +16,7 @@ type Body = {
   variables: { input?: Record<string, unknown>; language?: 'ENGLISH' | 'NORWEGIAN' }
 }
 
+let prefillFails = false
 let savedDraft: unknown
 let calls: Body[]
 let releaseAnalysis: () => void
@@ -68,6 +70,8 @@ registerEndpoint('/graphql', {
       return { data: { suggestTailoredCvSkillGroups: groupsReply } }
     if (query.includes('mutation PreviewTailoredCvDraft'))
       return { data: { previewTailoredCvDraft: previewReply } }
+    if (query.includes('query TailoredCvDraftFromProfile') && prefillFails)
+      return { data: null, errors: [{ message: 'Prefill failed' }] }
     if (query.includes('query TailoredCvDraftFromProfile'))
       return {
         data: {
@@ -191,6 +195,7 @@ beforeEach(() => {
   clearNuxtData()
   calls = []
   savedDraft = null
+  prefillFails = false
   previewReply = null
   fromProfileReply = undefined
   appliedInput = undefined
@@ -608,6 +613,25 @@ describe('Tailored CV page', () => {
     })
   })
 
+  it('starts a new CV from the API prefill, and needs it only when there is no saved draft', async () => {
+    await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-save-status')).not.toBeNull())
+    expect(calls.some((c) => c.query.includes('query Profile '))).toBe(false)
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+
+    clearNuxtData()
+    prefillFails = true
+    await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-load-error')).not.toBeNull())
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+
+    clearNuxtData()
+    savedDraft = savedSummary()
+    await mountPage()
+    await vi.waitFor(() => expect(summaryValue()).toBe('Mine'))
+    expect(el('tailored-cv-load-error')).toBeNull()
+  })
+
   it('rebuilds the CV in another language after confirming, and saves that language', async () => {
     savedDraft = savedSummary()
     const wrapper = await mountPage()
@@ -618,6 +642,8 @@ describe('Tailored CV page', () => {
     expect(language.props('modelValue')).toBe('ENGLISH')
     const fromProfile = () =>
       calls.filter((c) => c.query.includes('query TailoredCvDraftFromProfile'))
+    // The page's own prefill, for the Add menus.
+    await vi.waitFor(() => expect(fromProfile()).toHaveLength(1))
 
     // Cancelling keeps the CV and the select as they were.
     language.vm.$emit('update:modelValue', 'NORWEGIAN')
@@ -625,14 +651,14 @@ describe('Tailored CV page', () => {
     expect(document.body.textContent).toContain('Regenerate in Norwegian?')
     buttonNamed('Cancel').click()
     await flushPromises()
-    expect(fromProfile()).toHaveLength(0)
+    expect(fromProfile()).toHaveLength(1)
     expect(language.props('modelValue')).toBe('ENGLISH')
 
     language.vm.$emit('update:modelValue', 'NORWEGIAN')
     await flushPromises()
     buttonNamed('Regenerate').click()
     await vi.waitFor(() => expect(language.props('modelValue')).toBe('NORWEGIAN'))
-    expect(fromProfile()[0]!.variables).toEqual({ listingId: 5, language: 'NORWEGIAN' })
+    expect(fromProfile().at(-1)!.variables).toEqual({ listingId: 5, language: 'NORWEGIAN' })
     expect(summaryValue()).not.toBe('Mine')
     expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
 

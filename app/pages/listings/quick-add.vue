@@ -1,481 +1,31 @@
 <script setup lang="ts">
-import type { PreparedJobs } from '~/utils/collectedJobs'
-import { collectedJobsPosting, prepareCollectedJobs } from '~/utils/collectedJobs'
-import { useCollectedJobProcessing } from '~/composables/useCollectedJobProcessing'
-import type { FormError } from '@nuxt/ui'
-import { print } from '@0no-co/graphql.web'
-import type { ResultOf } from 'gql.tada'
-import type { ListingLocation } from '~/composables/useListingForm'
-import type { ListingImportDetail } from '~/composables/useListingImports'
-import { ERROR_MESSAGES } from '~/constants/errorMessages'
-import { DEADLINE_TYPE_OPTIONS } from '~/constants/listing'
-import type { DeadlineType, ListingKind } from '~/constants/listing'
-
 // Keyed by URL so moving to the next import remounts the page (import id is read once at setup).
 definePageMeta({ title: 'Quick add listings', key: (route) => route.fullPath })
 
-const RESULT_FRAGMENT = graphql(
-  `
-    fragment R on CreateListingPayload {
-      listing {
-        ...ListingCompareFields
-      }
-      previousAttempts {
-        id
-        title
-        status
-      }
-      possibleDuplicates {
-        ...ListingCompareFields
-        archivedAt
-      }
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-        ... on DuplicateListingError {
-          existingListingId
-        }
-      }
-    }
-  `,
-  [LISTING_COMPARE_FIELDS]
-)
-
-type CreateListingResult = ResultOf<typeof RESULT_FRAGMENT>
-type PossibleDuplicate = NonNullable<CreateListingResult['possibleDuplicates']>[number]
-type PreviousAttempt = NonNullable<CreateListingResult['previousAttempts']>[number]
-
-interface Row {
-  key: number
-  // Carried from the parse without a control: the row only shows the basics.
-  kind: ListingKind
-  title: string
-  companyName?: string
-  jobRoleName?: string
-  url: string
-  postedOn: string
-  deadlineType: DeadlineType
-  deadlineOn: string
-  locations: ListingLocation[]
-  saved?: CreateListingResult['listing']
-  duplicates?: PossibleDuplicate[]
-  previousAttempts?: PreviousAttempt[]
-  error?: string
-  existingListingId?: number
-  // The collected job this row came from, whatever its URL is edited to.
-  sourceUrl?: string
-}
-
-// One aliased createListing per row keeps a batch to one request; the API saves each row on its
-// own, so one failing row doesn't stop the others.
-const buildMutation = (count: number) => {
-  const indexes = [...Array(count).keys()]
-  return batchDocument<CreateListingResult>(`
-    mutation QuickAddListings(${indexes.map((i) => `$l${i}: ListingInput!`).join(', ')}) {
-      ${indexes.map((i) => `r${i}: createListing(input: { listing: $l${i} }) { ...R }`).join('\n')}
-    }
-    ${print(RESULT_FRAGMENT)}
-  `)
-}
-
-const DELETE_LISTING = graphql(`
-  mutation DeleteListing($id: Int!) {
-    deleteListing(input: { id: $id }) {
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
-
-let nextKey = 0
-const newRow = (): Row => ({
-  key: nextKey++,
-  kind: 'VACANCY',
-  title: '',
-  url: '',
-  postedOn: todayIso(),
-  deadlineType: 'UNSPECIFIED',
-  deadlineOn: '',
-  locations: []
-})
-
-// Rows come from the pasted AI reply; "Add row" is only for a stray manual entry.
-const state = reactive({ rows: [] as Row[] })
-
-const isBlank = (r: Row) => !r.title.trim() && !r.companyName && !r.jobRoleName && !r.url.trim()
-const toSave = (rows: Row[]) => rows.filter((r) => !r.saved && !isBlank(r))
-const pending = computed(() => toSave(state.rows))
-const savedCount = computed(() => state.rows.filter((r) => r.saved).length)
-const failedCount = computed(() => pending.value.filter((r) => r.error).length)
-
-// Clearing a row's flags (Keep both, Got it) moves it from flagged into added.
-type SavedRow = Row & { saved: NonNullable<Row['saved']> }
-const isSaved = (r: Row): r is SavedRow => !!r.saved
-const isFlagged = (r: Row) => !!(r.duplicates || r.previousAttempts)
-const flagged = computed(() => state.rows.filter(isSaved).filter(isFlagged))
-const added = computed(() => state.rows.filter(isSaved).filter((r) => !isFlagged(r)))
-const unsaved = computed(() => state.rows.filter((r) => !r.saved))
-const addedOpen = ref(false)
-
-// Field names use the row key, not the index, so errors stay on the right row after a removal.
-const validate = (s: typeof state): FormError[] =>
-  toSave(s.rows).flatMap((r) => listingBasicsErrors(r, (field) => `${r.key}.${field}`))
-
-// Skills and languages are filled in later on the edit page.
-const toInput = (r: Row) => ({
-  kind: r.kind,
-  title: r.title.trim(),
-  companyName: r.companyName,
-  jobRoleName: r.jobRoleName,
-  url: r.url.trim(),
-  postedOn: r.postedOn,
-  deadlineType: r.deadlineType,
-  // The API rejects a date unless the type is DATE.
-  deadlineOn: r.deadlineType === 'DATE' ? r.deadlineOn : null,
-  locations: r.locations.map((l) => ({ ...l, city: l.city || null })),
-  skills: [],
-  languages: []
-})
-
-// The reply is an external AI's JSON: the listing form's cleaning keeps only values a row can
-// hold. The quick parse also returns each ad's link, which the full draft has no field for.
-const toRow = (item: unknown): Row => {
-  // A stray null or text item in the reply becomes an empty row to fill in or remove.
-  const d = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>
-  const draft = cleanListingDraft(d)
-  return {
-    ...newRow(),
-    kind: draft.kind ?? 'VACANCY',
-    title: draft.title,
-    companyName: draft.companyName,
-    jobRoleName: draft.jobRoleName,
-    url: typeof d.url === 'string' ? d.url.trim() : '',
-    postedOn: draft.postedOn || todayIso(),
-    deadlineType: draft.deadlineType,
-    deadlineOn: draft.deadlineOn,
-    locations: draft.locations
-  }
-}
-
-const {
-  instructions,
-  copied,
-  load,
-  copy,
-  parsing,
-  parse,
-  needsConfirm,
-  safetyMessage,
-  confirmRetry,
-  toastError
-} = useParsePrompt('listingQuickParsePrompt')
-const batchRun = useCollectedJobProcessing(parse)
-onMounted(load)
-
-// ?import=<id> (from /listings/imports) loads that file's jobs, checks them and adds the new ones
-// as rows, like a paste followed by Check jobs and Add as rows.
 const route = useRoute()
 const importId = Number(route.query.import) || null
 
 const form = useTemplateRef('form')
+const rows = useQuickAddRows(() => form.value?.validate({ silent: true }))
+const { state, pending, savedCount, failedCount, unsaved, pastedCount, saving, saveError } = rows
 // An import goes straight to its rows: the paste and AI steps never show there.
-const pasteOpen = ref(!importId)
-const ad = ref('')
-const json = ref('')
-const jsonError = ref('')
-const pastedCount = ref(0)
-// Opens on the AI used last, like the AI modals; only a run that worked remembers a choice.
-const aiMethod = useAiMethod()
-const aiTab = ref<string>(aiMethod.value ?? 'builtin')
-const builtIn = computed(() => aiTab.value === 'builtin')
-watch(json, () => (jsonError.value = ''))
-
-const inputMode = ref('text')
-const INPUT_MODES = [
-  { label: 'Paste text', value: 'text' },
-  { label: 'Collected jobs', value: 'collected' }
-]
-const collected = ref('')
-const checking = ref(false)
-const checkError = ref('')
-const prepared = ref<PreparedJobs | null>(null)
-const collectedError = ref('')
-const publishedKeys = ref<number[]>([])
-// Set when the checked jobs went straight into rows, without the AI.
-const addedDirectly = ref(false)
-const processing = batchRun.busy
-const runStatus = batchRun.status
-const runProgress = batchRun.completed
-const runTotal = batchRun.total
-const runCurrentBatch = batchRun.currentBatch
-const runBatchCount = computed(() => batchRun.batches.value.length)
-const runSkipped = batchRun.skipped
-const runUnprocessed = batchRun.unprocessed
-const runError = batchRun.error
-const runErrorCode = batchRun.errorCode
-const runTitle = computed(() => {
-  if (runStatus.value === 'stopped') return 'Processing incomplete'
-  if (runStatus.value === 'paused') return 'Processing paused'
-  if (runStatus.value === 'finished')
-    return runSkipped.value ? 'Finished with skipped jobs' : 'Processing complete'
-  return 'Processing jobs'
-})
-const hasUnsavedWork = computed(
-  () =>
-    pending.value.length > 0 ||
-    // A check that found no new jobs leaves nothing to lose.
-    (!!prepared.value?.remaining && !batchRun.published.value && !addedDirectly.value) ||
-    processing.value ||
-    (batchRun.published.value && (batchRun.skipped.value > 0 || batchRun.unprocessed.value > 0))
-)
-const collectedMode = computed(() => inputMode.value === 'collected')
-const posting = computed(() =>
-  collectedMode.value ? collectedJobsPosting(prepared.value?.rows ?? []) : ad.value.trim()
-)
-const aiDisabled = computed(
-  () =>
-    checking.value || parsing.value || batchRun.busy.value || !posting.value || needsConfirm.value
-)
-watch(collected, () => {
-  prepared.value = null
-  checkError.value = ''
-  collectedError.value = ''
-})
-const checkJobs = async () => {
-  if (batchRun.busy.value) return
-  checking.value = true
-  checkError.value = ''
-  prepared.value = null
-  try {
-    prepared.value = await prepareCollectedJobs(collected.value)
-  } catch (error) {
-    checkError.value = error instanceof Error ? error.message : ERROR_MESSAGES.generic
-  } finally {
-    checking.value = false
-  }
-}
-// Collected jobs are already listing JSON, so the checked ones become rows as they are; the AI run
-// below stays for files that only have links or raw text. The import counts as reviewed only once
-// a save leaves nothing unsaved, so opening it and leaving keeps it pending.
-const addCollectedRows = async () => {
-  if (!prepared.value?.rows.length || batchRun.status.value !== 'idle' || saving.value) return
-  const rows = prepared.value.rows.map((job) => ({ ...toRow(job), sourceUrl: job.url }))
-  publishedKeys.value = rows.map((row) => row.key)
-  if (!(await appendRows(rows))) return
-  addedDirectly.value = true
-  pasteOpen.value = false
-}
-
-const importInfo = ref<ListingImportDetail | null>(null)
-const importError = ref('')
-const importReviewed = ref(false)
-// Set once the opened import's rows are in, so a reviewed one doesn't flash as done while loading.
-const importLoaded = ref(false)
-const { setReviewed, loading: markingReviewed } = useSetImportReviewed()
-const loadImport = async (id: number) => {
-  try {
-    importInfo.value = await fetchListingImport(id)
-  } catch {
-    importError.value = ERROR_MESSAGES.generic
-    return
-  }
-  if (!importInfo.value) importError.value = 'That import no longer exists.'
-  else if (importInfo.value.error) importError.value = importInfo.value.error
-  if (!importInfo.value?.content) return
-  importReviewed.value = !!importInfo.value.reviewedAt
-  inputMode.value = 'collected'
-  collected.value = importInfo.value.content
-  // The collected watcher clears a check, so it has to run before this one starts.
-  await nextTick()
-  await checkJobs()
-  await addCollectedRows()
-  importLoaded.value = true
-}
-// The next pending import, so catching up is one click away.
-const { nextImportId, load: loadNextImport } = useNextImport(importId ?? 0)
-if (importId) {
-  onMounted(async () => {
-    await loadImport(importId)
-    await loadNextImport()
-  })
-}
-const markImportReviewed = async () => {
-  if (importId && !importReviewed.value && (await setReviewed(importId, true)))
-    importReviewed.value = true
-}
-const importLoading = computed(() => !!importId && !importLoaded.value && !importError.value)
-// Nothing left to save: the rows give way to what the check found and a way on.
-const importDone = computed(
-  () =>
-    importLoaded.value &&
-    !importError.value &&
-    !checkError.value &&
-    !collectedError.value &&
-    !hasUnsavedWork.value
-)
-// The check ran before this visit's saves, so those rows supply their new listings.
-const importJobs = computed(() => {
-  const savedIds = new Map(state.rows.filter(isSaved).map((r) => [r.sourceUrl, r.saved.id]))
-  return (prepared.value?.jobs ?? []).map((checked) => {
-    const savedId = savedIds.get(checked.job.url)
-    return savedId ? { ...checked, savedListingIds: [savedId] } : checked
-  })
-})
-const importSummary = computed(() => {
-  const saved = importJobs.value.filter((j) => j.savedListingIds.length).length
-  const repeats = importJobs.value.filter((j) => j.isRepeat).length
-  const notSaved = importJobs.value.length - saved - repeats
-  return [
-    saved && `${saved} saved`,
-    repeats && `${repeats} ${repeats === 1 ? 'repeat' : 'repeats'} in the file`,
-    notSaved && `${notSaved} not saved`,
-    importReviewed.value && 'Marked as reviewed'
-  ]
-    .filter(Boolean)
-    .join(' · ')
-})
-
-const copyPrompt = () => {
-  if (!aiDisabled.value) return copy(posting.value)
-}
-
-const decodeRows = (reply: string) => {
-  // AIs often wrap the JSON in a code fence or a sentence, so take the outermost array.
-  const raw = reply.slice(reply.indexOf('['), reply.lastIndexOf(']') + 1)
-  let items: unknown
-  try {
-    items = JSON.parse(raw)
-  } catch {
-    jsonError.value = 'That doesn’t look like a valid JSON array.'
-    return false
-  }
-  const rows = (Array.isArray(items) ? items : []).map(toRow)
-  if (!rows.length) {
-    jsonError.value = 'No listings found in that reply.'
-    return false
-  }
-  return rows
-}
-
-const appendRows = async (rows: Row[]) => {
-  if (!rows.length) return false
-  // Appended, not replaced, so a second paste never drops rows already saved or edited.
-  state.rows.push(...rows)
-  pastedCount.value = rows.length
-  // Shows what the AI missed (e.g. a null url) right away instead of on Save. The row fields use
-  // eager-validation because UForm otherwise only rechecks a field on input after its first blur:
-  // the error would stay while fixing it, then vanish on the Save mousedown, shifting Save away
-  // from under the click.
-  await nextTick()
-  form.value?.validate({ silent: true })
-  return true
-}
-
-const addRows = async (reply: string) => {
-  const rows = decodeRows(reply)
-  if (!rows) return false
-  const added = await appendRows(rows)
-  if (added) {
-    if (collectedMode.value) collected.value = ''
-    else ad.value = ''
-    json.value = ''
-    pasteOpen.value = false
-  }
-  return added
-}
-
-const parseBuiltIn = async () => {
-  if (aiDisabled.value) return
-  const reply = await parse(posting.value)
-  // An interrupted or lost run shows the retry warning by the run button instead.
-  if (needsConfirm.value) return
-  if ('error' in reply) toastError(reply)
-  // Failed: show the copy-paste steps, with the ads still filled in.
-  if ('error' in reply || !(await addRows(reply.result))) aiTab.value = 'own'
-  else aiMethod.value = 'builtin'
-}
-const addOwnRows = async () => {
-  if (await addRows(json.value)) aiMethod.value = 'own'
-}
-
-// The last run may have been billed without a result; only this explicit choice sends another.
-const retryConfirmed = () => {
-  confirmRetry()
-  if (batchRun.status.value === 'paused') batchRun.retry()
-  else if (collectedMode.value) startCollectedProcessing()
-  else void parseBuiltIn()
-}
-
-const startCollectedProcessing = () => {
-  if (!prepared.value?.rows.length || batchRun.status.value !== 'idle' || saving.value) return
-  collectedError.value = ''
-  try {
-    batchRun.start(prepared.value.rows)
-  } catch (cause) {
-    collectedError.value = cause instanceof Error ? cause.message : ERROR_MESSAGES.generic
-  }
-}
-
-const publishBatchResults = async () => {
-  if (!['finished', 'stopped'].includes(batchRun.status.value) || !batchRun.markPublished()) return
-  const rows = batchRun.accepted.value.map(toRow)
-  publishedKeys.value = rows.map((row) => row.key)
-  if (!(await appendRows(rows))) return
-  pasteOpen.value = false
-  aiMethod.value = 'builtin'
-}
-watch(batchRun.status, (status) => {
-  if (status === 'finished' || status === 'stopped') void publishBatchResults()
-})
-
-const toast = useToast()
-const toastSuccess = useSuccessToast()
-const saving = ref(false)
-const saveError = ref('')
+const paste = useQuickAddPaste(rows, !!importId)
+const { open: pasteOpen, addedDirectly, collectedMode, prepared, processing } = paste
+const { hasUnsavedWork, checkError } = paste
+const runStatus = paste.batchRun.status
+const imports = useQuickAddImport(importId, rows, paste)
+const { info: importInfo, error: importError, reviewed: importReviewed } = imports
+const { loading: importLoading, done: importDone, nextImportId } = imports
 
 const onSave = async () => {
   if (processing.value || saving.value) return
-  const rows = pending.value
-  saving.value = true
-  saveError.value = ''
-  try {
-    const data = await gql(
-      buildMutation(rows.length),
-      Object.fromEntries(rows.map((r, i) => [`l${i}`, toInput(r)]))
-    )
-    rows.forEach((row, i) => {
-      const { listing, possibleDuplicates, previousAttempts, errors } = data[`r${i}`]!
-      Object.assign(row, {
-        saved: listing ?? undefined,
-        duplicates: possibleDuplicates?.length ? possibleDuplicates : undefined,
-        previousAttempts: previousAttempts?.length ? previousAttempts : undefined,
-        error: errors?.map((e) => e.message).join(' '),
-        existingListingId: errors?.find((e) => e.__typename === 'DuplicateListingError')
-          ?.existingListingId
-      })
-    })
-    const savedCount = rows.filter((r) => r.saved).length
-    if (savedCount) {
-      clearNuxtState('name-lookups')
-      toastSuccess(`${savedCount} ${savedCount === 1 ? 'listing' : 'listings'} added`)
-      if (!hasUnsavedWork.value) await markImportReviewed()
-      // A lone, unflagged listing has nothing left to review here, so open it. Not for an
-      // import: its done state leads on to the next one.
-      const [only] = state.rows
-      if (!importId && state.rows.length === 1 && only?.saved && !isFlagged(only)) {
-        await navigateTo(`/listings/${only.saved.id}`)
-      }
-    }
-  } catch {
-    saveError.value = ERROR_MESSAGES.generic
-  } finally {
-    saving.value = false
+  if (!(await rows.save())) return
+  if (!hasUnsavedWork.value) await imports.markReviewed()
+  // A lone, unflagged listing has nothing left to review here, so open it. Not for an import: its
+  // done state leads on to the next one.
+  const [only] = state.rows
+  if (!importId && state.rows.length === 1 && only?.saved && !isFlaggedRow(only)) {
+    await navigateTo(`/listings/${only.saved.id}`)
   }
 }
 
@@ -499,18 +49,8 @@ const onNextImport = () => {
   const destination = `/listings/quick-add?import=${nextImportId.value}`
   if (requestLeave(destination)) return navigateTo(destination)
 }
-const editCollected = () => {
-  // A replacement drops only this run's unsaved drafts, keeping earlier edits and saved rows.
-  state.rows = state.rows.filter((row) => row.saved || !publishedKeys.value.includes(row.key))
-  publishedKeys.value = []
-  addedDirectly.value = false
-  batchRun.invalidate()
-  prepared.value = null
-  collectedError.value = ''
-  pasteOpen.value = true
-}
 const requestEditCollected = () => {
-  if (!hasUnsavedWork.value) return editCollected()
+  if (!hasUnsavedWork.value) return paste.editCollected()
   leaveReason.value = 'edit'
   leaveOpen.value = true
 }
@@ -521,10 +61,10 @@ const restartCollected = () => {
 const confirmDiscard = async () => {
   leaveOpen.value = false
   if (leaveReason.value === 'edit' || leaveReason.value === 'restart') {
-    editCollected()
+    paste.editCollected()
     return
   }
-  batchRun.invalidate()
+  paste.batchRun.invalidate()
   allowRouteLeave = true
   try {
     await navigateAfterConfirm(leaveDestination.value)
@@ -532,85 +72,13 @@ const confirmDiscard = async () => {
     allowRouteLeave = false
   }
 }
-onBeforeUnmount(() => batchRun.invalidate())
-
-const removeRow = (row: Row) => state.rows.splice(state.rows.indexOf(row), 1)
-
-const toRemove = ref<Row>()
-const confirmOpen = ref(false)
-const deleting = ref(false)
-
-const askRemove = (row: Row) => {
-  toRemove.value = row
-  confirmOpen.value = true
-}
-
-const compareRow = ref<Row>()
-const compareId = ref(0)
-const compareOpen = ref(false)
-
-const openCompare = (row: Row, id: number) => {
-  compareRow.value = row
-  compareId.value = id
-  compareOpen.value = true
-}
-
-const onCompareKeep = () => {
-  compareOpen.value = false
-  compareRow.value!.duplicates = undefined
-  toastSuccess('Kept both listings')
-}
-
-// Returns whether the listing was deleted, so callers only update rows on success.
-const deleteById = async (id: number) => {
-  deleting.value = true
-  try {
-    const { deleteListing } = await gql(DELETE_LISTING, { id })
-    if (deleteListing.errors?.length) {
-      toast.add({ title: deleteListing.errors.map((e) => e.message).join(' '), color: 'error' })
-      return false
-    }
-    return true
-  } catch {
-    toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
-    return false
-  } finally {
-    deleting.value = false
-  }
-}
-
-// The compare modal confirms in its own footer. Removing the new row unmounts it; removing
-// an existing match shows the next one, or closes once none are left.
-const onCompareRemove = async (side: 'new' | 'existing') => {
-  const row = compareRow.value!
-  if (side === 'new') {
-    toRemove.value = row
-    return onConfirmRemove()
-  }
-  const id = compareId.value
-  if (!(await deleteById(id))) return
-  const rest = row.duplicates!.filter((m) => m.id !== id)
-  if (rest.length) compareId.value = rest[0]!.id
-  else compareOpen.value = false
-  row.duplicates = rest.length ? rest : undefined
-  toastSuccess('Existing listing removed')
-}
-
-const onConfirmRemove = async () => {
-  const row = toRemove.value!
-  if (await deleteById(row.saved!.id)) {
-    removeRow(row)
-    toastSuccess('Listing removed')
-  }
-  confirmOpen.value = false
-}
 </script>
 
 <template>
   <UForm
     ref="form"
     :state="state"
-    :validate="validate"
+    :validate="rows.validate"
     class="space-y-4"
     data-testid="quick-add-form"
     @submit="onSave"
@@ -689,248 +157,23 @@ const onConfirmRemove = async () => {
     />
 
     <template v-if="importDone">
-      <UCard data-testid="quick-add-import-done">
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div class="flex items-start gap-3" role="status">
-            <UIcon
-              :name="importReviewed ? 'i-lucide-circle-check' : 'i-lucide-check-check'"
-              class="mt-0.5 size-5 shrink-0"
-              :class="importReviewed ? 'text-success' : 'text-muted'"
-            />
-            <div>
-              <h2 class="font-semibold text-highlighted">
-                {{
-                  !importReviewed
-                    ? 'Nothing left to save'
-                    : nextImportId
-                      ? 'Import done'
-                      : 'All caught up'
-                }}
-              </h2>
-              <p class="text-sm text-muted">{{ importSummary }}</p>
-            </div>
-          </div>
-          <div class="flex flex-col gap-2 sm:flex-row-reverse md:shrink-0">
-            <!-- Nothing left to process, so no save will mark this one reviewed. -->
-            <UButton
-              v-if="!importReviewed"
-              icon="i-lucide-check"
-              :loading="markingReviewed"
-              class="justify-center"
-              data-testid="quick-add-import-reviewed"
-              @click="markImportReviewed"
-              >Mark import reviewed</UButton
-            >
-            <UButton
-              v-if="nextImportId"
-              trailing-icon="i-lucide-arrow-right"
-              :variant="importReviewed ? 'solid' : 'outline'"
-              :color="importReviewed ? 'primary' : 'neutral'"
-              class="justify-center"
-              data-testid="quick-add-done-next"
-              @click="onNextImport"
-              >Next import</UButton
-            >
-            <UButton
-              to="/listings"
-              :variant="importReviewed && !nextImportId ? 'solid' : 'outline'"
-              :color="importReviewed && !nextImportId ? 'primary' : 'neutral'"
-              class="justify-center"
-              >View listings</UButton
-            >
-          </div>
-        </div>
-      </UCard>
-      <ListingsImportJobs :jobs="importJobs" />
+      <QuickAddImportDone
+        :reviewed="importReviewed"
+        :summary="imports.summary.value"
+        :next-import-id="nextImportId"
+        :marking="imports.marking.value"
+        @mark-reviewed="imports.markReviewed()"
+        @next="onNextImport"
+      />
+      <ListingsImportJobs :jobs="imports.jobs.value" />
     </template>
 
-    <UCard v-if="pasteOpen && !importDone" data-testid="quick-add-paste">
-      <div class="space-y-6">
-        <!-- A column, not space-y: inline buttons would sit side by side, offset. -->
-        <div class="flex flex-col gap-3">
-          <UFormField label="Input">
-            <UFieldGroup class="w-full">
-              <UButton
-                v-for="mode in INPUT_MODES"
-                :key="mode.value"
-                :label="mode.label"
-                color="neutral"
-                :variant="inputMode === mode.value ? 'solid' : 'outline'"
-                :aria-pressed="inputMode === mode.value"
-                :disabled="checking || parsing || processing || saving"
-                class="flex-1"
-                :data-testid="`quick-add-mode-${mode.value}`"
-                @click="inputMode = mode.value"
-              />
-            </UFieldGroup>
-          </UFormField>
-          <AppAiMethodTabs
-            v-model="aiTab"
-            :disabled="checking || parsing || processing || saving"
-          />
-          <UFormField
-            v-if="!collectedMode"
-            :label="
-              builtIn
-                ? 'Paste one or more ads, or a job-board results page'
-                : '1. Paste one or more ads, or a job-board results page'
-            "
-            help="Only the basics are parsed; fill in the details later."
-          >
-            <UTextarea
-              v-model="ad"
-              :rows="6"
-              :maxrows="12"
-              autoresize
-              placeholder="The ads or results page text"
-              class="w-full"
-              :disabled="parsing || processing || saving"
-              data-testid="quick-add-ad"
-            />
-          </UFormField>
-          <template v-else>
-            <UFormField
-              :label="builtIn ? 'Collected jobs' : '1. Collected jobs'"
-              help='Paste the full listing JSON array. Each job needs a URL; all other fields are kept. Example: [{ "title": "Waiter", "companyName": "Acme", "url": "https://example.com/job/1" }]'
-            >
-              <UTextarea
-                v-model="collected"
-                :rows="6"
-                :maxrows="12"
-                autoresize
-                :disabled="checking || parsing || processing || saving"
-                :readonly="!!prepared"
-                placeholder="The collected jobs JSON array"
-                class="w-full font-mono"
-                data-testid="quick-add-collected"
-              />
-            </UFormField>
-            <UButton
-              :loading="checking"
-              :disabled="
-                !collected.trim() || checking || parsing || processing || saving || !!prepared
-              "
-              class="max-sm:justify-center sm:self-start"
-              data-testid="quick-add-check"
-              @click="checkJobs"
-              >Check jobs</UButton
-            >
-            <UAlert
-              v-if="checkError"
-              color="error"
-              icon="i-lucide-circle-alert"
-              :title="checkError"
-              data-testid="quick-add-check-error"
-            />
-            <p
-              v-if="prepared"
-              class="text-sm text-muted"
-              role="status"
-              data-testid="quick-add-check-summary"
-            >
-              {{ prepared.remaining + prepared.skipped }} collected · {{ prepared.skipped }} skipped
-              · {{ prepared.remaining }} ready
-            </p>
-            <UButton
-              v-if="prepared?.remaining && runStatus === 'idle'"
-              icon="i-lucide-rows-3"
-              :disabled="saving"
-              class="max-sm:justify-center sm:self-start"
-              data-testid="quick-add-add-collected"
-              @click="addCollectedRows"
-              >Add {{ prepared.remaining }} {{ prepared.remaining === 1 ? 'job' : 'jobs' }} as
-              rows</UButton
-            >
-            <UButton
-              v-if="prepared && runStatus !== 'finished' && runStatus !== 'stopped'"
-              color="neutral"
-              variant="ghost"
-              :disabled="saving || processing"
-              class="max-sm:justify-center sm:self-start"
-              data-testid="quick-add-edit-collected"
-              @click="requestEditCollected"
-              >Edit collected jobs</UButton
-            >
-            <div
-              v-if="prepared && !prepared.remaining"
-              class="py-6 text-center text-muted"
-              data-testid="quick-add-check-empty"
-            >
-              <UIcon name="i-lucide-check-check" class="mb-2 size-8" />
-              <p>No new jobs remain.</p>
-            </div>
-          </template>
-          <UButton
-            v-if="builtIn"
-            icon="i-lucide-sparkles"
-            :loading="parsing"
-            :disabled="aiDisabled || saving || (collectedMode && runStatus !== 'idle')"
-            class="max-sm:justify-center sm:self-start"
-            data-testid="quick-add-builtin-run"
-            @click="collectedMode ? startCollectedProcessing() : parseBuiltIn()"
-          >
-            {{ collectedMode ? `Process ${prepared?.remaining ?? 0} jobs` : 'Parse into rows' }}
-          </UButton>
-          <AppAiRetryConfirm
-            v-if="builtIn && needsConfirm && runStatus === 'idle'"
-            :message="safetyMessage"
-            :loading="parsing"
-            @retry="retryConfirmed"
-          />
-          <p v-if="builtIn && collectedMode" class="text-sm text-muted">
-            Creates drafts for review. Nothing is saved until you choose Save.
-          </p>
-          <UAlert
-            v-if="collectedError"
-            color="error"
-            icon="i-lucide-circle-alert"
-            :title="collectedError"
-            data-testid="quick-add-process-error"
-          />
-          <UButton
-            v-if="!builtIn"
-            :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-            :color="copied ? 'success' : 'primary'"
-            variant="subtle"
-            :loading="!instructions"
-            :disabled="
-              aiDisabled || !instructions || saving || (collectedMode && runStatus !== 'idle')
-            "
-            class="max-sm:justify-center sm:self-start"
-            data-testid="quick-add-copy-prompt"
-            @click="copyPrompt"
-          >
-            {{ copied ? 'Copied' : 'Copy prompt' }}
-          </UButton>
-        </div>
-
-        <USeparator v-if="!builtIn" />
-
-        <div v-if="!builtIn" class="flex flex-col gap-3">
-          <UFormField label="2. Paste the AI’s reply" :error="jsonError || undefined">
-            <UTextarea
-              v-model="json"
-              :rows="6"
-              :maxrows="12"
-              autoresize
-              placeholder="The JSON array the AI returned"
-              class="w-full font-mono"
-              :disabled="processing || saving || (collectedMode && runStatus !== 'idle')"
-              data-testid="quick-add-json"
-            />
-          </UFormField>
-          <UButton
-            :disabled="
-              !json.trim() || processing || saving || (collectedMode && runStatus !== 'idle')
-            "
-            class="max-sm:justify-center sm:self-start"
-            data-testid="quick-add-parse"
-            @click="addOwnRows"
-            >Parse into rows</UButton
-          >
-        </div>
-      </div>
-    </UCard>
+    <QuickAddPasteCard
+      v-if="pasteOpen && !importDone"
+      :paste="paste"
+      :saving="saving"
+      @edit="requestEditCollected"
+    />
 
     <div
       v-else-if="!importDone && pastedCount"
@@ -959,245 +202,15 @@ const onConfirmRemove = async () => {
       >
     </div>
 
-    <UCard v-if="runStatus !== 'idle'" data-testid="quick-add-processing">
-      <div class="space-y-3">
-        <h2 class="font-semibold text-highlighted">{{ runTitle }}</h2>
-        <UProgress
-          :model-value="runProgress"
-          :max="runTotal"
-          :get-value-label="() => 'Processing jobs'"
-          :get-value-text="(value, max) => `${value ?? 0} of ${max} jobs processed`"
-          data-testid="quick-add-progress"
-        />
-        <p
-          role="status"
-          aria-live="polite"
-          class="text-sm text-muted"
-          data-testid="quick-add-progress-status"
-        >
-          {{ runProgress }} of {{ runTotal }} jobs processed · Batch {{ runCurrentBatch }} of
-          {{ runBatchCount }}
-        </p>
-        <p v-if="prepared" class="text-sm text-muted">
-          {{ prepared.remaining + prepared.skipped }} collected · {{ prepared.skipped }} skipped
-          before AI · {{ prepared.remaining }} ready
-        </p>
-        <AppAiRetryConfirm
-          v-if="runStatus === 'paused' && needsConfirm"
-          :message="safetyMessage"
-          @retry="retryConfirmed"
-        />
-        <UAlert
-          v-else-if="runStatus === 'paused'"
-          color="error"
-          icon="i-lucide-circle-alert"
-          :title="`Batch ${runCurrentBatch} failed`"
-          :description="runError"
-          data-testid="quick-add-batch-error"
-        >
-          <template v-if="runErrorCode === 'daily-limit-reached'" #actions>
-            <AppAiLimitLink />
-          </template>
-        </UAlert>
-        <div v-if="runStatus === 'paused'" class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <UButton v-if="!needsConfirm" data-testid="quick-add-retry" @click="batchRun.retry()"
-            >Retry batch</UButton
-          >
-          <UButton
-            color="neutral"
-            variant="subtle"
-            data-testid="quick-add-skip"
-            @click="batchRun.skip()"
-            >Skip batch and continue</UButton
-          >
-          <UButton
-            color="neutral"
-            variant="ghost"
-            data-testid="quick-add-stop"
-            @click="batchRun.stop()"
-            >Stop and review</UButton
-          >
-        </div>
-        <template v-if="runStatus === 'finished' || runStatus === 'stopped'">
-          <p class="text-sm text-muted" data-testid="quick-add-terminal-counts">
-            {{ runProgress }} processed · {{ runSkipped }} skipped after failure ·
-            {{ runUnprocessed }} unprocessed
-          </p>
-          <p v-if="runProgress" class="text-sm text-muted">Review the drafts below, then save.</p>
-          <div class="flex flex-col gap-2 sm:flex-row">
-            <UButton
-              color="neutral"
-              variant="ghost"
-              :disabled="saving"
-              data-testid="quick-add-edit-collected"
-              @click="requestEditCollected"
-              >Edit collected jobs</UButton
-            >
-            <UButton
-              color="neutral"
-              variant="subtle"
-              :disabled="saving"
-              data-testid="quick-add-restart"
-              @click="restartCollected"
-              >Restart processing</UButton
-            >
-          </div>
-        </template>
-      </div>
-    </UCard>
+    <QuickAddRunStatus
+      v-if="runStatus !== 'idle'"
+      :paste="paste"
+      :saving="saving"
+      @edit="requestEditCollected"
+      @restart="restartCollected"
+    />
 
-    <section v-if="flagged.length" class="space-y-3" data-testid="quick-add-review">
-      <div>
-        <h2 class="font-semibold text-highlighted">Needs a look ({{ flagged.length }})</h2>
-        <p class="text-sm text-muted">Saved, but may match a listing you already have.</p>
-      </div>
-      <UCard v-for="row in flagged" :key="row.key" data-testid="quick-add-row-saved">
-        <div class="flex items-start gap-3">
-          <UIcon name="i-lucide-circle-check" class="mt-0.5 size-5 shrink-0 text-success" />
-          <div class="min-w-0 flex-1 space-y-1">
-            <NuxtLink
-              :to="`/listings/${row.saved.id}`"
-              class="font-medium text-highlighted hover:underline"
-              >{{ row.saved.title }}</NuxtLink
-            >
-            <p class="text-sm text-muted">{{ row.companyName }} · {{ row.jobRoleName }}</p>
-            <!-- The API's cleaned-up URL, which can differ from what was typed. -->
-            <ULink
-              v-if="row.saved.url"
-              :to="row.saved.url"
-              target="_blank"
-              class="block truncate text-sm"
-              >{{ row.saved.url }}</ULink
-            >
-          </div>
-        </div>
-
-        <UAlert
-          v-if="row.duplicates"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-copy"
-          title="Possible duplicate"
-          class="mt-3"
-          data-testid="quick-add-row-duplicates"
-        >
-          <template #description>
-            <ul class="space-y-1">
-              <li
-                v-for="match in row.duplicates"
-                :key="match.id"
-                class="flex flex-wrap items-center gap-x-2"
-              >
-                <!-- New tab, so following it keeps the unsaved rows on this page. -->
-                <NuxtLink
-                  :to="`/listings/${match.id}`"
-                  target="_blank"
-                  class="font-medium hover:underline"
-                  >{{ match.title }}</NuxtLink
-                >
-                <span class="text-muted">{{ match.company.name }} · {{ match.jobRole.name }}</span>
-                <!-- Archived means the user already applied to it. -->
-                <UBadge v-if="match.archivedAt" color="neutral" variant="subtle" size="sm"
-                  >Applied</UBadge
-                >
-              </li>
-            </ul>
-            <!-- One Compare for the note: the modal's "Compare with" switches between matches. -->
-            <div class="mt-3 flex flex-wrap gap-2">
-              <UButton
-                icon="i-lucide-columns-2"
-                data-testid="quick-add-row-compare"
-                :disabled="processing"
-                @click="openCompare(row, row.duplicates[0]!.id)"
-                >Compare{{
-                  row.duplicates.length > 1 ? ` (${row.duplicates.length})` : ''
-                }}</UButton
-              >
-              <UButton
-                color="neutral"
-                variant="subtle"
-                :disabled="processing"
-                @click="row.duplicates = undefined"
-                >Keep both</UButton
-              >
-              <UButton
-                color="error"
-                variant="soft"
-                data-testid="quick-add-row-remove-duplicate"
-                :disabled="processing"
-                @click="askRemove(row)"
-                >Remove new one</UButton
-              >
-            </div>
-          </template>
-        </UAlert>
-
-        <UAlert
-          v-if="row.previousAttempts"
-          color="neutral"
-          variant="subtle"
-          icon="i-lucide-history"
-          title="Applied to this URL before"
-          class="mt-3"
-          data-testid="quick-add-row-previous-attempts"
-        >
-          <template #description>
-            <ul class="space-y-1">
-              <li
-                v-for="attempt in row.previousAttempts"
-                :key="attempt.id"
-                class="flex flex-wrap items-center gap-x-2"
-              >
-                <NuxtLink
-                  :to="`/listings/${attempt.id}`"
-                  target="_blank"
-                  class="font-medium hover:underline"
-                  >{{ attempt.title }}</NuxtLink
-                >
-                <ListingsStatusBadge :status="attempt.status" />
-              </li>
-            </ul>
-            <UButton
-              color="neutral"
-              variant="subtle"
-              class="mt-3"
-              data-testid="quick-add-row-got-it"
-              :disabled="processing"
-              @click="row.previousAttempts = undefined"
-              >Got it</UButton
-            >
-          </template>
-        </UAlert>
-      </UCard>
-    </section>
-
-    <UCollapsible v-if="added.length && !importDone" v-model:open="addedOpen">
-      <UButton
-        color="neutral"
-        variant="subtle"
-        icon="i-lucide-circle-check"
-        :trailing-icon="addedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-        block
-        data-testid="quick-add-added-toggle"
-        >{{ added.length }} {{ added.length === 1 ? 'listing' : 'listings' }} added</UButton
-      >
-      <template #content>
-        <UCard class="mt-2" data-testid="quick-add-added">
-          <ul class="divide-y divide-default">
-            <li v-for="row in added" :key="row.key" class="min-w-0 py-2 first:pt-0 last:pb-0">
-              <NuxtLink
-                :to="`/listings/${row.saved.id}`"
-                class="block truncate font-medium text-highlighted hover:underline"
-                >{{ row.saved.title }}</NuxtLink
-              >
-              <p class="truncate text-sm text-muted">
-                {{ row.companyName }} · {{ row.jobRoleName }}
-              </p>
-            </li>
-          </ul>
-        </UCard>
-      </template>
-    </UCollapsible>
+    <QuickAddReview :rows="rows" :processing="processing" :hide-added="importDone" />
 
     <h2
       v-if="savedCount && unsaved.length"
@@ -1207,160 +220,13 @@ const onConfirmRemove = async () => {
       Not saved ({{ unsaved.length }})
     </h2>
 
-    <template v-for="row in unsaved" :key="row.key">
-      <UCard data-testid="quick-add-row">
-        <div class="grid gap-3 sm:grid-cols-2 xl:flex xl:items-start">
-          <UFormField
-            label="Job title"
-            eager-validation
-            :name="`${row.key}.title`"
-            required
-            class="sm:col-span-2 xl:flex-1"
-          >
-            <UInput v-model="row.title" :disabled="processing" class="w-full" />
-          </UFormField>
-          <UFormField
-            label="Company"
-            eager-validation
-            :name="`${row.key}.companyName`"
-            required
-            class="xl:w-44"
-          >
-            <ListingsNameCombobox
-              v-model="row.companyName"
-              lookup="companies"
-              :disabled="processing"
-              placeholder="Search or add"
-            />
-          </UFormField>
-          <UFormField
-            label="Role"
-            eager-validation
-            :name="`${row.key}.jobRoleName`"
-            required
-            class="xl:w-44"
-          >
-            <ListingsNameCombobox
-              v-model="row.jobRoleName"
-              lookup="jobRoles"
-              :disabled="processing"
-              placeholder="Search or add"
-            />
-          </UFormField>
-          <UFormField
-            label="Job ad URL"
-            eager-validation
-            :name="`${row.key}.url`"
-            required
-            class="sm:col-span-2 xl:flex-1"
-          >
-            <div class="flex items-center gap-2">
-              <UInput
-                v-model="row.url"
-                :disabled="processing"
-                type="url"
-                placeholder="https://"
-                class="min-w-0 flex-1"
-              />
-              <UButton
-                v-if="/^https?:\/\/\S+$/i.test(row.url.trim())"
-                :to="row.url.trim()"
-                target="_blank"
-                rel="noopener noreferrer"
-                icon="i-lucide-external-link"
-                color="neutral"
-                variant="ghost"
-                aria-label="Open job ad in a new tab"
-                title="Open job ad in a new tab"
-                data-testid="quick-add-row-open-ad"
-              />
-            </div>
-          </UFormField>
-          <div class="flex items-end gap-2 xl:w-48">
-            <UFormField
-              label="Posted on"
-              eager-validation
-              :name="`${row.key}.postedOn`"
-              required
-              class="flex-1"
-            >
-              <UInput
-                v-model="row.postedOn"
-                :disabled="processing"
-                type="date"
-                :max="todayIso()"
-                class="w-full"
-              />
-            </UFormField>
-            <UButton
-              icon="i-lucide-trash-2"
-              color="neutral"
-              variant="ghost"
-              aria-label="Remove row"
-              data-testid="quick-add-row-remove"
-              :disabled="processing"
-              @click="removeRow(row)"
-            />
-          </div>
-        </div>
-
-        <div class="mt-3 flex flex-wrap items-end gap-3">
-          <UFormField label="Deadline" :name="`${row.key}.deadlineType`" class="w-40">
-            <USelect
-              v-model="row.deadlineType"
-              :disabled="processing"
-              :items="[...DEADLINE_TYPE_OPTIONS]"
-              class="w-full"
-              data-testid="quick-add-row-deadline-type"
-            />
-          </UFormField>
-          <UFormField
-            v-if="row.deadlineType === 'DATE'"
-            label="Deadline date"
-            eager-validation
-            :name="`${row.key}.deadlineOn`"
-            class="w-40"
-          >
-            <UInput
-              v-model="row.deadlineOn"
-              :disabled="processing"
-              type="date"
-              class="w-full"
-              data-testid="quick-add-row-deadline-on"
-            />
-          </UFormField>
-          <!-- Read-only: the locations repeater is too big for a row; fix them on the edit page. -->
-          <p
-            v-if="row.locations.length"
-            class="flex items-center gap-1 pb-1.5 text-sm text-muted"
-            data-testid="quick-add-row-locations"
-          >
-            <UIcon name="i-lucide-map-pin" class="size-4 shrink-0" />
-            {{
-              row.locations
-                .map((l) => (l.city ? `${l.city}, ${l.countryCode}` : l.countryCode))
-                .join(' · ')
-            }}
-          </p>
-        </div>
-
-        <UAlert
-          v-if="row.error"
-          color="error"
-          variant="subtle"
-          icon="i-lucide-circle-alert"
-          :title="row.error"
-          class="mt-3"
-          data-testid="quick-add-row-error"
-        >
-          <template v-if="row.existingListingId" #description>
-            <NuxtLink :to="`/listings/${row.existingListingId}`" class="underline"
-              >View the existing listing</NuxtLink
-            >
-          </template>
-        </UAlert>
-      </UCard>
-    </template>
+    <QuickAddRow
+      v-for="row in unsaved"
+      :key="row.key"
+      :row="row"
+      :processing="processing"
+      @remove="rows.remove(row)"
+    />
 
     <UAlert
       v-if="saveError"
@@ -1370,88 +236,18 @@ const onConfirmRemove = async () => {
       :title="saveError"
     />
 
-    <!-- With rows to save, Save stays in reach on phones instead of a long scroll down, as a band
-         matching the import's sticky top bar. Add row sits beside Save to keep the band short. -->
-    <div
+    <QuickAddActions
       v-if="!importDone && (!importId || state.rows.length)"
-      class="flex items-end gap-2 sm:items-center"
-      :class="
-        pending.length
-          ? 'sticky bottom-0 z-10 -mx-4 border-t border-default bg-default px-4 py-2 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0'
-          : ''
-      "
-      data-testid="quick-add-actions"
-    >
-      <UButton
-        icon="i-lucide-plus"
-        color="neutral"
-        variant="ghost"
-        class="shrink-0 justify-center"
-        data-testid="quick-add-add-row"
-        :disabled="processing || saving"
-        @click="state.rows.push(newRow())"
-        >Add row</UButton
-      >
-      <div
-        class="flex min-w-0 flex-1 flex-col-reverse gap-2 sm:ml-auto sm:flex-none sm:flex-row sm:items-center"
-      >
-        <!-- No Done/Cancel: a leave action named by where it goes can't be mistaken for saving. -->
-        <UButton
-          v-if="savedCount && !hasUnsavedWork"
-          to="/listings"
-          class="justify-center"
-          data-testid="quick-add-view-listings"
-          >View listings</UButton
-        >
-        <template v-else>
-          <!-- An import's only exit is the top bar, so Save stands alone here. -->
-          <UButton
-            v-if="!importId"
-            color="neutral"
-            variant="ghost"
-            class="justify-center"
-            data-testid="quick-add-back"
-            @click="onBack"
-            >Back to listings</UButton
-          >
-          <!-- Not type="submit": with no submit button, Enter in a row field can't save every row. -->
-          <UButton
-            :loading="saving"
-            :disabled="!pending.length || processing"
-            class="justify-center"
-            data-testid="quick-add-save"
-            @click="form?.submit()"
-            >Save {{ pending.length || '' }}
-            {{ pending.length === 1 ? 'listing' : 'listings' }}</UButton
-          >
-        </template>
-        <!-- Last in the DOM so it sits on top in the reversed phone stack, first from sm up. -->
-        <p
-          v-if="savedCount"
-          class="flex items-center justify-center gap-3 text-sm text-muted sm:order-first"
-          data-testid="quick-add-status"
-        >
-          <span class="flex items-center gap-1">
-            <UIcon name="i-lucide-circle-check" class="size-4 text-success" />
-            {{ savedCount }} saved
-          </span>
-          <span v-if="failedCount" class="flex items-center gap-1">
-            <UIcon name="i-lucide-circle-alert" class="size-4 text-error" />
-            {{ failedCount }} {{ failedCount === 1 ? 'needs' : 'need' }} fixing
-          </span>
-        </p>
-      </div>
-    </div>
-
-    <ListingsCompareModal
-      v-if="compareRow?.saved && compareRow.duplicates"
-      v-model:open="compareOpen"
-      v-model:match-id="compareId"
-      :listing="compareRow.saved"
-      :matches="compareRow.duplicates"
-      :loading="deleting"
-      @keep="onCompareKeep"
-      @remove="onCompareRemove"
+      :pending-count="pending.length"
+      :saved-count="savedCount"
+      :failed-count="failedCount"
+      :importing="!!importId"
+      :unsaved-work="hasUnsavedWork"
+      :saving="saving"
+      :processing="processing"
+      @add-row="rows.addEmpty()"
+      @back="onBack"
+      @save="form?.submit()"
     />
 
     <AppConfirmModal
@@ -1472,15 +268,6 @@ const onConfirmRemove = async () => {
       "
       :confirm-label="leaveReason === 'leave' ? 'Leave' : 'Reset'"
       @confirm="confirmDiscard"
-    />
-
-    <AppConfirmModal
-      v-model:open="confirmOpen"
-      title="Remove this listing?"
-      :description="toRemove?.saved?.title"
-      confirm-label="Remove"
-      :loading="deleting"
-      @confirm="onConfirmRemove"
     />
   </UForm>
 </template>

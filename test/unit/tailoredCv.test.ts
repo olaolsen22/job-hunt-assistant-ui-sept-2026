@@ -2,20 +2,19 @@ import { describe, expect, it } from 'vitest'
 import type { ProfileData } from '~/composables/useProfile'
 import type { TailoredCvAnalysis } from '~/composables/useTailoredCvDraft'
 import {
-  clearCvFlags,
-  cvFlagCounts,
-  removeCvFlagItem,
+  addFromProfile,
   changedCvSections,
   cvSectionFromAnalysis,
-  cvSectionText,
+  missingFromProfile,
   mergeExternalCandidate,
   tailoredCvFromContent,
-  tailoredCvFromProfile,
-  tailoredCvToText,
   toTailoredCvInput
 } from '~/utils/tailoredCv'
+import { clearCvFlags, cvFlagCounts, removeCvFlagItem } from '~/utils/tailoredCvFlags'
+import { cvSectionText, tailoredCvToText } from '~/utils/tailoredCvText'
 import { documentOriginLabel, latestUnsentDocument } from '~/utils/documents'
 import { cvProfile } from '../fixtures/profileCv'
+import { tailoredCvFromProfile } from '../fixtures/tailoredCv'
 
 const profile = (): ProfileData => {
   const p = cvProfile()
@@ -49,6 +48,10 @@ const profile = (): ProfileData => {
   }
 }
 
+// The API's prefill for that profile.
+const source = (p = profile(), language?: 'ENGLISH' | 'NORWEGIAN') =>
+  tailoredCvFromProfile(p, language)
+
 const result = (overrides: Partial<TailoredCvAnalysis>): TailoredCvAnalysis => ({
   status: 'SUCCEEDED',
   section: 'EXPERIENCE',
@@ -60,50 +63,32 @@ const result = (overrides: Partial<TailoredCvAnalysis>): TailoredCvAnalysis => (
   ...overrides
 })
 
-describe('tailoredCvFromProfile translations', () => {
-  it('uses the Norwegian summary, headline and bullets when the draft is Norwegian', () => {
+describe('adding back from the profile', () => {
+  it('offers what this CV lacks and adds a copy in profile order', () => {
     const p = profile()
-    p.summary = 'English summary'
-    p.headline = 'English headline'
-    p.translations = [
-      { language: 'NORWEGIAN', summary: 'Norsk sammendrag', headline: 'Norsk tittel' }
-    ] as ProfileData['translations']
-    p.experiences[0]!.bullets[0]!.translations = [
-      { language: 'NORWEGIAN', text: 'Bygde kassen' }
-    ] as ProfileData['experiences'][number]['bullets'][number]['translations']
+    const second = { ...p.experiences[0]!, id: 11, employer: 'Later', bullets: [] }
+    p.experiences = [p.experiences[0]!, second]
+    const from = source(p)
+    const cv = source(p)
+    cv.experiences = [cv.experiences[1]!]
 
-    const cv = tailoredCvFromProfile(p, 'NORWEGIAN')
+    const [missing] = missingFromProfile(cv, from, 'experiences')
+    expect(missing).toMatchObject({ sourceEntryId: 10 })
 
-    expect(cv.summary).toBe('Norsk sammendrag')
-    expect(cv.headline).toBe('Norsk tittel')
-    expect(cv.experiences[0]!.bullets.map((b) => b.text)).toEqual([
-      'Bygde kassen',
-      'Ran the design system',
-      'Mentored juniors'
-    ])
-    expect(tailoredCvFromProfile(p, 'ENGLISH').summary).toBe('English summary')
+    addFromProfile(cv, from, 'experiences', missing!)
+    expect(cv.experiences.map((e) => e.sourceEntryId)).toEqual([10, 11])
+    cv.experiences[0]!.employer = 'Edited'
+    expect(from.experiences[0]!.employer).toBe('Acme')
+    expect(missingFromProfile(cv, from, 'experiences')).toEqual([])
   })
 })
 
 describe('tailored CV candidate', () => {
-  it('starts from the whole profile with contact fields and source ids', () => {
-    const cv = tailoredCvFromProfile(profile())
-    expect(cv.fullName).toBe('Existing owner')
-    expect(cv.email).toBe('owner@example.com')
-    expect(cv.address).toBe('Oslo, Norway')
-    expect(cv.links).toEqual([{ label: 'GitHub', url: 'https://github.com/owner' }])
-    expect(cv.experiences[0]).toMatchObject({ sourceEntryId: 10, employer: 'Acme' })
-    expect(cv.contentStyle).toBe('BULLETS')
-    expect(cv.template).toBe('DETAILED')
-    expect(cv.experiences[0]!.bullets.map((b) => b.sourceBulletId)).toEqual([100, 101, 102])
-    expect(cv.skills.map((s) => s.sourceSkillId)).toEqual([1, 2, 3])
-  })
-
   it('carries the analysis paragraph and sends the CV-wide style', () => {
     const cv = tailoredCvFromProfile(profile())
     const section = cvSectionFromAnalysis(
       cv,
-      profile(),
+      source(),
       result({ selectedBulletIds: [100], paragraph: 'Built checkout flows.' })
     )
     const experience = section!.value as (typeof cv.experiences)[number]
@@ -127,7 +112,7 @@ describe('tailored CV candidate', () => {
     ]
     const section = cvSectionFromAnalysis(
       cv,
-      profile(),
+      source(),
       result({ selectedBulletIds: [102, 100], bullets })
     )
     expect(section?.key).toBe('experience:10')
@@ -138,7 +123,7 @@ describe('tailored CV candidate', () => {
     const cv = tailoredCvFromProfile(profile())
     const skills = cvSectionFromAnalysis(
       cv,
-      profile(),
+      source(),
       result({ section: 'SKILLS', sourceEntryId: null, selectedSkillIds: [3, 1] })
     )
     // The AI's order (most relevant first) wins over the profile's order.
@@ -146,7 +131,7 @@ describe('tailored CV candidate', () => {
     // A Norwegian draft names an added skill by its Norwegian translation when there is one.
     const norwegian = cvSectionFromAnalysis(
       { ...cv, language: 'NORWEGIAN' },
-      profile(),
+      source(profile(), 'NORWEGIAN'),
       result({ section: 'SKILLS', sourceEntryId: null, selectedSkillIds: [3, 1] })
     )
     expect((norwegian?.value as { name: string }[]).map((s) => s.name)).toEqual([
@@ -155,7 +140,7 @@ describe('tailored CV candidate', () => {
     ])
     const summary = cvSectionFromAnalysis(
       cv,
-      profile(),
+      source(),
       result({ section: 'SUMMARY', sourceEntryId: null, summary: 'Fits the role' })
     )
     expect(summary).toEqual({ key: 'summary', value: 'Fits the role' })
@@ -182,7 +167,7 @@ describe('tailored CV candidate', () => {
     cv.educations[0]!.degree = 'Master of Science'
     const section = cvSectionFromAnalysis(
       cv,
-      p,
+      source(p),
       result({
         section: 'EDUCATION',
         sourceEntryId: 30,
@@ -197,34 +182,12 @@ describe('tailored CV candidate', () => {
     })
   })
 
-  it('fills entry technologies by profile level then name, in the draft language, and the project type', () => {
-    const p = profile()
-    const skill = (id: number, name: string) => ({ id, name, translations: [] })
-    p.experiences[0]!.skills = [
-      skill(2, 'Go'),
-      skill(9, 'Make'),
-      skill(1, 'Vue'),
-      {
-        id: 3,
-        name: 'Code review',
-        translations: [{ language: 'NORWEGIAN', name: 'Kodegjennomgang' }]
-      }
-    ]
-    p.projects[0] = { ...p.projects[0]!, kind: 'PERSONAL', skills: [skill(1, 'Vue')] }
-
-    const cv = tailoredCvFromProfile(p, 'NORWEGIAN')
-    // Level 5, 4, 3, then the skill missing from the profile list.
-    expect(cv.experiences[0]!.technologies).toEqual(['Kodegjennomgang', 'Vue', 'Go', 'Make'])
-    expect(cv.projects[0]).toMatchObject({ kind: 'PERSONAL', technologies: ['Vue'] })
-    expect(tailoredCvFromProfile(profile()).projects[0]!.kind).toBeNull()
-  })
-
   it('replaces entry technologies only when the analysis returns a list', () => {
     const cv = tailoredCvFromProfile(profile())
     cv.experiences[0]!.technologies = ['Mine']
-    const kept = cvSectionFromAnalysis(cv, profile(), result({ technologies: null }))
+    const kept = cvSectionFromAnalysis(cv, source(), result({ technologies: null }))
     expect(kept?.value).toMatchObject({ technologies: ['Mine'] })
-    const replaced = cvSectionFromAnalysis(cv, profile(), result({ technologies: ['Go', 'Vue'] }))
+    const replaced = cvSectionFromAnalysis(cv, source(), result({ technologies: ['Go', 'Vue'] }))
     expect(replaced?.value).toMatchObject({ technologies: ['Go', 'Vue'] })
   })
 
@@ -235,13 +198,13 @@ describe('tailored CV candidate', () => {
     cv.projects[0]!.name = 'Renamed'
     const section = cvSectionFromAnalysis(
       cv,
-      p,
+      source(p),
       result({ section: 'PROJECT', sourceEntryId: 10, technologies: ['Nuxt'] })
     )
     expect(section?.key).toBe('project:10')
     expect(section?.value).toMatchObject({ name: 'Renamed', bullets: [], technologies: ['Nuxt'] })
     expect(
-      cvSectionFromAnalysis(cv, p, result({ section: 'PROJECT', sourceEntryId: 99 }))
+      cvSectionFromAnalysis(cv, source(p), result({ section: 'PROJECT', sourceEntryId: 99 }))
     ).toBeNull()
   })
 
@@ -276,9 +239,7 @@ describe('tailored CV candidate', () => {
 
   it('suggests nothing for a failed section', () => {
     const cv = tailoredCvFromProfile(profile())
-    expect(
-      cvSectionFromAnalysis(cv, profile(), result({ status: 'FAILED', error: 'x' }))
-    ).toBeNull()
+    expect(cvSectionFromAnalysis(cv, source(), result({ status: 'FAILED', error: 'x' }))).toBeNull()
   })
 
   it('keeps contact details and layout from the candidate when taking an external reply', () => {

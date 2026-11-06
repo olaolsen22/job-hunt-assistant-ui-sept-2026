@@ -49,16 +49,11 @@ const SET_CONTENT_LANGUAGE = graphql(`
   }
 `)
 
-// The translation is always in the language the profile isn't written in.
 const translating = ref(false)
-const target = computed<Language>(() =>
-  profile.value?.contentLanguage === 'ENGLISH' ? 'NORWEGIAN' : 'ENGLISH'
-)
+const target = computed(() => translationTarget(profile.value?.contentLanguage))
 // en-GB for English: day-month order and 24-hour habits match a Norwegian reader.
 const locale = computed(() => (profile.value?.contentLanguage === 'ENGLISH' ? 'en-GB' : 'nb-NO'))
 const targetLabel = computed(() => LANGUAGE_OPTIONS.find((o) => o.value === target.value)!.label)
-// The API only translates English profiles, into Norwegian.
-const aiTranslateAvailable = computed(() => target.value === 'NORWEGIAN')
 
 // In the order the sections are shown.
 const bulletsOf = (p: ProfileData) => [
@@ -320,7 +315,7 @@ const contact = computed(() => {
             >
           </UChip>
           <UButton
-            v-if="aiTranslateAvailable && !translating"
+            v-if="!translating"
             icon="i-lucide-sparkles"
             color="neutral"
             variant="ghost"
@@ -536,7 +531,6 @@ const contact = computed(() => {
             </p>
           </div>
           <UButton
-            v-if="aiTranslateAvailable"
             icon="i-lucide-sparkles"
             color="neutral"
             variant="outline"

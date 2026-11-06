@@ -97,6 +97,18 @@ const labelOf = <T extends string>(
   value: T | null
 ) => options.find((o) => o.value === value)?.label ?? NOT_STATED
 
+// The position share only shows when the ad states one.
+const keyFacts = computed(() => {
+  const l = listing.value
+  if (!l) return []
+  return [
+    { label: 'Work mode', value: labelOf(WORK_MODE_OPTIONS, l.workMode) },
+    { label: 'Employment type', value: labelOf(EMPLOYMENT_TYPE_OPTIONS, l.employmentType) },
+    ...(l.positionPercent == null ? [] : [{ label: 'Position', value: `${l.positionPercent}%` }]),
+    { label: 'Seniority', value: labelOf(SENIORITY_OPTIONS, l.seniority) }
+  ]
+})
+
 const skillsByRequirement = computed(() => {
   const skills = listing.value?.skills ?? []
   return [
@@ -178,6 +190,8 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
       </div>
 
       <template v-else-if="listing">
+        <ListingsDuplicateNotice :listing-id="listing.id" />
+
         <UAlert
           v-if="listing.archivedAt"
           color="neutral"
@@ -267,17 +281,7 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
           </div>
 
           <dl class="flex flex-wrap gap-x-6 gap-y-2" data-testid="listing-key-facts">
-            <div
-              v-for="fact in [
-                { label: 'Work mode', value: labelOf(WORK_MODE_OPTIONS, listing.workMode) },
-                {
-                  label: 'Employment type',
-                  value: labelOf(EMPLOYMENT_TYPE_OPTIONS, listing.employmentType)
-                },
-                { label: 'Seniority', value: labelOf(SENIORITY_OPTIONS, listing.seniority) }
-              ]"
-              :key="fact.label"
-            >
+            <div v-for="fact in keyFacts" :key="fact.label">
               <dt class="text-xs text-muted">{{ fact.label }}</dt>
               <dd class="text-sm">{{ fact.value }}</dd>
             </div>

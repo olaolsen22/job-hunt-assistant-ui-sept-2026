@@ -4,6 +4,7 @@ import type { VueWrapper } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import QuickAddPage from '~/pages/listings/quick-add.vue'
+import { COLLECTED_JOB_TEXT_LIMIT } from '~/utils/collectedJobBatches'
 import { llmModels, unknownModelError } from '../fixtures/llmModels'
 
 // Mounting at a route runs the auth middleware.
@@ -178,6 +179,47 @@ describe('Quick add', () => {
       l0: { kind: 'OPEN_INVITATION' },
       l1: { kind: 'VACANCY' }
     })
+  })
+
+  it('saves everything a pasted or imported job holds, not just what its row shows', async () => {
+    const saves = mockApi([saved(1)])
+    wrapper = await mountSuspended(QuickAddPage, { attachTo: document.body })
+    await flushPromises()
+    await chooseAi(wrapper, 'own')
+    const job = {
+      ...row(1),
+      seniority: 'SENIOR',
+      employmentType: 'PERMANENT',
+      positionPercent: 80,
+      workMode: 'HYBRID',
+      description: 'Builds the public site',
+      postingLanguage: 'NORWEGIAN',
+      jobRoleCategoryName: 'IT',
+      skills: [{ name: 'Vue', level: 4, isRequired: true }],
+      languages: [{ language: 'NORWEGIAN', level: 'B2', isRequired: true }],
+      contacts: [{ name: 'Kari Nordmann', email: 'kari@example.com' }],
+      isAnalyzed: true,
+      somethingTheApiDoesNotTake: 'dropped'
+    }
+    await wrapper.get('[data-testid="quick-add-json"]').setValue(JSON.stringify([job]))
+    await wrapper.get('[data-testid="quick-add-parse"]').trigger('click')
+    await flushPromises()
+    await save(wrapper)
+
+    expect(saves.variables.l0).toMatchObject({
+      seniority: 'SENIOR',
+      employmentType: 'PERMANENT',
+      positionPercent: 80,
+      workMode: 'HYBRID',
+      description: 'Builds the public site',
+      postingLanguage: 'NORWEGIAN',
+      jobRoleCategoryName: 'IT',
+      skills: [expect.objectContaining({ name: 'Vue', level: 4 })],
+      languages: [expect.objectContaining({ language: 'NORWEGIAN', level: 'B2' })],
+      contacts: [expect.objectContaining({ name: 'Kari Nordmann', email: 'kari@example.com' })],
+      isAnalyzed: true
+    })
+    expect(saves.variables.l0).not.toHaveProperty('somethingTheApiDoesNotTake')
   })
 
   it('opens the listing after saving a single new one, but not a flagged one or a batch', async () => {
@@ -751,7 +793,7 @@ describe('Quick add collected batch processing', () => {
   it('rejects an oversized listing before any AI request', async () => {
     const requests = collectedApi(allEligible)
     const w = await openCollected(
-      JSON.stringify([row(1), { ...row(2), description: 'x'.repeat(12_000) }])
+      JSON.stringify([row(1), { ...row(2), description: 'x'.repeat(COLLECTED_JOB_TEXT_LIMIT) }])
     )
     await startCollected(w)
     expect(w.get('[data-testid="quick-add-process-error"]').text()).toContain('Job 2 is too large')

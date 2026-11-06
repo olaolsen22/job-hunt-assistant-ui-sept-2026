@@ -8,7 +8,11 @@ import { languageLabel } from '~/constants/listing'
 // The tailored CV's own-AI steps for a CV template, in the language being edited. The prompt depends
 // on what's typed here, so it can't load up front; it's fetched on request, so that "Copy prompt"
 // stays a direct clipboard write. The reply loads into the editor unsaved.
-const { editor } = defineProps<{ editor: ReturnType<typeof useBaseCvEditor> }>()
+const { editor, isNew = false } = defineProps<{
+  editor: Pick<ReturnType<typeof useBaseCvEditor>, 'language' | 'cv' | 'dirty' | 'replaceContent'>
+  // A template that isn't created yet: it has one language and no saved versions.
+  isNew?: boolean
+}>()
 const open = defineModel<boolean>('open', { required: true })
 
 const TARGET_ROLE_MAX = 100
@@ -85,7 +89,11 @@ const load = async () => {
   <AppAiModal
     v-model:open="open"
     title="Draft with AI"
-    description="The draft shows in the editor for review. Nothing saves until you save the version."
+    :description="
+      isNew
+        ? 'The draft shows in the editor for review. Nothing is created until you save.'
+        : 'The draft shows in the editor for review. Nothing saves until you save the version.'
+    "
     :busy="locked"
   >
     <AppAiOwnSteps
@@ -128,7 +136,11 @@ const load = async () => {
           </UFormField>
           <UFormField
             label="Language"
-            help="To draft another language, switch to it or add it on the page first."
+            :help="
+              isNew
+                ? undefined
+                : 'To draft another language, switch to it or add it on the page first.'
+            "
           >
             <p class="text-sm" data-testid="cv-ai-draft-language">{{ languageLabel(language) }}</p>
           </UFormField>
@@ -166,7 +178,7 @@ const load = async () => {
     </AppAiOwnSteps>
 
     <p v-if="replacesEdits" class="text-sm text-warning" data-testid="cv-ai-draft-replaces">
-      This replaces your unsaved edits. Your saved versions stay as they are.
+      This replaces your unsaved edits.{{ isNew ? '' : ' Your saved versions stay as they are.' }}
     </p>
 
     <template #actions>

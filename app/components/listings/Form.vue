@@ -95,12 +95,29 @@ const kindItems = computed(() =>
           />
         </UFormField>
 
-        <UFormField label="Work mode" name="workMode">
-          <ListingsToggleGroup v-model="state.workMode" :options="WORK_MODE_OPTIONS" />
+        <UFormField
+          label="Position (%)"
+          help="Optional. For example 80 for a four-day week."
+          name="positionPercent"
+        >
+          <UInputNumber
+            v-model="state.positionPercent"
+            :min="1"
+            :max="100"
+            :increment="false"
+            :decrement="false"
+            placeholder="100"
+            class="w-full"
+            data-testid="listing-position-percent"
+          />
         </UFormField>
 
         <UFormField label="Schedule" name="schedule">
           <ListingsToggleGroup v-model="state.schedule" :options="SCHEDULE_OPTIONS" />
+        </UFormField>
+
+        <UFormField label="Work mode" name="workMode" class="sm:col-span-2">
+          <ListingsToggleGroup v-model="state.workMode" :options="WORK_MODE_OPTIONS" />
         </UFormField>
 
         <UFormField label="Locations" name="locations" class="sm:col-span-2">

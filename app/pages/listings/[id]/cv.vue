@@ -1,30 +1,17 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
-import type { CvContentStyle, CvEditorAi, TailoredCvSectionKey } from '~/utils/tailoredCv'
+import type { CvEditorAi, TailoredCvSectionKey } from '~/utils/tailoredCv'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
-import {
-  CONTENT_STYLE_DESCRIPTION,
-  CONTENT_STYLE_OPTIONS,
-  SECTION_ORDER_HINTS,
-  SECTION_ORDER_OPTIONS,
-  TEMPLATE_HINTS,
-  TEMPLATE_OPTIONS
-} from '~/constants/cv'
 
 definePageMeta({ title: 'Tailored CV' })
 
 const route = useRoute()
 const id = Number(route.params.id)
 
-// The listing, profile and draft requests start together; only the listing is waited for.
+// The listing and draft requests start together; only the listing is waited for.
 const listingQuery = useListing(id)
-const { profile, error: profileError } = useProfile()
-const state = useTailoredCvDraft(
-  id,
-  profile,
-  computed(() => listingQuery.listing.value?.postingLanguage)
-)
+const state = useTailoredCvDraft(id)
 const {
   listing,
   loading: listingLoading,
@@ -36,10 +23,10 @@ const { cv, dirty, suggestions, sectionErrors, sectionDetails, analyzing, analyz
 const copy = useCopyTailoredCv()
 const { refresh: refreshUsage } = useLlmUsage(false)
 
-// Builds the candidate once the draft and profile are in: the saved draft, or the profile as is.
-// AI only runs when the owner asks.
+// Builds the candidate once it's ready: the saved draft, or the profile as is. AI only runs when the
+// owner asks.
 watch(
-  [profile, state.query.status],
+  [state.source, state.query.status],
   () => {
     if (!cv.value) state.init()
   },
@@ -49,8 +36,12 @@ watch(
 onMounted(() => state.loadPrompt())
 
 // A failed refresh after generating keeps the listing it already has, so it isn't a load error.
+// A saved draft doesn't need the profile prefill to open; a new CV starts from it.
 const loadError = computed(
-  () => (!listing.value && listingError.value) || profileError.value || state.query.error.value
+  () =>
+    (!listing.value && listingError.value) ||
+    state.query.error.value ||
+    (!state.draft.value && state.sourceQuery.error.value)
 )
 const busy = computed(() => analyzing.value || !!analyzingKey.value || state.previewing.value)
 
@@ -397,28 +388,7 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
               data-testid="tailored-cv-template-changed"
             />
             <div class="mt-3 grid gap-3 border-t border-default pt-3 md:grid-cols-2">
-              <UFormField label="CV style" :description="TEMPLATE_HINTS[cv.template]">
-                <URadioGroup
-                  v-model="cv.template"
-                  :items="TEMPLATE_OPTIONS"
-                  orientation="horizontal"
-                  :disabled="analyzing"
-                  data-testid="tailored-cv-template"
-                />
-              </UFormField>
-              <UFormField
-                label="Entry format"
-                :description="CONTENT_STYLE_DESCRIPTION[cv.template]"
-              >
-                <URadioGroup
-                  :model-value="entryStyle"
-                  :items="CONTENT_STYLE_OPTIONS"
-                  orientation="horizontal"
-                  :disabled="analyzing || cv.template === 'CONCISE'"
-                  data-testid="tailored-cv-content-style"
-                  @update:model-value="setCvContentStyle(cv, $event as CvContentStyle)"
-                />
-              </UFormField>
+              <CvStyleFields v-model:cv="cv" :disabled="analyzing" />
             </div>
           </AppCard>
 
@@ -445,57 +415,29 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
               data-testid="tailored-cv-suggestions"
             />
 
-            <CvContentEditor v-model:cv="cv" :profile="profile" :disabled="busy" :ai="editorAi" />
+            <CvContentEditor
+              v-model:cv="cv"
+              :source="state.source.value"
+              :disabled="busy"
+              :ai="editorAi"
+            />
 
             <AppCard title="PDF" data-testid="tailored-cv-pdf">
-              <UFormField
-                label="PDF layout"
-                :description="SECTION_ORDER_HINTS[cv.sectionOrder]"
+              <CvPdfLayoutField
+                v-model:cv="cv"
+                :disabled="analyzing"
                 help="Only changes the PDF, not the text you edit."
-              >
-                <URadioGroup
-                  v-model="cv.sectionOrder"
-                  :items="SECTION_ORDER_OPTIONS"
-                  orientation="horizontal"
-                  :disabled="analyzing"
-                  data-testid="tailored-cv-section-order"
-                />
-              </UFormField>
-              <div
+              />
+              <CvPdfLatestRow
                 v-if="pdf"
-                class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-default pt-3"
-                data-testid="tailored-cv-latest-pdf"
-              >
-                <p class="flex min-w-0 items-center gap-2 text-sm">
-                  <UIcon name="i-lucide-file-text" class="size-4 shrink-0 text-muted" />
-                  <span class="truncate">{{ pdf.fileName }}</span>
-                  <span class="shrink-0 text-muted"
-                    >{{ formatDateTime(pdf.createdAt)
-                    }}{{ pdfCurrent ? '' : ' · older than the draft' }}</span
-                  >
-                </p>
-                <div class="flex items-center gap-1">
-                  <UButton
-                    icon="i-lucide-eye"
-                    color="neutral"
-                    variant="subtle"
-                    size="sm"
-                    data-testid="tailored-cv-latest-pdf-preview"
-                    @click="pdfOpen = true"
-                    >Preview</UButton
-                  >
-                  <UButton
-                    v-if="!pdf.sentAt"
-                    icon="i-lucide-trash-2"
-                    color="error"
-                    variant="ghost"
-                    size="sm"
-                    aria-label="Delete unsent PDF"
-                    data-testid="tailored-cv-delete-pdf"
-                    @click="askDeletePdf(pdf)"
-                  />
-                </div>
-              </div>
+                :pdf="pdf"
+                :current="pdfCurrent"
+                older-than="draft"
+                testid-prefix="tailored-cv"
+                class="mt-3 border-t border-default pt-3"
+                @preview="pdfOpen = true"
+                @delete="askDeletePdf(pdf)"
+              />
             </AppCard>
 
             <div v-if="refreshFailed || state.generateError.value" class="space-y-2">
@@ -546,26 +488,17 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
               </UAlert>
             </div>
 
-            <!-- Sticky so the next step stays in reach on long drafts; translucent like the dashboard
-             header. On phones the status takes its own line above equal buttons. Generate saves
-             first; once the PDF matches the draft, the next step is applying with it. -->
-            <div
-              class="sticky bottom-0 z-10 grid grid-cols-2 items-center gap-3 rounded-md border border-default bg-default/90 p-3 backdrop-blur sm:flex sm:flex-wrap"
+            <!-- Generate saves first; once the PDF matches the draft, the next step is applying with it. -->
+            <AppSaveBar
+              :status="saveStatus"
+              status-testid="tailored-cv-save-status"
+              :changed="dirty"
+              :warn="dirty && !state.pristine.value"
               data-testid="tailored-cv-save-bar"
             >
-              <span
-                class="order-first col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted sm:order-none sm:col-auto sm:flex-1 sm:justify-end"
-              >
-                <span class="inline-flex items-center gap-1.5">
-                  <UIcon
-                    :name="dirty ? 'i-lucide-circle-dot' : 'i-lucide-check'"
-                    :class="dirty && !state.pristine.value ? 'text-warning' : ''"
-                  />
-                  <span data-testid="tailored-cv-save-status">{{ saveStatus }}</span>
-                </span>
-                <!-- Also a way back to the suggestions from wherever the owner has scrolled. -->
+              <!-- Also a way back to the suggestions from wherever the owner has scrolled. -->
+              <template v-if="suggestions.length" #status>
                 <UButton
-                  v-if="suggestions.length"
                   icon="i-lucide-sparkles"
                   variant="subtle"
                   size="xs"
@@ -573,7 +506,7 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                   @click="showNextSuggestion"
                   >{{ pendingLabel }} to review</UButton
                 >
-              </span>
+              </template>
               <UButton
                 icon="i-lucide-copy"
                 color="neutral"
@@ -626,7 +559,7 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                   >{{ generateLabel }}</UButton
                 >
               </template>
-            </div>
+            </AppSaveBar>
           </fieldset>
         </template>
       </div>

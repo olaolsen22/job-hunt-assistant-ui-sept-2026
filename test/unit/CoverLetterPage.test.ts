@@ -27,6 +27,7 @@ const content = (over: Record<string, unknown> = {}) => ({
 
 let calls: Body[]
 let savedDraft: unknown
+let savedCv: unknown
 let generateReply: () => unknown
 let listing: Record<string, unknown> & { documents: Record<string, unknown>[] }
 
@@ -42,6 +43,7 @@ registerEndpoint('/graphql', {
       return { data: { llmModels: { models: [], defaultModel: null } } }
     if (query.includes('query ListingById')) return { data: { listingById: listing } }
     if (query.includes('query CoverLetterDraft(')) return { data: { coverLetterDraft: savedDraft } }
+    if (query.includes('query TailoredCvDraft(')) return { data: { tailoredCvDraft: savedCv } }
     if (query.includes('query CoverLetterDraftFromProfile'))
       return { data: { coverLetterDraftFromProfile: content() } }
     if (query.includes('query CoverLetterExternalPrompt'))
@@ -146,6 +148,7 @@ const chooseSource = async (label: string) => {
 
 beforeEach(() => {
   clearNuxtData()
+  savedCv = null
   calls = []
   savedDraft = null
   listing = {
@@ -170,6 +173,23 @@ afterEach(() => {
 })
 
 describe('Cover letter page', () => {
+  it('says when no tailored CV is saved, without blocking the letter', async () => {
+    savedCv = null
+    const without = await mountPage()
+    await vi.waitFor(() => expect(el('cover-letter-no-cv')).not.toBeNull())
+    expect(el('cover-letter-no-cv')!.querySelector('a')!.getAttribute('href')).toBe(
+      '/listings/5/cv'
+    )
+    expect(el('cover-letter-source')!.hasAttribute('disabled')).toBe(false)
+    without.unmount()
+
+    clearNuxtData()
+    savedCv = { id: 1, updatedAt: '2026-10-12T10:00:00Z', content: {} }
+    await mountPage()
+    await flushPromises()
+    expect(el('cover-letter-no-cv')).toBeNull()
+  })
+
   it('appends the current notes, saved or not, to the external prompt', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })

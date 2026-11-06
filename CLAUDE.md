@@ -1,8 +1,7 @@
 # Job Hunt Assistant UI
 
 Personal Nuxt 4 / Vue 3 app and GitHub showcase: Nuxt UI v4, Tailwind 4, Pinia,
-with a fixed .NET API. REST for cookie auth and health; GraphQL for domain data;
-SSE subscriptions for parse-job updates.
+with a fixed .NET API. REST for cookie auth and health; GraphQL for domain data.
 
 ## Scope and communication
 

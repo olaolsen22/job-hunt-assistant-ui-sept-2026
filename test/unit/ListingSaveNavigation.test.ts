@@ -37,6 +37,44 @@ describe('Leaving a listing form after saving', () => {
     wrapper.unmount()
   })
 
+  it('hands possible duplicates over to the new listing page', async () => {
+    const match = { id: 8, title: 'Frontend Developer', archivedAt: null }
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: () => ({
+        data: {
+          createListing: {
+            listing: { id: 7, title: 'Frontend Developer' },
+            previousAttempts: [],
+            possibleDuplicates: [match],
+            errors: null
+          }
+        }
+      })
+    })
+    const wrapper = await mountSuspended(AddPage, { attachTo: document.body })
+    await flushPromises()
+
+    Object.assign(wrapper.vm.state, {
+      title: 'Frontend Developer',
+      companyName: 'Acme',
+      jobRoleName: 'Developer',
+      url: 'https://example.com/job'
+    })
+    wrapper.vm.confirmOpen = true
+    await flushPromises()
+    document.body.querySelector<HTMLElement>('[data-testid="confirm-modal-confirm"]')!.click()
+
+    await vi.waitFor(() =>
+      expect(usePossibleDuplicates().value).toMatchObject({
+        listing: { id: 7 },
+        matches: [match]
+      })
+    )
+    usePossibleDuplicates().value = null
+    wrapper.unmount()
+  })
+
   it('links to the existing listing in a toast when the ad URL is already saved', async () => {
     navigateTo.mockClear()
     registerEndpoint('/graphql', {

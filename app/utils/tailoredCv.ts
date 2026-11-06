@@ -1,15 +1,8 @@
-import type { ProfileData } from '~/composables/useProfile'
 import type {
   TailoredCvAnalysis,
   TailoredCvContent,
   TailoredCvContentInput
 } from '~/composables/useTailoredCvDraft'
-import {
-  LINK_KIND_OPTIONS,
-  PROFICIENCY_OPTIONS,
-  projectKindLabel,
-  type Language
-} from '~/constants/listing'
 
 // The editable candidate: the save input with every field present, so forms bind without null checks.
 // Blank strings go back to the API as null (see toTailoredCvInput).
@@ -66,142 +59,6 @@ export const CV_SECTION_TITLES: Record<string, string> = {
   projects: 'Projects'
 }
 
-// The paragraph is only written once the owner or AI fills it in; the CV-wide contentStyle decides which shows.
-const BULLET_CONTENT = { paragraph: null } as const
-
-// Uses the bullet's translation for the draft language when it has one, like the API's prefill.
-const bulletsOf = (
-  bullets: readonly {
-    id: number
-    text: string
-    translations?: readonly { language: string; text: string }[]
-  }[],
-  language?: Language
-) =>
-  bullets.map((b) => ({
-    text: b.translations?.find((t) => t.language === language)?.text ?? b.text,
-    sourceBulletId: b.id
-  }))
-
-const linkLabel = (link: ProfileData['links'][number]) =>
-  link.kind === 'OTHER' && link.label
-    ? link.label
-    : LINK_KIND_OPTIONS.find((o) => o.value === link.kind)!.label
-
-type EntrySkill = ProfileData['experiences'][number]['skills'][number]
-
-// Like the API prefill: the entry's own skills, higher profile level first (unknown level last), then
-// by name, culture-aware like the API, in the draft language.
-const technologiesFromProfile = (
-  skills: readonly EntrySkill[],
-  profile: ProfileData,
-  language: Language
-) => {
-  const levels = new Map(profile.skills.map((p) => [p.skill.id, p.level]))
-  const level = (s: EntrySkill) => levels.get(s.id) ?? 0
-  return [...skills]
-    .sort((a, b) => level(b) - level(a) || a.name.localeCompare(b.name))
-    .map((s) => s.translations.find((t) => t.language === language)?.name ?? s.name)
-}
-
-// With no saved draft, the candidate starts as the whole profile, keeping source ids for attribution.
-export const tailoredCvFromProfile = (
-  profile: ProfileData,
-  language: Language = profile.contentLanguage
-): TailoredCv => {
-  const translated = profile.translations.find((t) => t.language === language)
-  return {
-    fullName: profile.fullName ?? '',
-    headline: translated?.headline ?? profile.headline ?? '',
-    email: profile.email ?? '',
-    phone: profile.phone ?? '',
-    address: profile.location ? formatLocation(profile.location) : '',
-    language,
-    dateOfBirth: profile.dateOfBirth ?? '',
-    referencesOnRequest: false,
-    sectionOrder: 'STANDARD',
-    contentStyle: 'BULLETS',
-    template: 'DETAILED',
-    links: profile.links.map((l) => ({ label: linkLabel(l), url: l.url })),
-    summary: translated?.summary ?? profile.summary ?? '',
-    experiences: profile.experiences.map((e) => experienceFromProfile(e, profile, language)),
-    educations: profile.educations.map((e) => educationFromProfile(e, language)),
-    certifications: profile.certifications.map((c) => ({
-      name: c.name,
-      issuer: c.issuer,
-      issuedMonth: c.issuedMonth,
-      expiresMonth: c.expiresMonth,
-      url: c.url,
-      ...BULLET_CONTENT,
-      bullets: bulletsOf(c.bullets, language),
-      sourceEntryId: c.id
-    })),
-    projects: profile.projects.map((p) => projectFromProfile(p, profile, language)),
-    skills: profile.skills.map((s) => skillFromProfile(s, language)),
-    languages: profile.languages.map((l) => ({
-      name: l.name,
-      spoken: l.spoken,
-      written: l.written
-    }))
-  }
-}
-
-const educationFromProfile = (
-  e: ProfileData['educations'][number],
-  language: Language
-): TailoredCvEducation => ({
-  school: e.school,
-  degree: e.degree,
-  field: e.field,
-  location: e.location ? formatLocation(e.location) : null,
-  startMonth: e.startMonth,
-  endMonth: e.endMonth,
-  ...BULLET_CONTENT,
-  bullets: bulletsOf(e.bullets, language),
-  sourceEntryId: e.id
-})
-
-const experienceFromProfile = (
-  e: ProfileData['experiences'][number],
-  profile: ProfileData,
-  language: Language
-): TailoredCvExperience => ({
-  employer: e.employer,
-  title: e.title,
-  location: e.location ? formatLocation(e.location) : null,
-  startMonth: e.startMonth,
-  endMonth: e.endMonth,
-  ...BULLET_CONTENT,
-  technologies: technologiesFromProfile(e.skills, profile, language),
-  bullets: bulletsOf(e.bullets, language),
-  sourceEntryId: e.id
-})
-
-const projectFromProfile = (
-  p: ProfileData['projects'][number],
-  profile: ProfileData,
-  language: Language
-): TailoredCvProject => ({
-  name: p.name,
-  kind: p.kind ?? null,
-  url: p.url,
-  location: p.location ? formatLocation(p.location) : null,
-  startMonth: p.startMonth,
-  endMonth: p.endMonth,
-  ...BULLET_CONTENT,
-  technologies: technologiesFromProfile(p.skills, profile, language),
-  bullets: bulletsOf(p.bullets, language),
-  sourceEntryId: p.id
-})
-
-// The API's prefill already names skills in the draft language; AI-picked skills follow that.
-const skillFromProfile = (s: ProfileData['skills'][number], language?: Language) => ({
-  name: s.skill.translations.find((t) => t.language === language)?.name ?? s.skill.name,
-  level: s.level,
-  sourceSkillId: s.skill.id,
-  categoryId: s.skill.categoryId ?? null
-})
-
 const withBullets = <T extends { bullets: readonly unknown[] }>(e: T) => ({
   ...e,
   bullets: [...e.bullets]
@@ -237,6 +94,18 @@ export const tailoredCvFromContent = (content: TailoredCvContent): TailoredCv =>
   })),
   skills: [...(content.skills ?? [])],
   languages: [...(content.languages ?? [])]
+})
+
+// A copy with nothing shared, so editing it can't change what it came from.
+export const cloneCv = <T>(value: T): T => JSON.parse(JSON.stringify(value))
+
+// Fresh content from the profile, keeping the owner's layout choices: the API returns defaults.
+export const withLayoutFrom = (fresh: TailoredCv, current: TailoredCv): TailoredCv => ({
+  ...fresh,
+  contentStyle: current.contentStyle,
+  sectionOrder: current.sectionOrder,
+  template: current.template,
+  referencesOnRequest: current.referencesOnRequest
 })
 
 const blankToNull = (value: string | null | undefined) => value?.trim() || null
@@ -355,42 +224,51 @@ export type CvProfileList = 'experiences' | 'educations' | 'certifications' | 'p
 export type CvEntryList = Exclude<CvProfileList, 'skills'>
 export type CvEntry = TailoredCv[CvEntryList][number]
 type ProfileItem = { sourceEntryId?: number | null; sourceSkillId?: number | null }
+type AnalyzedEntry = TailoredCvExperience | TailoredCvEducation | TailoredCvProject
 const profileItemId = (item: ProfileItem) => item.sourceEntryId ?? item.sourceSkillId
 
-// The profile's items this CV doesn't have, in profile order and the draft's language.
+// The profile's items this CV doesn't have. `source` is the API's prefill in the CV's language, so
+// they come in profile order and already translated.
 export const missingFromProfile = <K extends CvProfileList>(
   cv: TailoredCv,
-  profile: ProfileData,
+  source: TailoredCv,
   list: K
 ): TailoredCv[K] => {
   const present = new Set((cv[list] as ProfileItem[]).map(profileItemId))
-  return (tailoredCvFromProfile(profile, cv.language)[list] as ProfileItem[]).filter(
+  return (source[list] as ProfileItem[]).filter(
     (item) => !present.has(profileItemId(item))
   ) as TailoredCv[K]
 }
 
-// Puts a profile item back where the profile has it, before the first entry that comes later
-// there. Skills go last: their order is the owner's or the AI's, not the profile's.
+// Puts a copy of a profile item back where the profile has it, before the first entry that comes
+// later there. Skills go last: their order is the owner's or the AI's, not the profile's.
 export const addFromProfile = <K extends CvProfileList>(
   cv: TailoredCv,
-  profile: ProfileData,
+  source: TailoredCv,
   list: K,
   item: TailoredCv[K][number]
 ) => {
   const items = cv[list] as ProfileItem[]
-  if (list === 'skills') return void items.push(item)
-  const order = (profile[list] as { id: number }[]).map((e) => e.id)
-  const rank = (e: ProfileItem) => order.indexOf(e.sourceEntryId ?? -1)
-  const at = items.findIndex((e) => rank(e) > rank(item))
-  items.splice(at === -1 ? items.length : at, 0, item)
+  const added = cloneCv(item) as ProfileItem
+  if (list === 'skills') return void items.push(added)
+  const order = (source[list] as ProfileItem[]).map(profileItemId)
+  const rank = (e: ProfileItem) => order.indexOf(profileItemId(e))
+  const at = items.findIndex((e) => rank(e) > rank(added))
+  items.splice(at === -1 ? items.length : at, 0, added)
 }
+
+const ANALYZED_ENTRIES = {
+  EXPERIENCE: 'experience',
+  EDUCATION: 'education',
+  PROJECT: 'project'
+} as const
 
 // Turns one built-in analysis result into the section value it suggests, or null when it failed.
 // Bullets are the result's own text (shortened for the Concise template), skills the selected profile
 // skills in the AI's order; the owner's edits to an entry's other fields (title, employer, school...) stay.
 export const cvSectionFromAnalysis = (
   cv: TailoredCv,
-  profile: ProfileData,
+  source: TailoredCv,
   result: TailoredCvAnalysis
 ): { key: TailoredCvSectionKey; value: unknown } | null => {
   if (result.status !== 'SUCCEEDED') return null
@@ -400,68 +278,35 @@ export const cvSectionFromAnalysis = (
     // A skill the draft already has keeps its group.
     const groups = new Map(cv.skills.map((s) => [s.sourceSkillId, s.group]))
     const value = (result.selectedSkillIds ?? [])
-      .map((id) => profile.skills.find((s) => s.skill.id === id))
+      .map((id) => source.skills.find((s) => s.sourceSkillId === id))
       .filter((s) => s != null)
       .map((s) => ({
-        ...skillFromProfile(s, cv.language),
-        ...(groups.get(s.skill.id) && { group: groups.get(s.skill.id) })
+        ...s,
+        ...(groups.get(s.sourceSkillId) && { group: groups.get(s.sourceSkillId) })
       }))
     return { key: 'skills', value }
   }
-  const bullets = (result.bullets ?? []).map((b) => ({
-    text: b.text,
-    sourceBulletId: b.sourceBulletId
-  }))
-  if (result.section === 'EDUCATION') {
-    const source = profile.educations.find((e) => e.id === result.sourceEntryId)
-    if (!source) return null
-    const key = `education:${source.id}` as const
-    const current =
-      (getCvSection(cv, key) as TailoredCvEducation | undefined) ??
-      educationFromProfile(source, cv.language)
-    return {
-      key,
-      value: {
-        ...current,
-        bullets,
-        paragraph: result.paragraph ?? current.paragraph
-      }
-    }
-  }
-  // Technologies: a list replaces the entry's, null means no suggestion and keeps it.
-  if (result.section === 'PROJECT') {
-    const source = profile.projects.find((p) => p.id === result.sourceEntryId)
-    if (!source) return null
-    const key = `project:${source.id}` as const
-    const current =
-      (getCvSection(cv, key) as TailoredCvProject | undefined) ??
-      projectFromProfile(source, profile, cv.language)
-    // A project may have no relevant bullets; it stays, and the owner decides whether to remove it.
-    return {
-      key,
-      value: {
-        ...current,
-        bullets,
-        paragraph: result.paragraph ?? current.paragraph,
-        technologies: result.technologies ? [...result.technologies] : current.technologies
-      }
-    }
-  }
-  if (result.section !== 'EXPERIENCE') return null
-  const source = profile.experiences.find((e) => e.id === result.sourceEntryId)
-  if (!source) return null
-  const key = `experience:${source.id}` as const
-  const current =
-    (getCvSection(cv, key) as TailoredCvExperience | undefined) ??
-    experienceFromProfile(source, profile, cv.language)
-  // The paragraph is written from the selected bullets; it shows once the entry is in paragraph mode.
+  const prefix = ANALYZED_ENTRIES[result.section as keyof typeof ANALYZED_ENTRIES]
+  if (!prefix) return null
+  const key: TailoredCvSectionKey = `${prefix}:${result.sourceEntryId ?? 0}`
+  const fromProfile = getCvSection(source, key) as AnalyzedEntry | undefined
+  if (!fromProfile) return null
+  const current = (getCvSection(cv, key) as AnalyzedEntry | undefined) ?? fromProfile
   return {
     key,
     value: {
       ...current,
-      bullets,
+      // A project may have no relevant bullets; it stays, and the owner decides whether to remove it.
+      bullets: (result.bullets ?? []).map((b) => ({
+        text: b.text,
+        sourceBulletId: b.sourceBulletId
+      })),
+      // Written from the selected bullets; it shows once the entry is in paragraph mode.
       paragraph: result.paragraph ?? current.paragraph,
-      technologies: result.technologies ? [...result.technologies] : current.technologies
+      // Education has none. A list replaces the entry's, null means no suggestion and keeps it.
+      ...('technologies' in current && {
+        technologies: result.technologies ? [...result.technologies] : current.technologies
+      })
     }
   }
 }
@@ -496,156 +341,3 @@ export const changedCvSections = (cv: TailoredCv, next: TailoredCv) =>
   )
     .filter((key) => JSON.stringify(cv[key]) !== JSON.stringify(next[key]))
     .map((key) => ({ key, value: next[key] as unknown }))
-
-// CVs are written in English, so dates use en-GB like the CV import review.
-const range = (start?: string | null, end?: string | null, open?: string) =>
-  formatMonthRange(start, end, open, 'en-GB')
-
-const entryText = (
-  heading: string,
-  dates: string,
-  contentStyle: TailoredCv['contentStyle'],
-  content: {
-    paragraph?: string | null
-    bullets: TailoredCvBullet[]
-    location?: string | null
-    url?: string | null
-    kind?: TailoredCvProject['kind']
-    technologies?: string[] | null
-  }
-) => {
-  const kind = content.kind && `${projectKindLabel(content.kind)} project`
-  const detail = [dates, kind, content.location?.trim()].filter(Boolean).join(', ')
-  const title = [detail ? `${heading} (${detail})` : heading, content.url?.trim()]
-    .filter(Boolean)
-    .join(' – ')
-  const technologies = content.technologies?.length
-    ? `Technologies: ${content.technologies.join(', ')}`
-    : ''
-  const body =
-    contentStyle === 'PARAGRAPH'
-      ? [content.paragraph?.trim()]
-      : content.bullets.map((b) => `- ${b.text}`)
-  return [title, ...body, technologies].filter(Boolean).join('\n')
-}
-
-export const proficiencyLabel = (value?: string | null) =>
-  PROFICIENCY_OPTIONS.find((o) => o.value === value)?.label
-
-// Plain text for one section; also what the suggestion compare view shows.
-export const cvSectionText = (
-  key: TailoredCvSectionKey,
-  value: unknown,
-  style: TailoredCv['contentStyle'] = 'BULLETS'
-): string => {
-  if (value == null) return ''
-  if (key.startsWith('experience:')) return experienceText(value as TailoredCvExperience, style)
-  if (key.startsWith('education:')) return educationText(value as TailoredCvEducation, style)
-  if (key.startsWith('project:')) return projectText(value as TailoredCvProject, style)
-  const cv = { [key]: value } as unknown as TailoredCv
-  switch (key) {
-    case 'headline':
-    case 'summary':
-      return (value as string).trim()
-    case 'experiences':
-      return cv.experiences.map((e) => experienceText(e, style)).join('\n\n')
-    case 'educations':
-      return cv.educations.map((e) => educationText(e, style)).join('\n\n')
-    case 'certifications':
-      return cv.certifications
-        .map((c) =>
-          entryText(
-            [c.name, c.issuer].filter(Boolean).join(' – '),
-            range(c.issuedMonth, c.expiresMonth),
-            style,
-            c
-          )
-        )
-        .join('\n\n')
-    case 'projects':
-      return cv.projects.map((p) => projectText(p, style)).join('\n\n')
-    case 'skills':
-      return cv.skills.map((s) => s.name).join(', ')
-    case 'languages':
-      return cv.languages
-        .map((l) => {
-          const levels = [
-            l.spoken && `spoken: ${proficiencyLabel(l.spoken)}`,
-            l.written && `written: ${proficiencyLabel(l.written)}`
-          ].filter(Boolean)
-          return levels.length ? `${l.name} (${levels.join(', ')})` : l.name
-        })
-        .join(', ')
-  }
-  return ''
-}
-
-const educationText = (e: TailoredCvEducation, style: TailoredCv['contentStyle']) =>
-  entryText(
-    [[e.degree, e.field].filter(Boolean).join(', '), e.school].filter(Boolean).join(' – '),
-    range(e.startMonth, e.endMonth),
-    style,
-    e
-  )
-
-const projectText = (p: TailoredCvProject, style: TailoredCv['contentStyle']) =>
-  entryText(p.name, range(p.startMonth, p.endMonth), style, p)
-
-const experienceText = (e: TailoredCvExperience, style: TailoredCv['contentStyle']) =>
-  entryText(`${e.title} – ${e.employer}`, range(e.startMonth, e.endMonth, 'Present'), style, e)
-
-// The whole draft as plain text for pasting into an application form or document.
-export const tailoredCvToText = (cv: TailoredCv) => {
-  const contact = [cv.email, cv.phone, cv.address].map((v) => v.trim()).filter(Boolean)
-  const head = [
-    cv.fullName.trim(),
-    cv.headline.trim(),
-    contact.join(' · '),
-    ...cv.links.filter((l) => l.url.trim()).map((l) => `${l.label}: ${l.url}`)
-  ].filter(Boolean)
-  const sections = (
-    [
-      'summary',
-      'experiences',
-      'educations',
-      'certifications',
-      'projects',
-      'skills',
-      'languages'
-    ] as const
-  )
-    .map((key) => ({
-      title: CV_SECTION_TITLES[key]!.toUpperCase(),
-      body: cvSectionText(key, cv[key], cv.contentStyle)
-    }))
-    .filter((s) => s.body)
-    .map((s) => `${s.title}\n${s.body}`)
-  return [head.join('\n'), ...sections].filter(Boolean).join('\n\n')
-}
-
-// Untranslated-field paths from the API (`summary`, `experiences[0].bullets[2]`) grouped by the
-// editor card that shows them: an entry (`experiences[0]`), a list section (`skills`), `summary`
-// or `contact` (every other top-level field).
-const FLAG_LISTS = ['experiences', 'educations', 'certifications', 'projects'] as const
-export const cvFlagKey = (path: string) => {
-  const entry = /^(\w+\[\d+\])/.exec(path)?.[1]
-  const head = /^\w+/.exec(path)?.[0] ?? path
-  if (entry && (FLAG_LISTS as readonly string[]).includes(head)) return entry
-  if (head === 'summary' || head === 'skills' || head === 'languages') return head
-  return 'contact'
-}
-export const cvFlagCounts = (paths: string[]) => {
-  const counts = new Map<string, number>()
-  for (const path of paths) counts.set(cvFlagKey(path), (counts.get(cvFlagKey(path)) ?? 0) + 1)
-  return counts
-}
-export const clearCvFlags = (paths: string[], key: string) =>
-  paths.filter((path) => cvFlagKey(path) !== key)
-// After removing `list[index]` (an entry or a skill): its paths go, later items' move up one.
-export const removeCvFlagItem = (paths: string[], list: string, index: number) =>
-  paths.flatMap((path) => {
-    const match = new RegExp(`^${list}\\[(\\d+)\\]`).exec(path)
-    const at = match ? Number(match[1]) : -1
-    if (at === index) return []
-    return at > index ? [path.replace(match![0], `${list}[${at - 1}]`)] : [path]
-  })

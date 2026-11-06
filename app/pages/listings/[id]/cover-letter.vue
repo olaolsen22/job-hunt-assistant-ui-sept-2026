@@ -156,6 +156,24 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value && !editor.
       </div>
 
       <template v-else>
+        <UAlert
+          v-if="editor.noSavedCv.value"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-info"
+          title="No tailored CV saved for this listing"
+          description="The AI will write the letter without your CV as evidence, so it may be more generic. You can still write it by hand."
+          :actions="[
+            {
+              label: 'Tailor a CV first',
+              to: `/listings/${id}/cv`,
+              color: 'neutral',
+              variant: 'outline'
+            }
+          ]"
+          data-testid="cover-letter-no-cv"
+        />
+
         <AppCard>
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p class="text-sm text-muted">
@@ -420,55 +438,24 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value && !editor.
             </UCollapsible>
           </AppCard>
 
-          <div
+          <CvPdfLatestRow
             v-if="pdf"
-            class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-default p-3"
-            data-testid="cover-letter-latest-pdf"
-          >
-            <p class="flex min-w-0 items-center gap-2 text-sm">
-              <UIcon name="i-lucide-file-text" class="size-4 shrink-0 text-muted" />
-              <span class="truncate">{{ pdf.fileName }}</span>
-              <span class="shrink-0 text-muted"
-                >{{ formatDateTime(pdf.createdAt)
-                }}{{ pdfCurrent ? '' : ' · older than the letter' }}</span
-              >
-            </p>
-            <div class="flex gap-2">
-              <UButton
-                icon="i-lucide-eye"
-                color="neutral"
-                variant="subtle"
-                size="sm"
-                @click="pdfOpen = true"
-                >Preview</UButton
-              >
-              <UButton
-                v-if="!pdf.sentAt"
-                icon="i-lucide-trash-2"
-                color="error"
-                variant="ghost"
-                size="sm"
-                aria-label="Delete unsent PDF"
-                data-testid="cover-letter-delete-pdf"
-                @click="askDeletePdf(pdf)"
-              />
-            </div>
-          </div>
+            :pdf="pdf"
+            :current="pdfCurrent"
+            older-than="letter"
+            testid-prefix="cover-letter"
+            class="rounded-md border border-default p-3"
+            @preview="pdfOpen = true"
+            @delete="askDeletePdf(pdf)"
+          />
 
-          <!-- Sticky so Save stays in reach on a long letter; same bar as the tailored CV editor. -->
-          <div
-            class="sticky bottom-0 z-10 grid grid-cols-2 items-center gap-3 rounded-md border border-default bg-default/90 p-3 backdrop-blur sm:flex sm:flex-wrap"
+          <AppSaveBar
+            :status="saveStatus"
+            status-testid="cover-letter-save-status"
+            :changed="dirty"
+            :warn="dirty && !editor.pristine.value"
             data-testid="cover-letter-save-bar"
           >
-            <span
-              class="order-first col-span-2 inline-flex items-center gap-1.5 text-sm text-muted sm:order-none sm:col-auto sm:flex-1 sm:justify-end"
-            >
-              <UIcon
-                :name="dirty ? 'i-lucide-circle-dot' : 'i-lucide-check'"
-                :class="dirty && !editor.pristine.value ? 'text-warning' : ''"
-              />
-              <span data-testid="cover-letter-save-status">{{ saveStatus }}</span>
-            </span>
             <UButton
               icon="i-lucide-save"
               color="neutral"
@@ -494,7 +481,7 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value && !editor.
               @click="generatePdf"
               >{{ dirty ? 'Save and generate PDF' : 'Generate PDF' }}</UButton
             >
-          </div>
+          </AppSaveBar>
         </fieldset>
       </template>
     </div>

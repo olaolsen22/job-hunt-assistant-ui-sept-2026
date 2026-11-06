@@ -81,10 +81,14 @@ const remove = async () => {
       data-testid="questions-empty"
     >
       <UIcon name="i-lucide-message-square-text" class="size-8" />
-      <p class="text-sm">No questions yet</p>
+      <p class="text-sm">No questions yet. Add them in the order they appear on the form.</p>
     </div>
 
-    <ul v-else class="divide-y divide-default">
+    <p v-if="questions.length" class="mb-3 text-sm text-muted" data-testid="questions-order-hint">
+      Answer in the same order as the form. The AI reads your earlier saved answers so it doesn’t
+      repeat itself.
+    </p>
+    <ul v-if="questions.length" class="divide-y divide-default">
       <li
         v-for="q in questions"
         :key="q.id"

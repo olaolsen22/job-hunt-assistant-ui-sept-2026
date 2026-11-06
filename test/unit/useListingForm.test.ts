@@ -128,6 +128,16 @@ describe('useListingForm', () => {
     })
   })
 
+  it('keeps the position share and role category from a parse, and drops an impossible share', () => {
+    const { state, fillDraft, toInput } = useListingForm()
+    fillRequired(state)
+    fillDraft({ positionPercent: 80, jobRoleCategoryName: ' IT ' })
+    expect(toInput()).toMatchObject({ positionPercent: 80, jobRoleCategoryName: 'IT' })
+
+    fillDraft({ positionPercent: 180 })
+    expect(toInput()).toMatchObject({ positionPercent: null, jobRoleCategoryName: null })
+  })
+
   it("passes a parsed skill's category name through to the save", () => {
     const { state, fillDraft, toInput } = useListingForm()
     fillRequired(state)

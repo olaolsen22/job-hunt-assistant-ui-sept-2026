@@ -61,6 +61,14 @@ const retry = () => {
   >
     <AppAiMethodTabs v-model="tab" :extra="extraTabs" :disabled="busy" />
 
+    <p
+      v-if="editor.noSavedCv.value && tab !== 'letter'"
+      class="text-sm text-muted"
+      data-testid="cover-letter-source-no-cv"
+    >
+      No tailored CV is saved for this listing, so the AI can’t use it as evidence.
+    </p>
+
     <template v-if="tab === 'builtin'">
       <p class="text-sm text-muted">
         Uses the listing, your profile, your story, your writing samples and your notes for the AI.

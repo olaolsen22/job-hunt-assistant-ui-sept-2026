@@ -1,99 +1,8 @@
-import type { Ref } from 'vue'
 import type { ResultOf, VariablesOf } from 'gql.tada'
-import type { ProfileData } from '~/composables/useProfile'
+import { useTailoredCvOwnAi } from '~/composables/useTailoredCvOwnAi'
+import { useTailoredCvPdf } from '~/composables/useTailoredCvPdf'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
-import type { Language } from '~/constants/listing'
 import type { TailoredCv, TailoredCvSectionKey } from '~/utils/tailoredCv'
-
-// Shared with the CV template (base CV) queries, whose versions hold the same content.
-export const CV_CONTENT_FIELDS = graphql(`
-  fragment TailoredCvContentFields on TailoredCvContent {
-    fullName
-    headline
-    email
-    phone
-    address
-    language
-    dateOfBirth
-    referencesOnRequest
-    sectionOrder
-    contentStyle
-    template
-    links {
-      label
-      url
-    }
-    summary
-    experiences {
-      employer
-      title
-      location
-      startMonth
-      endMonth
-      sourceEntryId
-      paragraph
-      technologies
-      bullets {
-        text
-        sourceBulletId
-      }
-    }
-    educations {
-      school
-      degree
-      field
-      location
-      startMonth
-      endMonth
-      sourceEntryId
-      paragraph
-      bullets {
-        text
-        sourceBulletId
-      }
-    }
-    certifications {
-      name
-      issuer
-      issuedMonth
-      expiresMonth
-      url
-      sourceEntryId
-      paragraph
-      bullets {
-        text
-        sourceBulletId
-      }
-    }
-    projects {
-      name
-      url
-      location
-      startMonth
-      endMonth
-      sourceEntryId
-      paragraph
-      kind
-      technologies
-      bullets {
-        text
-        sourceBulletId
-      }
-    }
-    skills {
-      name
-      level
-      sourceSkillId
-      categoryId
-      group
-    }
-    languages {
-      name
-      spoken
-      written
-    }
-  }
-`)
 
 const DRAFT = graphql(
   `
@@ -120,18 +29,6 @@ const FROM_PROFILE = graphql(
   `,
   [CV_CONTENT_FIELDS]
 )
-
-const PROMPT = graphql(`
-  query TailoredCvExternalPrompt(
-    $listingId: Int!
-    $template: TailoredCvTemplate
-    $language: Language
-  ) {
-    tailoredCvExternalPrompt(listingId: $listingId, template: $template, language: $language) {
-      instructions
-    }
-  }
-`)
 
 const ANALYZE = graphql(`
   mutation AnalyzeTailoredCvSection($input: AnalyzeTailoredCvSectionInput!) {
@@ -166,27 +63,6 @@ const ANALYZE = graphql(`
   }
 `)
 
-const PREVIEW = graphql(
-  `
-    mutation PreviewTailoredCvDraft($input: PreviewTailoredCvDraftInput!) {
-      previewTailoredCvDraft(input: $input) {
-        candidate {
-          content {
-            ...TailoredCvContentFields
-          }
-        }
-        errors {
-          __typename
-          ... on Error {
-            message
-          }
-        }
-      }
-    }
-  `,
-  [CV_CONTENT_FIELDS]
-)
-
 const SAVE = graphql(
   `
     mutation SaveTailoredCvDraft($input: SaveTailoredCvDraftInput!) {
@@ -209,25 +85,6 @@ const SAVE = graphql(
   `,
   [CV_CONTENT_FIELDS]
 )
-
-const GENERATE = graphql(`
-  mutation GenerateCvDocument($listingId: Int!) {
-    generateCvDocument(input: { listingId: $listingId }) {
-      document {
-        id
-        fileName
-        createdAt
-        sentAt
-      }
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
 
 export type TailoredCvDraft = NonNullable<ResultOf<typeof DRAFT>['tailoredCvDraft']>
 export type TailoredCvContent = TailoredCvDraft['content']
@@ -315,15 +172,22 @@ const snapshot = (cv: TailoredCv) => JSON.stringify(cv)
 
 // The editor's state: the editable candidate, AI suggestions waiting for Accept/Dismiss, per-section
 // errors, analysis progress and save. Nothing reaches the API's draft until save().
-export const useTailoredCvDraft = (
-  listingId: number,
-  profile: Ref<ProfileData | null | undefined>,
-  postingLanguage: Ref<Language | null | undefined> = ref(undefined)
-) => {
+export const useTailoredCvDraft = (listingId: number) => {
   const query = useTailoredCvDraftQuery(listingId)
   const llm = useLlmModels()
   const { attempt, safetyCode, safetyMessage, needsConfirm, confirmRetry } = useAiRequest()
   const draft = query.data
+  // The profile as this CV's content, built by the API (translations, order, language: the saved
+  // draft's, else the posting's, else English). What a new CV starts from, what Reset returns to and
+  // what the Add menus offer back. Started with the draft, so a saved CV doesn't wait for it.
+  const sourceQuery = useAsyncData(
+    `tailored-cv-source-${listingId}`,
+    () => gql(FROM_PROFILE, { listingId }).then((r) => r.tailoredCvDraftFromProfile),
+    { server: false }
+  )
+  const source = computed(() =>
+    sourceQuery.data.value ? tailoredCvFromContent(sourceQuery.data.value) : undefined
+  )
   const cv = ref<TailoredCv>()
   // The last saved state; null until the first save, so a new candidate counts as unsaved.
   const saved = ref<string | null>(null)
@@ -345,33 +209,32 @@ export const useTailoredCvDraft = (
   // Otherwise it waits as a suggestion, so the owner's work is never replaced silently.
   const fillsDirectly = () => !draft.value && !!cv.value && snapshot(cv.value) === seed.value
 
-  // The profile as a candidate in the chosen language; a new CV starts in the posting's language.
-  const fromProfile = (
-    source: ProfileData,
-    language: Language = cv.value?.language ?? postingLanguage.value ?? 'ENGLISH'
-  ) => tailoredCvFromProfile(source, language)
   // No draft and no edits yet: the candidate is just the profile, so "unsaved" would blame the owner.
   const pristine = computed(() => !draft.value && !!cv.value && snapshot(cv.value) === seed.value)
+  // Reset keeps the owner's layout choices, so they don't count as a difference.
   const matchesProfile = computed(
     () =>
-      !!cv.value && !!profile.value && snapshot(cv.value) === snapshot(fromProfile(profile.value))
+      !!cv.value &&
+      !!source.value &&
+      snapshot(cv.value) === snapshot(withLayoutFrom(source.value, cv.value))
   )
 
-  // Builds the candidate once both the draft and the profile are in. Returns true for a new candidate.
+  // Builds the candidate once the draft is in, and with no draft the source too. Returns true for a
+  // new candidate.
   const init = () => {
-    if (!profile.value || query.status.value !== 'success') return false
+    if (query.status.value !== 'success') return false
     const savedCv = draft.value ? tailoredCvFromContent(draft.value.content) : undefined
-    const savedSnapshot = savedCv ? snapshot(savedCv) : null
-    cv.value = savedCv ?? fromProfile(profile.value)
+    const start = savedCv ?? source.value
+    if (!start) return false
+    cv.value = cloneCv(start)
     seed.value = snapshot(cv.value)
-    saved.value = savedSnapshot
+    saved.value = savedCv ? seed.value : null
     writtenTemplate.value = cv.value.template
     return !draft.value
   }
 
-  // Starts over from the profile, built by the API (translations, language, standard layout), in
-  // the current language or the one the owner switches to. Nothing is saved: the old draft stays
-  // until the owner saves, so leaving or reloading brings it back.
+  // Starts over from the profile, in the current language or the one the owner switches to. Nothing
+  // is saved: the old draft stays until the owner saves, so leaving or reloading brings it back.
   // Returns an error message, or null once the editor holds the new candidate.
   const resetting = ref(false)
   const reset = async (language = cv.value?.language): Promise<string | null> => {
@@ -379,16 +242,9 @@ export const useTailoredCvDraft = (
     try {
       const { tailoredCvDraftFromProfile } = await gql(FROM_PROFILE, { listingId, language })
       if (!tailoredCvDraftFromProfile) return 'This listing no longer exists.'
-      // The API returns defaults for the three toggles, so the owner's choices stay.
-      const { contentStyle, sectionOrder, template, referencesOnRequest } = cv.value ?? {}
-      const fresh = tailoredCvFromContent(tailoredCvDraftFromProfile)
-      cv.value = {
-        ...fresh,
-        contentStyle: contentStyle ?? fresh.contentStyle,
-        sectionOrder: sectionOrder ?? fresh.sectionOrder,
-        template: template ?? fresh.template,
-        referencesOnRequest: referencesOnRequest ?? fresh.referencesOnRequest
-      }
+      sourceQuery.data.value = tailoredCvDraftFromProfile
+      const fresh = cloneCv(tailoredCvFromContent(tailoredCvDraftFromProfile))
+      cv.value = cv.value ? withLayoutFrom(fresh, cv.value) : fresh
       seed.value = snapshot(cv.value)
       suggestions.value = []
       sectionErrors.value = {}
@@ -422,31 +278,31 @@ export const useTailoredCvDraft = (
   // The API's own order: work experience first, then education and projects, then skills to match
   // them, and the summary last. Entries removed from this CV are skipped, so they don't come back.
   const steps = (): AnalysisStep[] => {
-    const kept = <T extends { id: number }>(
-      entries: readonly T[] | undefined,
-      list: readonly { sourceEntryId?: number | null }[] | undefined
-    ) => (entries ?? []).filter((e) => list?.some((c) => c.sourceEntryId === e.id))
-    const experiences = kept(profile.value?.experiences, cv.value?.experiences)
-    const educations = kept(profile.value?.educations, cv.value?.educations)
-    const projects = kept(profile.value?.projects, cv.value?.projects)
+    const kept = (list: 'experiences' | 'educations' | 'projects') =>
+      (source.value?.[list] ?? [])
+        .map((e) => e.sourceEntryId)
+        .filter((id): id is number => !!cv.value?.[list].some((c) => c.sourceEntryId === id))
+    const experiences = kept('experiences')
+    const educations = kept('educations')
+    const projects = kept('projects')
     return [
-      ...experiences.map((e, i) => ({
-        key: `experience:${e.id}` as const,
+      ...experiences.map((id, i) => ({
+        key: `experience:${id}` as const,
         label: `Analyzing experience ${i + 1} of ${experiences.length}`,
         section: 'EXPERIENCE' as const,
-        sourceEntryId: e.id
+        sourceEntryId: id
       })),
-      ...educations.map((e, i) => ({
-        key: `education:${e.id}` as const,
+      ...educations.map((id, i) => ({
+        key: `education:${id}` as const,
         label: `Analyzing education ${i + 1} of ${educations.length}`,
         section: 'EDUCATION' as const,
-        sourceEntryId: e.id
+        sourceEntryId: id
       })),
-      ...projects.map((p, i) => ({
-        key: `project:${p.id}` as const,
+      ...projects.map((id, i) => ({
+        key: `project:${id}` as const,
         label: `Analyzing project ${i + 1} of ${projects.length}`,
         section: 'PROJECT' as const,
-        sourceEntryId: p.id
+        sourceEntryId: id
       })),
       { key: 'skills', label: 'Analyzing skills', section: 'SKILLS', sourceEntryId: null },
       { key: 'summary', label: 'Writing the summary', section: 'SUMMARY', sourceEntryId: null }
@@ -485,8 +341,8 @@ export const useTailoredCvDraft = (
         return 'stop'
       }
       const value =
-        result && profile.value && cv.value
-          ? cvSectionFromAnalysis(cv.value, profile.value, result)
+        result && source.value && cv.value
+          ? cvSectionFromAnalysis(cv.value, source.value, result)
           : null
       if (!value) {
         const message = errors?.[0]?.message ?? result?.error ?? ERROR_MESSAGES.generic
@@ -543,80 +399,6 @@ export const useTailoredCvDraft = (
     }
   }
 
-  // The template and language the shown prompt was written for; the pasted reply is previewed with
-  // the same ones.
-  const promptTemplate = ref<TailoredCv['template']>()
-  const promptLanguage = ref<Language>()
-  const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
-    async () => {
-      // A switch while the request is out fetches again, so the prompt never trails the choice.
-      let template
-      let language
-      let text
-      do {
-        template = cv.value?.template
-        language = cv.value?.language
-        text = (await gql(PROMPT, { listingId, template, language })).tailoredCvExternalPrompt
-          .instructions
-      } while (template !== cv.value?.template || language !== cv.value?.language)
-      promptTemplate.value = template
-      promptLanguage.value = language
-      return text
-    }
-  )
-  // A prompt already on screen is fetched again, so the copied text matches the new template or
-  // language. One loaded before the draft went out without a template, which the API reads as
-  // Detailed, and without a language, which it reads as the saved draft's.
-  watch(
-    () => [cv.value?.template, cv.value?.language] as const,
-    ([template, language]) => {
-      const changed =
-        template !== (promptTemplate.value ?? 'DETAILED') ||
-        (!!promptLanguage.value && language !== promptLanguage.value)
-      if (instructions.value && !promptLoading.value && changed) void loadPrompt()
-    }
-  )
-  // Returns the API's error to show next to the pasted JSON, or null when the reply was taken in.
-  const previewing = ref(false)
-  // `scope` takes one section from the reply: the API has a single whole-CV prompt.
-  const preview = async (json: string, scope?: TailoredCvSectionKey): Promise<string | null> => {
-    if (!cv.value) return null
-    previewing.value = true
-    try {
-      const language = promptLanguage.value ?? cv.value.language
-      const { previewTailoredCvDraft } = await gql(PREVIEW, {
-        input: {
-          listingId,
-          json: json.trim(),
-          template: promptTemplate.value ?? cv.value.template,
-          language
-        }
-      })
-      const { candidate, errors } = previewTailoredCvDraft
-      if (!candidate) return errors?.[0]?.message ?? ERROR_MESSAGES.generic
-      const next = mergeExternalCandidate(cv.value, tailoredCvFromContent(candidate.content))
-      next.language = language
-      if (scope) {
-        const value = getCvSection(next, scope)
-        if (value === undefined) return 'The reply has nothing for this section.'
-        offer(scope, value, fillsDirectly())
-      } else {
-        writtenTemplate.value = promptTemplate.value ?? cv.value.template
-        if (fillsDirectly()) {
-          cv.value = next
-          suggestions.value = []
-        } else {
-          for (const { key, value } of changedCvSections(cv.value, next)) offer(key, value, false)
-        }
-      }
-      return null
-    } catch (e) {
-      return genericError(e)
-    } finally {
-      previewing.value = false
-    }
-  }
-
   const toastSuccess = useSuccessToast()
   const { run, loading: saving } = useMutation()
   const save = async () => {
@@ -637,66 +419,21 @@ export const useTailoredCvDraft = (
     return true
   }
 
-  // Every call adds another PDF, so a failure is never retried automatically. Unsaved edits (or no
-  // draft yet) are saved first, since the API generates from the saved draft; a failed save stops it.
-  // `useMutation` can't tell a missing draft from a missing listing (both are *NotFoundError), hence
-  // the explicit handling.
-  const generatePhase = ref<'saving' | 'generating'>()
-  const generating = computed(() => !!generatePhase.value)
-  const generated = ref<{
-    id: number
-    fileName: string
-    createdAt: string
-    sentAt: string | null
-  }>()
-  const generateError = ref<{
-    kind: 'draft' | 'listing' | 'other'
-    message: string
-    detail?: string
-  }>()
-  const generate = async () => {
-    if (generatePhase.value || !cv.value) return false
-    generated.value = generateError.value = undefined
-    try {
-      if (dirty.value || !draft.value) {
-        generatePhase.value = 'saving'
-        if (!(await save())) return false
-      }
-      generatePhase.value = 'generating'
-      const { generateCvDocument } = await gql(GENERATE, { listingId })
-      const error = generateCvDocument.errors?.[0]
-      if (error) {
-        const kind =
-          error.__typename === 'TailoredCvDraftNotFoundError'
-            ? 'draft'
-            : error.__typename === 'ListingNotFoundError'
-              ? 'listing'
-              : 'other'
-        generateError.value = { kind, message: error.message }
-        // The draft is gone: keep the candidate and count it as unsaved, so the next try saves it again.
-        if (kind === 'draft') {
-          draft.value = null
-          saved.value = null
-        }
-        return false
-      }
-      generated.value = generateCvDocument.document ?? undefined
-      return !!generated.value
-    } catch (e) {
-      generateError.value = {
-        kind: 'other',
-        message: ERROR_MESSAGES.generic,
-        detail: errorDetail(e)
-      }
-      return false
-    } finally {
-      generatePhase.value = undefined
-    }
-  }
+  const ownAi = useTailoredCvOwnAi({
+    listingId,
+    cv,
+    suggestions,
+    writtenTemplate,
+    offer,
+    fillsDirectly
+  })
+  const pdf = useTailoredCvPdf({ listingId, cv, draft, saved, dirty, save })
 
   return {
     query,
     draft,
+    sourceQuery,
+    source,
     cv,
     dirty,
     pristine,
@@ -720,20 +457,9 @@ export const useTailoredCvDraft = (
     safetyMessage,
     needsConfirm,
     confirmRetry,
-    instructions,
-    promptError,
-    promptLoading,
-    copied,
-    loadPrompt,
-    copyPrompt,
-    previewing,
-    preview,
     saving,
     save,
-    generatePhase,
-    generating,
-    generated,
-    generateError,
-    generate
+    ...ownAi,
+    ...pdf
   }
 }

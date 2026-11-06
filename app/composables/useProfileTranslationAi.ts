@@ -1,18 +1,20 @@
+import type { Ref } from 'vue'
 import type { VariablesOf } from 'gql.tada'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
+import type { Language } from '~/constants/listing'
 import type { AiOutcome } from '~/utils/aiOutcome'
 import type { SkillWording } from '~/composables/useSkillWording'
 
 const PROMPT = graphql(`
-  query ProfileTranslationPrompt {
-    profileTranslationPrompt(language: NORWEGIAN) {
+  query ProfileTranslationPrompt($language: Language!) {
+    profileTranslationPrompt(language: $language) {
       instructions
     }
   }
 `)
 const SUGGEST = graphql(`
-  mutation SuggestProfileTranslation($requestId: UUID) {
-    suggestProfileTranslation(input: { language: NORWEGIAN, requestId: $requestId }) {
+  mutation SuggestProfileTranslation($language: Language!, $requestId: UUID) {
+    suggestProfileTranslation(input: { language: $language, requestId: $requestId }) {
       result {
         status
         error
@@ -48,6 +50,7 @@ const SUGGEST = graphql(`
 `)
 const APPLY = graphql(`
   mutation ApplyProfileTranslation(
+    $language: Language!
     $bullets: [ProfileBulletTextInput!]!
     $headline: String
     $summary: String
@@ -56,7 +59,7 @@ const APPLY = graphql(`
   ) {
     applyProfileTranslation(
       input: {
-        language: NORWEGIAN
+        language: $language
         bullets: $bullets
         headline: $headline
         summary: $summary
@@ -111,19 +114,21 @@ export const parseTranslationReply = (reply: string): ProfileTranslationDraft | 
   }
 }
 
-// English → Norwegian only; the API rejects translating into the profile's own language.
-export const useProfileTranslationAi = () => {
+// `target` must differ from the profile's content language; the API rejects its own language.
+export const useProfileTranslationAi = (target: Ref<Language>) => {
   const { run, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
   const busy = ref(false)
   const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
-    async () => (await gql(PROMPT)).profileTranslationPrompt.instructions
+    async () =>
+      (await gql(PROMPT, { language: target.value })).profileTranslationPrompt.instructions
   )
 
   const suggest = () =>
     run(
       busy,
       {},
-      async (requestId) => (await gql(SUGGEST, { requestId })).suggestProfileTranslation,
+      async (requestId) =>
+        (await gql(SUGGEST, { language: target.value, requestId })).suggestProfileTranslation,
       ({ result }): AiOutcome<ProfileTranslationDraft> =>
         result?.status === 'SUCCEEDED' && result.translation
           ? {
@@ -142,10 +147,15 @@ export const useProfileTranslationAi = () => {
           : { error: result?.error ?? ERROR_MESSAGES.generic }
     )
 
-  const apply = async (draft: VariablesOf<typeof APPLY>): Promise<{ error?: string }> => {
+  const apply = async (
+    draft: Omit<VariablesOf<typeof APPLY>, 'language'>
+  ): Promise<{ error?: string }> => {
     busy.value = true
     try {
-      const { applyProfileTranslation: payload } = await gql(APPLY, draft)
+      const { applyProfileTranslation: payload } = await gql(APPLY, {
+        ...draft,
+        language: target.value
+      })
       return payload.errors?.length ? { error: payload.errors[0]!.message } : {}
     } catch (e) {
       return { error: genericError(e) }

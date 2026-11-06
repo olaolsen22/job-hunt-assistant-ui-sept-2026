@@ -2,9 +2,10 @@
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 
-// Creates a CV template, or renames one when `baseCv` is given. A new template starts as the profile
-// in its language and is saved as v1 at once (the API needs content to create it), so "AI draft" is
-// that plus the draft modal on its page; other languages are added from that page too.
+// Creates a CV template, or renames one when `baseCv` is given. "My profile" saves the profile in
+// that language as v1 at once, since there's nothing to review. "AI draft" creates nothing yet: its
+// page holds the draft until the owner has reviewed and saved it. Other languages are added from
+// the template's page.
 const { baseCv = undefined } = defineProps<{
   baseCv?: { id: number; name: string; description?: string | null }
 }>()
@@ -65,6 +66,14 @@ const submit = async () => {
       emit('saved')
       return
     }
+    if (state.startFrom === 'ai') {
+      open.value = false
+      await navigateTo({
+        path: '/cv-templates/new',
+        query: { name, description: description ?? undefined, lang: languageParam(state.language) }
+      })
+      return
+    }
     const content = toTailoredCvInput(await baseCvFromProfile(state.language))
     const { createBaseCv } = await gql(CREATE_BASE_CV, {
       input: { name, description, language: state.language, content }
@@ -73,9 +82,7 @@ const submit = async () => {
     if (error) return showError(error)
     open.value = false
     emit('saved')
-    await navigateTo(
-      `/cv-templates/${createBaseCv.baseCv!.id}${state.startFrom === 'ai' ? '?ai=1' : ''}`
-    )
+    await navigateTo(`/cv-templates/${createBaseCv.baseCv!.id}`)
   } catch (e) {
     formError.value = `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
   } finally {
@@ -91,10 +98,12 @@ const submit = async () => {
     :description="
       baseCv
         ? undefined
-        : 'Starts as your profile in the chosen language. Edit it, then save new versions as it changes.'
+        : state.startFrom === 'ai'
+          ? 'Draft it with your own AI and review it. Nothing is created until you save.'
+          : 'Starts as your profile in the chosen language. Edit it, then save new versions as it changes.'
     "
     :save-label="
-      baseCv ? 'Save' : state.startFrom === 'ai' ? 'Create and draft with AI' : 'Create and edit'
+      baseCv ? 'Save' : state.startFrom === 'ai' ? 'Continue to AI draft' : 'Create and edit'
     "
     :loading="saving"
     :state="state"
@@ -140,16 +149,7 @@ const submit = async () => {
           data-testid="cv-template-language"
         />
       </UFormField>
-      <UFormField
-        v-if="!baseCv"
-        label="Start from"
-        name="startFrom"
-        :help="
-          state.startFrom === 'ai'
-            ? 'Saved from your profile as v1 first. Your AI draft then becomes v2 once you save it.'
-            : undefined
-        "
-      >
+      <UFormField v-if="!baseCv" label="Start from" name="startFrom">
         <URadioGroup
           v-model="state.startFrom"
           :items="START_OPTIONS"

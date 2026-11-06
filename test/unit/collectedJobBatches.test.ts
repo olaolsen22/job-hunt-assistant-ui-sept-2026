@@ -26,7 +26,7 @@ describe('planCollectedJobBatches', () => {
   it('splits by compact serialized size while preserving escaped and nested values', () => {
     const input = jobs(3).map((job) => ({
       ...job,
-      description: 'a"\\'.repeat(2_200),
+      description: 'a"\\'.repeat(COLLECTED_JOB_TEXT_LIMIT / 8),
       details: { city: 'Oslo' }
     }))
     const batches = planCollectedJobBatches(input)
@@ -146,7 +146,7 @@ describe('useCollectedJobProcessing', () => {
     expect(() =>
       runner.start([
         ...jobs(21),
-        { url: 'https://example.com/huge', description: 'x'.repeat(12_000) }
+        { url: 'https://example.com/huge', description: 'x'.repeat(COLLECTED_JOB_TEXT_LIMIT) }
       ])
     ).toThrow('Job 22')
     expect(parse).not.toHaveBeenCalled()

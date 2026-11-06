@@ -55,6 +55,7 @@ registerEndpoint('/graphql', {
 
 // Only the fields the review reads.
 const profile = {
+  contentLanguage: 'ENGLISH',
   headline: 'Developer',
   summary: 'I build apps.',
   translations: [{ language: 'NORWEGIAN', headline: 'Utvikler', summary: null }],
@@ -90,9 +91,9 @@ const click = async (el: HTMLElement) => {
   await flushPromises()
 }
 const mounted: { unmount: () => void }[] = []
-const mount = async () => {
+const mount = async (contentLanguage = 'ENGLISH') => {
   const wrapper = await mountSuspended(TranslationAiModal, {
-    props: { open: true, profile },
+    props: { open: true, profile: { ...profile, contentLanguage } },
     attachTo: document.body
   })
   mounted.push(wrapper)
@@ -148,6 +149,7 @@ describe('TranslationAiModal', () => {
 
     await vi.waitFor(() => expect(wrapper.emitted('changed')).toHaveLength(1))
     expect(applyRequests()[0]!.variables).toEqual({
+      language: 'NORWEGIAN',
       bullets: [{ id: 10, text: 'Bygde nettapper' }],
       headline: 'Utvikler med erfaring',
       summary: null,
@@ -200,6 +202,25 @@ describe('TranslationAiModal', () => {
     await vi.waitFor(() => expect(query('translation-ai-apply-error')).not.toBeNull())
     expect(query('translation-ai-apply-error')!.textContent).toContain('Repeated bullet.')
     expect(wrapper.emitted('changed')).toBeUndefined()
+  })
+
+  it('translates a Norwegian profile into English through the same calls', async () => {
+    useNuxtData('writing-samples').data.value = [{ id: 1, language: 'NORWEGIAN' }]
+    await mount('NORWEGIAN')
+    expect(document.body.textContent).toContain('Translate to English with AI')
+    // No English samples to match, so the hint names English.
+    expect(query('translation-ai-samples-hint')!.textContent).toContain('English writing samples')
+    await click(query('translation-ai-suggest')!)
+    await vi.waitFor(() => expect(query('translation-ai-apply')).not.toBeNull())
+    const sent = (name: string) => requests.find((r) => r.query.includes(name))!.variables
+    expect(sent('query ProfileTranslationPrompt')).toMatchObject({ language: 'ENGLISH' })
+    expect(sent('mutation SuggestProfileTranslation')).toMatchObject({ language: 'ENGLISH' })
+
+    await click(query('translation-ai-apply')!)
+    await vi.waitFor(() =>
+      expect(requests.some((r) => r.query.includes('mutation ApplyProfileTranslation'))).toBe(true)
+    )
+    expect(sent('mutation ApplyProfileTranslation')).toMatchObject({ language: 'ENGLISH' })
   })
 
   it('suggests adding Norwegian writing samples only when there are none', async () => {
