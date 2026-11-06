@@ -37,8 +37,23 @@ export const useAiPrompt = (
     }
   }
   const copyPrompt = () => copyText(instructions.value)
+  // For a prompt built from typed input: once that changes, the loaded prompt no longer matches it.
+  const reset = () => {
+    raw.value = ''
+    promptError.value = ''
+    copied.value = false
+  }
 
-  return { instructions, promptLoading, promptError, copied, loadPrompt, copyText, copyPrompt }
+  return {
+    instructions,
+    promptLoading,
+    promptError,
+    copied,
+    loadPrompt,
+    copyText,
+    copyPrompt,
+    reset
+  }
 }
 
 // copyPrompt is optional for prompts that are copied with input added (the ad parse).

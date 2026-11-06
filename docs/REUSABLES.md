@@ -77,8 +77,7 @@ remove it when you delete one.
   active option clears it. Generic over the option value type. Rule in the form: 3 or fewer options use this, more use a
   clearable `USelectMenu` (`USelect` can't go back to empty).
 - `<ListingsFilterPanel :facets v-model:sort v-model:search :quick-counts>` — the `/listings` toolbar (search, sort, "Filters (n)",
-  Favorites toggle), a removable chip per active facet (plus `companyId`, labelled by the optional `company-name` prop) + Clear all, and the facet sheet
-  (quick toggles as switches with `quick-counts` on top); edits `facets` in place.
+  Favorites toggle, a wrapping row of quick toggles with `quick-counts`), a removable chip per active sheet facet (plus `companyId`, labelled by the optional `company-name` prop) + Clear all, and the facet sheet; edits `facets` in place.
 - `<CompaniesFilterPanel v-model:facets v-model:search>` — the same toolbar, chips and sheet for `/companies` (hide avoided, has contacts,
   research any/yes/no, size, industry, skill, location, work mode, working language). Query/URL logic in `utils/companiesQuery.ts`, state in `useCompaniesList(grid)`.
 - `<AppFilterSheet v-model:open testid-prefix clear-disabled @clear>` — the Filters slideover both panels use (right from `md`, bottom on
@@ -117,14 +116,17 @@ remove it when you delete one.
   — pick an uploaded document or a new PDF (uploaded by the caller on submit); `base-cvs` (the CV picker) also offers
   a CV template and version, which the caller turns into a document on submit (`GENERATE_BASE_CV_DOCUMENT`) and keeps
   for a retry. Used twice by `<ListingsApplyModal>`.
-- `<CvContentEditor v-model:cv :profile disabled? :ai?>` — the CV's content cards (contact, summary, entries, skills,
+- `<CvContentEditor v-model:cv v-model:flagged? :flag-language? :profile disabled? :ai?>` — the CV's content cards (contact, summary, entries, skills,
   languages) and their edit modals, applied to `cv` in place. Shared by the tailored CV page, which passes `ai`
-  (`CvEditorAi`: suggestion and AI-run bindings), and the CV template editor, which doesn't.
+  (`CvEditorAi`: suggestion and AI-run bindings), and the CV template editor, which doesn't. `flagged` content paths
+  (a translated template) show as "Still in English" badges on their cards (`data-flagged` for scrolling) and clear
+  when that card's edit applies.
 - `<ListingsTailoredCvPdfModal v-model:open url file-name applicable?>` — previews any same-origin PDF: a document
   (`/api/documents/<id>`) or a CV template version (`baseCvPdfUrl(versionId)`).
 - `<CvTemplatesDetailsModal v-model:open base-cv? @saved>` creates a CV template (prefilled from
-  `baseCvFromProfile(language)`, then opens its editor) or renames one; `<CvTemplatesDeleteModal v-model:open base-cv
+  `baseCvFromProfile(language)`, then opens its editor, with `?ai=1` when started as an AI draft) or renames one; `<CvTemplatesDeleteModal v-model:open base-cv
 @deleted @archived>` offers Archive instead once the API says the template is in use.
+- `<CvTemplatesAiDraftModal v-model:open editor>` — the own-AI draft of a template's current language: target role, notes and CV style build the prompt ("Create prompt"; a changed detail needs "Update prompt", the pasted reply stays), the reply goes through `previewBaseCv` and into `editor.replaceContent`, unsaved. Test ids `cv-ai-draft-*`.
 - `/profile` (`pages/profile.vue`, data from `useProfile()`) is built from `<Profile…>` components, which own their
   mutations and emit `changed` (page refetches) or `saved` (Basics/Preferences return the whole profile):
   `<ProfileSection title icon testid empty empty-message add-label full? clearable? @add @clear>` (card with a centered empty state; header
@@ -171,7 +173,7 @@ remove it when you delete one.
   — the add page checks a filled form's names in one aliased query and provides the result;
   `NameCombobox` and `SkillsField` inject it to flag names the API doesn't know. No provider = nothing
   flagged. Also exports `NameLookup`.
-- `useAiPrompt(fetchInstructions, transform?)` → `{ instructions, promptLoading, promptError, copied, loadPrompt, copyText(text), copyPrompt() }` — the own-AI prompt every AI composable uses; `transform` appends what the query can't take (cover letter notes). `AiPromptState` is what `AppAiOwnSteps` takes.
+- `useAiPrompt(fetchInstructions, transform?)` → `{ instructions, promptLoading, promptError, copied, loadPrompt, copyText(text), copyPrompt(), reset() }` — the own-AI prompt every AI composable uses; `transform` appends what the query can't take (cover letter notes); `reset` clears a loaded prompt once the input it was built from changes (CV template AI draft). `AiPromptState` is what `AppAiOwnSteps` takes.
 - `useAiModalState(open, { tabFor?, onOpen? })` → `{ method, tab, error, errorCode, usage, refreshUsage }` — the open/reset boilerplate of every AI modal: tab from the remembered method (`tabFor` maps it), error cleared on open and on a tab switch, today's usage fetched on open, `errorCode` forgotten with its error; `onOpen(tab)` runs on each open (also when mounted open); call `refreshUsage()` after a run. `useTextRewriteReview(open, reply)` — the review step of the skill wording and translation modals: `rows` (`RewriteRow`: `current`, `text`, `include`), `included`/`blank`/`canApply`/`applicable`, `setAll`, `start(rows)`, `apply(save, done)`, `back`, `discard`, `requestClose`, `applyError`, `confirmOpen`. `useReviewDirty(state)` → `{ dirty, mark, clear }` — whether a review changed since `mark()`, so closing asks to discard only after an edit.
 - `useAiMethod()` → cookie `ai-method` (`builtin | own | null`): AI modals and quick-add open on it and write it after a successful run.
 - `useLeaveConfirm(unsaved)` → `{ open, leave }` — a page's in-app "Leave without saving?" (route-leave guard + confirm state); `useAiLeaveGuard()` → `{ open, leave }` — used once by the default layout: any navigation to another path while a built-in AI request is in flight asks first; `navigateAfterConfirm(to)` navigates past it after a page already asked. Reload/close is `plugins/leave-guard.client.ts`.
@@ -204,11 +206,14 @@ remove it when you delete one.
 
 - `useListingImports.ts` — job imports (collected-jobs files the API picks up): `usePendingImportCount()` for the sidebar badge, dashboard notice and imports tab badge (refresh with `refreshNuxtData(PENDING_IMPORTS_KEY)`), `fetchListingImports`/`fetchListingImport(id)` (only the single fetch selects `content`), `useSetImportReviewed()`, `useNextImport(currentId)` (`nextImportId`, `load`; first other pending import without an error).
 - `useBaseCvs.ts` — CV templates (the API's base CVs; "template" in CV content is the DETAILED/CONCISE style).
-  `useBaseCvEditor(id)` loads the template (the API has no single-template query, so both lists in one request),
-  keeps an editable `cv` and `dirty`, and `save(note)` returns `{ number, isNew }`: unchanged content returns the
-  latest version, so only `isNew` means a new version. `InvalidTailoredCvDraftError` lands in `invalidContent` for the
+  `useBaseCvEditor(id)` loads the template (the API has no single-template query, so both lists in one request,
+  with both languages' latest content), edits one `language` at a time (`?lang=en|no`, `switchTo`), keeps an
+  editable `cv` and `dirty`, and `save(note)` returns `{ number, language, isNew }`: versions are numbered per
+  language, and unchanged content returns the latest one, so only `isNew` means a new version. `addLanguage(lang)`
+  loads the API's unsaved translation as a `draft` with `flagged` paths still in the source language. `replaceContent(next)` loads an AI draft unsaved (keeps the section order and references choice; `aiDrafted` until saved, discarded or replaced). `InvalidTailoredCvDraftError` lands in `invalidContent` for the
   page's Reload from profile. `useBaseCvActions()` → `setArchived(id, bool)`, `remove(id)` → deleted | in-use |
-  failed. Also `BASE_CV_LIST`, `baseCvFromProfile(language)`, `baseCvPdfUrl(versionId)`.
+  failed. Also `BASE_CV_LIST`, `baseCvFromProfile(language)`, `baseCvPdfUrl(versionId)`, `languageCode` (EN/NO),
+  `versionsIn`/`latestIn(versions, language)`.
 
 ## Stores (`app/stores/`)
 

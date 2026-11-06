@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { BaseCvListItem } from '~/composables/useBaseCvs'
 import type { ListingDetail } from '~/composables/useListing'
-import { languageLabel } from '~/constants/listing'
+import { languageLabel, type Language } from '~/constants/listing'
 
 const {
   documents,
@@ -31,32 +31,43 @@ const { data: templates } = baseCvs
       { server: false }
     )
   : { data: ref<BaseCvListItem[]>() }
+// One option per template language that has a saved version ("Frontend · Norwegian"); versions
+// are numbered per language, so the version list is that language's only.
+const choiceKey = (id: number, lang: Language) => `${id}:${lang}`
 const templateItems = computed(() =>
-  (templates.value ?? []).map((t) => ({
-    label: `${t.name} · ${languageLabel(t.language)}`,
-    value: t.id
-  }))
+  (templates.value ?? []).flatMap((t) =>
+    t.languages
+      .filter((lang) => latestIn(t.versions, lang))
+      .map((lang) => ({
+        label: `${t.name} · ${languageLabel(lang)}`,
+        value: choiceKey(t.id, lang)
+      }))
+  )
 )
-const templateId = ref<number>()
-const template = computed(() => templates.value?.find((t) => t.id === templateId.value))
+const choice = ref<string>()
+const template = computed(() => templates.value?.find((t) => choice.value?.startsWith(`${t.id}:`)))
+const language = computed(() => choice.value?.split(':')[1] as Language | undefined)
+const languageVersions = computed(() =>
+  template.value && language.value ? versionsIn(template.value.versions, language.value) : []
+)
 const versionItems = computed(() =>
-  (template.value?.versions ?? []).map((v, i) => ({
+  languageVersions.value.map((v, i) => ({
     label: i === 0 ? `v${v.number} (latest)` : `v${v.number}`,
     value: v.id
   }))
 )
-// Picking a template picks its latest version (versions come newest first).
-const pickTemplate = (id: number | undefined) => {
-  templateId.value = id
-  baseCvVersionId.value = template.value?.latestVersion.id
+// Picking a template language picks its latest version (versions come newest first).
+const pickTemplate = (key: string | undefined) => {
+  choice.value = key
+  baseCvVersionId.value = languageVersions.value[0]?.id
   documentId.value = undefined
   file.value = null
 }
 // The parent clears the version once it has made the document, so the template choice goes too.
 watch(baseCvVersionId, (id) => {
-  if (id === undefined) templateId.value = undefined
+  if (id === undefined) choice.value = undefined
 })
-const version = computed(() => template.value?.versions.find((v) => v.id === baseCvVersionId.value))
+const version = computed(() => languageVersions.value.find((v) => v.id === baseCvVersionId.value))
 const previewOpen = ref(false)
 // Choosing a file or an upload drops the other choices; programmatic resets don't count.
 const pickOther = (clear: () => void) => {
@@ -78,7 +89,7 @@ const pickOther = (clear: () => void) => {
       />
       <div v-if="templateItems.length" class="space-y-2" data-testid="document-picker-templates">
         <USelect
-          :model-value="templateId"
+          :model-value="choice"
           :items="templateItems"
           placeholder="Or use a CV template"
           class="w-full"
@@ -120,7 +131,7 @@ const pickOther = (clear: () => void) => {
       v-if="template && version"
       v-model:open="previewOpen"
       :url="baseCvPdfUrl(version.id)"
-      :file-name="`${template.name} v${version.number}.pdf`"
+      :file-name="`${template.name} (${languageCode(version.language)}) v${version.number}.pdf`"
     />
   </UFormField>
 </template>

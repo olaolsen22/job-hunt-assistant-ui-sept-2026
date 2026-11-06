@@ -37,13 +37,31 @@ registerEndpoint('/graphql', {
               id: 4,
               name: 'Frontend (EN)',
               description: null,
-              language: 'ENGLISH',
+              languages: ['ENGLISH', 'NORWEGIAN'],
               archivedAt: null,
               updatedAt: '2026-10-30T10:00:00Z',
-              latestVersion: { id: 42, number: 2 },
               versions: [
-                { id: 42, number: 2, note: null, createdAt: '2026-10-30T10:00:00Z' },
-                { id: 41, number: 1, note: null, createdAt: '2026-10-20T10:00:00Z' }
+                {
+                  id: 51,
+                  language: 'NORWEGIAN',
+                  number: 1,
+                  note: null,
+                  createdAt: '2026-11-01T10:00:00Z'
+                },
+                {
+                  id: 42,
+                  language: 'ENGLISH',
+                  number: 2,
+                  note: null,
+                  createdAt: '2026-10-30T10:00:00Z'
+                },
+                {
+                  id: 41,
+                  language: 'ENGLISH',
+                  number: 1,
+                  note: null,
+                  createdAt: '2026-10-20T10:00:00Z'
+                }
               ]
             }
           ]

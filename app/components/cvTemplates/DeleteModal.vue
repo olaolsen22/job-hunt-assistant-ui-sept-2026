@@ -35,7 +35,7 @@ const confirm = async () => {
     :description="
       inUse
         ? 'It was used for an application, so it is kept for the record. Archiving hides it from the Apply dialog; you can restore it later.'
-        : 'The template and all its versions are deleted.'
+        : 'The template and all its versions, in every language, are deleted.'
     "
     :confirm-label="inUse ? 'Archive' : 'Delete'"
     :color="inUse ? 'primary' : 'error'"

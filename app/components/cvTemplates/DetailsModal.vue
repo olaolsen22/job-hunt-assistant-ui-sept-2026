@@ -3,15 +3,25 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 
 // Creates a CV template, or renames one when `baseCv` is given. A new template starts as the profile
-// in its language and is saved as v1 at once (the API needs content to create it); the language
-// can't change later, so the other language is a separate template.
+// in its language and is saved as v1 at once (the API needs content to create it), so "AI draft" is
+// that plus the draft modal on its page; other languages are added from that page too.
 const { baseCv = undefined } = defineProps<{
   baseCv?: { id: number; name: string; description?: string | null }
 }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ saved: [] }>()
 
-const state = reactive({ name: '', description: '', language: 'ENGLISH' as Language })
+const START_OPTIONS = [
+  { label: 'My profile', value: 'profile' },
+  { label: 'AI draft', value: 'ai' }
+]
+
+const state = reactive({
+  name: '',
+  description: '',
+  language: 'ENGLISH' as Language,
+  startFrom: 'profile'
+})
 const nameError = ref<string>()
 const existingId = ref<number>()
 const formError = ref<string>()
@@ -20,7 +30,8 @@ watch(open, (isOpen) => {
   Object.assign(state, {
     name: baseCv?.name ?? '',
     description: baseCv?.description ?? '',
-    language: 'ENGLISH'
+    language: 'ENGLISH',
+    startFrom: 'profile'
   })
   nameError.value = formError.value = existingId.value = undefined
 })
@@ -62,7 +73,9 @@ const submit = async () => {
     if (error) return showError(error)
     open.value = false
     emit('saved')
-    await navigateTo(`/cv-templates/${createBaseCv.baseCv!.id}`)
+    await navigateTo(
+      `/cv-templates/${createBaseCv.baseCv!.id}${state.startFrom === 'ai' ? '?ai=1' : ''}`
+    )
   } catch (e) {
     formError.value = `${ERROR_MESSAGES.generic} (${errorDetail(e)})`
   } finally {
@@ -80,7 +93,9 @@ const submit = async () => {
         ? undefined
         : 'Starts as your profile in the chosen language. Edit it, then save new versions as it changes.'
     "
-    :save-label="baseCv ? 'Save' : 'Create and edit'"
+    :save-label="
+      baseCv ? 'Save' : state.startFrom === 'ai' ? 'Create and draft with AI' : 'Create and edit'
+    "
     :loading="saving"
     :state="state"
     :validate="validate"
@@ -116,13 +131,30 @@ const submit = async () => {
         v-if="!baseCv"
         label="Language"
         name="language"
-        help="Can't be changed later. Make a separate template for the other language."
+        help="The first language. Add a translated version from the template's page later."
       >
         <URadioGroup
           v-model="state.language"
           :items="[...LANGUAGE_OPTIONS]"
           orientation="horizontal"
           data-testid="cv-template-language"
+        />
+      </UFormField>
+      <UFormField
+        v-if="!baseCv"
+        label="Start from"
+        name="startFrom"
+        :help="
+          state.startFrom === 'ai'
+            ? 'Saved from your profile as v1 first. Your AI draft then becomes v2 once you save it.'
+            : undefined
+        "
+      >
+        <URadioGroup
+          v-model="state.startFrom"
+          :items="START_OPTIONS"
+          orientation="horizontal"
+          data-testid="cv-template-start-from"
         />
       </UFormField>
       <UAlert

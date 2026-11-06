@@ -17,13 +17,28 @@ import type {
 const {
   profile,
   disabled = false,
-  ai = undefined
+  ai = undefined,
+  flagLanguage = ''
 } = defineProps<{
   profile: ProfileData | null | undefined
   disabled?: boolean
   ai?: CvEditorAi
+  // The language that `flagged` text is still in, for its badges ("Still in English").
+  flagLanguage?: string
 }>()
 const cv = defineModel<TailoredCv>('cv', { required: true })
+// Content paths still in another language (a translated CV template). Each card shows a badge
+// for its own; applying that card's edit clears them, since the owner has reviewed it.
+const flagged = defineModel<string[]>('flagged', { default: () => [] })
+const flagCounts = computed(() => cvFlagCounts(flagged.value))
+const warning = (key: string) => {
+  const count = flagCounts.value.get(key)
+  if (!count) return undefined
+  return count === 1 ? `Still in ${flagLanguage}` : `${count} parts still in ${flagLanguage}`
+}
+const clearFlags = (key: string) => {
+  if (flagCounts.value.has(key)) flagged.value = clearCvFlags(flagged.value, key)
+}
 
 const toast = useToast()
 const entryStyle = computed(() => cvEntryStyle(cv.value))
@@ -55,6 +70,7 @@ const applyGroups = (groups: Map<string, string>) => {
   const skills = cv.value.skills
   const before = skills.map((s) => [s, s.group] as const)
   for (const skill of skills) skill.group = groups.get(skill.name) ?? skill.group
+  clearFlags('skills')
   toast.add({
     title: 'Groups suggested. Review them, then save.',
     icon: 'i-lucide-sparkles',
@@ -85,6 +101,7 @@ const editEntry = (list: CvEntryList, index: number) => {
 const applyEntry = (entry: CvEntry) => {
   const { list, index } = editedEntry.value!
   ;(cv.value[list] as CvEntry[])[index] = entry
+  clearFlags(`${list}[${index}]`)
 }
 
 const contactOpen = ref(false)
@@ -101,6 +118,7 @@ const editSummary = () => {
 const applySummary = () => {
   cv.value.summary = summaryDraft.value
   summaryOpen.value = false
+  clearFlags('summary')
 }
 
 // Read views: only what's filled in, one line per contact detail or language.
@@ -131,6 +149,8 @@ const languageLine = (l: TailoredCv['languages'][number]) =>
 // profile) brings a profile item back.
 const removeItem = (list: CvProfileList, index: number, name: string) => {
   const [item] = (cv.value[list] as unknown[]).splice(index, 1)
+  // Undo puts the item back without its flags; it was looked at before removing.
+  if (flagged.value.length) flagged.value = removeCvFlagItem(flagged.value, list, index)
   toast.add({
     title: name.trim() ? `Removed ${name} from this CV` : 'Removed from this CV',
     icon: 'i-lucide-trash-2',
@@ -177,6 +197,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
   <ListingsTailoredCvSection
     title="Contact and headline"
     testid="tailored-cv-contact"
+    :warning="warning('contact')"
     editable
     v-bind="ai?.review('headline')"
     suggestion-label="Headline"
@@ -203,6 +224,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
   <ListingsTailoredCvSection
     title="Summary"
     testid="tailored-cv-summary"
+    :warning="warning('summary')"
     editable
     :analyzable="!!ai"
     v-bind="ai?.section('summary')"
@@ -232,6 +254,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
       <ListingsTailoredCvEntry
         v-for="(e, i) in cv.experiences"
         :key="e.sourceEntryId ?? `new-${i}`"
+        :warning="warning(`experiences[${i}]`)"
         v-bind="ai?.section(`experience:${e.sourceEntryId!}`)"
         :bullets="e.bullets"
         :paragraph="e.paragraph"
@@ -252,6 +275,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
   <ListingsTailoredCvSection
     title="Skills"
     testid="tailored-cv-skills"
+    :warning="warning('skills')"
     :analyzable="!!ai"
     v-bind="ai?.section('skills')"
     :empty-message="emptyMessage('skills', 'No skills in this CV.')"
@@ -317,7 +341,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
                 :aria-label="`${skill.name} group`"
                 class="min-w-0 flex-1 sm:w-36 sm:flex-none"
                 data-testid="tailored-cv-skill-group"
-                @update:model-value="(value) => (skill.group = value)"
+                @update:model-value="(value) => ((skill.group = value), clearFlags('skills'))"
               />
             </template>
             <UButton
@@ -380,6 +404,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
       <ListingsTailoredCvEntry
         v-for="(e, i) in cv.educations"
         :key="e.sourceEntryId ?? `new-${i}`"
+        :warning="warning(`educations[${i}]`)"
         v-bind="ai?.section(`education:${e.sourceEntryId!}`)"
         :bullets="e.bullets"
         :paragraph="e.paragraph"
@@ -409,6 +434,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
       <ListingsTailoredCvEntry
         v-for="(c, i) in cv.certifications"
         :key="c.sourceEntryId ?? `new-${i}`"
+        :warning="warning(`certifications[${i}]`)"
         :bullets="c.bullets"
         :paragraph="c.paragraph"
         :content-style="entryStyle"
@@ -434,6 +460,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
       <ListingsTailoredCvEntry
         v-for="(p, i) in cv.projects"
         :key="p.sourceEntryId ?? `new-${i}`"
+        :warning="warning(`projects[${i}]`)"
         v-bind="ai?.section(`project:${p.sourceEntryId!}`)"
         :bullets="p.bullets"
         :paragraph="p.paragraph"
@@ -455,6 +482,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
   <ListingsTailoredCvSection
     title="Languages"
     testid="tailored-cv-languages"
+    :warning="warning('languages')"
     editable
     :empty-message="cv.languages.length ? undefined : 'No languages in this CV.'"
     v-bind="ai?.review('languages')"
@@ -480,13 +508,13 @@ const emptyMessage = (list: CvProfileList, none: string) => {
     v-if="contactOpened"
     v-model:open="contactOpen"
     :cv="cv"
-    @apply="(contact) => Object.assign(cv, contact)"
+    @apply="(contact) => (Object.assign(cv, contact), clearFlags('contact'))"
   />
   <LazyListingsTailoredCvLanguagesModal
     v-if="languagesOpened"
     v-model:open="languagesOpen"
     :languages="cv.languages"
-    @apply="(languages) => (cv.languages = languages)"
+    @apply="(languages) => ((cv.languages = languages), clearFlags('languages'))"
   />
   <AppFormModal
     v-model:open="summaryOpen"

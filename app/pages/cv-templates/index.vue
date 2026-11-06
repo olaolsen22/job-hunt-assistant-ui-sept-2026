@@ -2,7 +2,6 @@
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { BaseCvListItem } from '~/composables/useBaseCvs'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
-import { languageLabel } from '~/constants/listing'
 
 definePageMeta({ title: 'CV templates' })
 
@@ -129,13 +128,20 @@ const onDeleted = async (name: string, outcome: 'deleted' | 'archived') => {
                 data-testid="cv-templates-row-link"
                 >{{ b.name }}</NuxtLink
               >
-              <UBadge color="neutral" variant="subtle" size="sm">{{
-                languageLabel(b.language)
-              }}</UBadge>
             </div>
-            <p class="text-sm text-muted">
-              v{{ b.latestVersion.number }} · updated {{ daysAgoLabel(b.updatedAt) }}
-            </p>
+            <!-- One badge per language with its own latest version; numbers are per language. -->
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+              <UBadge
+                v-for="lang in b.languages"
+                :key="lang"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+                data-testid="cv-templates-row-language"
+                >{{ languageCode(lang) }} v{{ latestIn(b.versions, lang)?.number }}</UBadge
+              >
+              <span>updated {{ daysAgoLabel(b.updatedAt) }}</span>
+            </div>
             <p v-if="b.description" class="line-clamp-2 break-words text-sm">
               {{ b.description }}
             </p>

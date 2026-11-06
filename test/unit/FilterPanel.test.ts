@@ -87,15 +87,44 @@ describe('FilterPanel', () => {
     wrapper.unmount()
   })
 
-  it('counts a quick toggle on Filters and shows it as a removable chip', async () => {
-    const facets = reactive<ListingsFacets>({ ...emptyFacets(), itRoles: true })
+  it('toggles a quick filter from the toolbar, showing its count, without a chip', async () => {
+    const facets = reactive(emptyFacets())
     const wrapper = await mountSuspended(FilterPanel, {
       props: { facets, search: '', quickCounts }
     })
-    expect(wrapper.get('[data-testid="listings-filters-toggle"]').text()).toContain('1')
-    expect(wrapper.get('[data-testid="listings-chip-it"]').text()).toBe('IT roles')
+    const button = wrapper.get('[data-testid="listings-facet-it"]')
+    expect(button.text()).toContain('IT roles')
+    expect(button.text()).toContain('5')
+    expect(button.attributes('aria-pressed')).toBe('false')
 
-    await wrapper.get('[data-testid="listings-chip-it"]').trigger('click')
+    await button.trigger('click')
+    expect(facets.itRoles).toBe(true)
+    expect(button.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="listings-chip-it"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="listings-filters-toggle"]').text()).not.toContain('1')
+
+    await button.trigger('click')
     expect(facets.itRoles).toBe(false)
+  })
+
+  it('keeps quick filters on when the sheet clears, and resets them with Clear all', async () => {
+    const facets = reactive<ListingsFacets>({
+      ...emptyFacets(),
+      itRoles: true,
+      favorites: true,
+      statuses: ['APPLIED']
+    })
+    const wrapper = await mountSuspended(FilterPanel, {
+      props: { facets, search: '', quickCounts },
+      attachTo: document.body
+    })
+    await wrapper.get('[data-testid="listings-filters-toggle"]').trigger('click')
+    await vi.waitFor(() => expect(inSheet('listings-sheet-clear')).not.toBeNull())
+    ;(inSheet('listings-sheet-clear') as HTMLElement).click()
+    expect(facets).toEqual({ ...emptyFacets(), itRoles: true, favorites: true })
+
+    await wrapper.get('[data-testid="listings-filters-clear"]').trigger('click')
+    expect(facets).toEqual(emptyFacets())
+    wrapper.unmount()
   })
 })

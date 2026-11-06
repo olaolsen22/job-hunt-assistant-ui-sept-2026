@@ -20,6 +20,8 @@ defineProps<{
   suggestionLabel?: string
   addItems?: DropdownMenuItem[]
   addLabel?: string
+  // Text still in another language (a translated CV template), as a warning badge.
+  warning?: string
 }>()
 const emit = defineEmits<{
   edit: []
@@ -30,7 +32,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <AppCard :title="title" :data-testid="testid">
+  <AppCard :title="title" :data-flagged="warning ? '' : undefined" :data-testid="testid">
     <template v-if="editable || analyzable || addItems" #actions>
       <div class="flex flex-wrap items-center justify-end gap-2">
         <UButton
@@ -73,6 +75,14 @@ const emit = defineEmits<{
     </template>
 
     <div class="space-y-4">
+      <UBadge
+        v-if="warning"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-languages"
+        :data-testid="`${testid}-warning`"
+        >{{ warning }}</UBadge
+      >
       <AppAiErrorAlert
         v-if="error"
         :title="error"

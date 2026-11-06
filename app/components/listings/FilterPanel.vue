@@ -15,7 +15,7 @@ const { companyName = '', quickCounts } = defineProps<{
   quickCounts: Record<QuickToggle, number>
 }>()
 
-// Yes/no facets with a count each, at the top of the sheet.
+// Yes/no facets with a count each, one tap away under the search row.
 const QUICK_TOGGLES = [
   { key: 'preferred', facet: 'preferredLocations', label: 'Preferred locations' },
   { key: 'it', facet: 'itRoles', label: 'IT roles' },
@@ -29,21 +29,32 @@ const DUE_ITEMS = [
   ...DUE_WITHIN_OPTIONS.map((days) => ({ label: `Due within ${days} days`, value: days }))
 ]
 
-// These are set outside the sheet (Favorites, or the company from a dashboard link), so the Filters badge counts only what is inside it, and the
+// These are set outside the sheet (the toolbar toggles, or the company from a dashboard link), so the Filters badge counts only what is inside it, and the
 // sheet's own Clear leaves them alone. Clear all still resets every facet.
-const outsideToggles = () => {
-  const { favorites, companyId } = facets.value
-  return { favorites, companyId }
-}
+const outsideSheet = ({
+  favorites,
+  companyId,
+  preferredLocations,
+  itRoles,
+  englishPosting,
+  englishMentioned
+}: ListingsFacets) => ({
+  favorites,
+  companyId,
+  preferredLocations,
+  itRoles,
+  englishPosting,
+  englishMentioned
+})
 const sheetCount = computed(() =>
-  countActiveFacets({ ...facets.value, favorites: false, companyId: null })
+  countActiveFacets({ ...facets.value, ...outsideSheet(emptyFacets()) })
 )
 const anyActive = computed(() => countActiveFacets(facets.value) > 0)
 
 const labels = (options: readonly { label: string; value: string }[], values: string[]) =>
   values.map((v) => options.find((o) => o.value === v)?.label ?? v).join(', ')
 
-// One removable chip per facet in the sheet, plus the company, so a deep link or a forgotten filter stays visible.
+// One removable chip per facet in the sheet, plus the company (the toolbar toggles show their own state), so a deep link or a forgotten filter stays visible.
 // Locations are ids whose labels only the lookup knows, so that chip shows a count.
 const chips = computed(() => {
   const f = facets.value
@@ -54,9 +65,6 @@ const chips = computed(() => {
       label: companyName ? `Company: ${companyName}` : 'Company',
       clear: () => (f.companyId = null)
     },
-    ...QUICK_TOGGLES.map(
-      (t) => f[t.facet] && { key: t.key, label: t.label, clear: () => (f[t.facet] = false) }
-    ),
     f.statuses.length && {
       key: 'status',
       label: `Status: ${labels(APPLICATION_STATUS_OPTIONS, f.statuses)}`,
@@ -96,7 +104,7 @@ const chips = computed(() => {
 })
 
 const clearAll = () => Object.assign(facets.value, emptyFacets())
-const clearSheet = () => Object.assign(facets.value, { ...emptyFacets(), ...outsideToggles() })
+const clearSheet = () => Object.assign(facets.value, emptyFacets(), outsideSheet(facets.value))
 
 const open = ref(false)
 </script>
@@ -155,6 +163,23 @@ const open = ref(false)
       </UButton>
     </div>
 
+    <div class="flex flex-wrap gap-2" role="group" aria-label="Quick filters">
+      <UButton
+        v-for="t in QUICK_TOGGLES"
+        :key="t.key"
+        :color="facets[t.facet] ? 'primary' : 'neutral'"
+        :variant="facets[t.facet] ? 'soft' : 'subtle'"
+        :icon="facets[t.facet] ? 'i-lucide-check' : undefined"
+        :aria-pressed="facets[t.facet]"
+        class="whitespace-nowrap"
+        :data-testid="`listings-facet-${t.key}`"
+        @click="facets[t.facet] = !facets[t.facet]"
+      >
+        {{ t.label }}
+        <span class="text-muted tabular-nums">{{ quickCounts[t.key] }}</span>
+      </UButton>
+    </div>
+
     <AppFilterChips
       v-if="anyActive"
       :chips="chips"
@@ -168,20 +193,6 @@ const open = ref(false)
       :clear-disabled="!sheetCount"
       @clear="clearSheet"
     >
-      <div class="space-y-3">
-        <USwitch
-          v-for="t in QUICK_TOGGLES"
-          :key="t.key"
-          v-model="facets[t.facet]"
-          :data-testid="`listings-facet-${t.key}`"
-        >
-          <template #label>
-            {{ t.label }}
-            <span class="text-muted tabular-nums">{{ quickCounts[t.key] }}</span>
-          </template>
-        </USwitch>
-      </div>
-      <USeparator />
       <UFormField label="Status">
         <USelectMenu
           v-model="facets.statuses"

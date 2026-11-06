@@ -18,11 +18,25 @@ const row = (id: number, name: string, archivedAt: string | null = null) => ({
   id,
   name,
   description: `${name} description`,
-  language: 'ENGLISH',
+  languages: ['ENGLISH', 'NORWEGIAN'],
   archivedAt,
   updatedAt: new Date().toISOString(),
-  latestVersion: { id: id * 10 + 2, number: 2 },
-  versions: []
+  versions: [
+    {
+      id: id * 10 + 5,
+      language: 'NORWEGIAN',
+      number: 1,
+      note: null,
+      createdAt: '2026-11-01T10:00:00Z'
+    },
+    {
+      id: id * 10 + 2,
+      language: 'ENGLISH',
+      number: 2,
+      note: null,
+      createdAt: '2026-10-30T10:00:00Z'
+    }
+  ]
 })
 
 let calls: Body[]
@@ -92,7 +106,7 @@ const openMenu = async (wrapper: Awaited<ReturnType<typeof mountPage>>, index: n
 }
 
 describe('CV templates list', () => {
-  it('lists active templates with their language and latest version', async () => {
+  it('lists active templates with each language’s latest version', async () => {
     const wrapper = await mountPage()
     await vi.waitFor(() =>
       expect(wrapper.findAll('[data-testid="cv-templates-row"]')).toHaveLength(2)
@@ -100,8 +114,10 @@ describe('CV templates list', () => {
 
     const first = wrapper.findAll('[data-testid="cv-templates-row"]')[0]!
     expect(first.text()).toContain('Frontend (EN)')
-    expect(first.text()).toContain('English')
-    expect(first.text()).toContain('v2 · updated today')
+    expect(first.findAll('[data-testid="cv-templates-row-language"]').map((b) => b.text())).toEqual(
+      ['EN v2', 'NO v1']
+    )
+    expect(first.text()).toContain('updated today')
     expect(first.get('[data-testid="cv-templates-row-link"]').attributes('href')).toBe(
       '/cv-templates/1'
     )
@@ -187,6 +203,26 @@ describe('New CV template', () => {
       language: 'NORWEGIAN'
     })
     expect((create.variables.input!.content as { language: string }).language).toBe('NORWEGIAN')
+    wrapper.unmount()
+  })
+
+  it('starting from an AI draft still creates from the profile, then opens the draft on the editor', async () => {
+    const wrapper = await mountPage()
+    inBody('cv-templates-new')!.click()
+    await flushPromises()
+    const input = inBody<HTMLInputElement>('cv-template-name')!
+    input.value = 'Frontend (AI)'
+    input.dispatchEvent(new Event('input'))
+    const aiDraft = [...document.body.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+      (el) => el.closest('[data-testid="cv-template-start-from"]') && el.id.endsWith('ai')
+    )
+    aiDraft!.click()
+    await flushPromises()
+    expect(document.body.textContent).toContain('Create and draft with AI')
+    input.closest('form')!.dispatchEvent(new Event('submit'))
+
+    await vi.waitFor(() => expect(navigateTo).toHaveBeenCalledWith('/cv-templates/9?ai=1'))
+    expect(calls.some((c) => c.query.includes('query BaseCvFromProfile'))).toBe(true)
     wrapper.unmount()
   })
 

@@ -13,6 +13,8 @@ const props = defineProps<{
   location?: string | null
   // Project type, shown as a badge by the title.
   badge?: string
+  // Text still in another language (a translated CV template), as a warning badge.
+  warning?: string
   technologies?: string[] | null
   analyzable?: boolean
   analyzing?: boolean
@@ -53,7 +55,12 @@ const items = computed<DropdownMenuItem[]>(() => [
 </script>
 
 <template>
-  <li class="py-3 first:pt-0 last:pb-0" data-testid="tailored-cv-entry">
+  <!-- data-flagged: the page's "Next untranslated" scrolls to these in page order. -->
+  <li
+    class="py-3 first:pt-0 last:pb-0"
+    :data-flagged="warning ? '' : undefined"
+    data-testid="tailored-cv-entry"
+  >
     <div class="flex items-start gap-2">
       <div class="min-w-0 flex-1">
         <p class="break-words font-medium text-highlighted">
@@ -65,6 +72,16 @@ const items = computed<DropdownMenuItem[]>(() => [
             size="sm"
             class="ml-1 align-middle"
             >{{ badge }}</UBadge
+          >
+          <UBadge
+            v-if="warning"
+            color="warning"
+            variant="subtle"
+            size="sm"
+            icon="i-lucide-languages"
+            class="ml-1 align-middle"
+            data-testid="tailored-cv-entry-warning"
+            >{{ warning }}</UBadge
           >
         </p>
         <p v-if="subtitle" class="break-words text-sm">{{ subtitle }}</p>

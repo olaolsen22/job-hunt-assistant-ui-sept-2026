@@ -18,7 +18,12 @@ const jobs = (count: number) =>
     text: `Job ${index}`
   }))
 const results = (urls: string[]) =>
-  urls.map((normalizedUrl, index) => ({ index, normalizedUrl, shouldProcess: true }))
+  urls.map((normalizedUrl, index) => ({
+    index,
+    normalizedUrl,
+    existingListingIds: [] as number[],
+    shouldProcess: true
+  }))
 const acceptAll = () => {
   check.mockImplementation(async (_document, variables) => ({
     checkListingUrls: results(variables!.urls as string[])
@@ -81,18 +86,23 @@ describe('collected jobs', () => {
     const response = results(rows.map((row) => row.url))
     response[1]!.shouldProcess = false
     response[3]!.shouldProcess = false
+    response[1]!.existingListingIds = [41, 42]
     check.mockResolvedValue({ checkListingUrls: response.reverse() })
-    expect(await prepareCollectedJobs(JSON.stringify(rows))).toEqual({
-      rows: [rows[0], rows[2]],
-      remaining: 2,
-      skipped: 2
-    })
+    const prepared = await prepareCollectedJobs(JSON.stringify(rows))
+    expect(prepared).toMatchObject({ rows: [rows[0], rows[2]], remaining: 2, skipped: 2 })
+    // Every job keeps what the check found, in file order: new, saved, new, repeat.
+    expect(prepared.jobs).toEqual([
+      { job: rows[0], savedListingIds: [], isRepeat: false },
+      { job: rows[1], savedListingIds: [41, 42], isRepeat: false },
+      { job: rows[2], savedListingIds: [], isRepeat: false },
+      { job: rows[3], savedListingIds: [], isRepeat: true }
+    ])
   })
 
   it('checks 201 rows in chunks with fresh local indexes and keeps original order', async () => {
     acceptAll()
     const rows = jobs(201)
-    expect(await prepareCollectedJobs(JSON.stringify(rows))).toEqual({
+    expect(await prepareCollectedJobs(JSON.stringify(rows))).toMatchObject({
       rows,
       remaining: 201,
       skipped: 0
@@ -112,7 +122,11 @@ describe('collected jobs', () => {
       .mockResolvedValueOnce({ checkListingUrls: first })
       .mockResolvedValueOnce({ checkListingUrls: results([rows[0]!.url, rows[1]!.url]) })
     const prepared = await prepareCollectedJobs(JSON.stringify(rows))
-    expect(prepared).toEqual({ rows: [rows[0], ...rows.slice(2, 100)], remaining: 99, skipped: 3 })
+    expect(prepared).toMatchObject({
+      rows: [rows[0], ...rows.slice(2, 100)],
+      remaining: 99,
+      skipped: 3
+    })
     expect(collectedJobsPosting(prepared.rows)).not.toContain('Job 100')
     expect(JSON.parse(collectedJobsPosting([rows[0]!]))).toEqual([rows[0]])
   })

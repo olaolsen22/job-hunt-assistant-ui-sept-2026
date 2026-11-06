@@ -271,7 +271,12 @@ describe('Quick add', () => {
   })
 })
 
-type CheckRow = { index: number; normalizedUrl: string; shouldProcess: boolean }
+type CheckRow = {
+  index: number
+  normalizedUrl: string
+  existingListingIds: number[]
+  shouldProcess: boolean
+}
 type ParseReply =
   { result: string } | { error: string } | { unknownModel: true } | { safety: string }
 const collectedApi = (
@@ -361,7 +366,12 @@ const collectedApi = (
   return requests
 }
 const eligible = (urls: string[]) =>
-  urls.map((normalizedUrl, index) => ({ index, normalizedUrl, shouldProcess: index === 0 }))
+  urls.map((normalizedUrl, index) => ({
+    index,
+    normalizedUrl,
+    existingListingIds: index === 0 ? [] : [100 + index],
+    shouldProcess: index === 0
+  }))
 const collection = [
   {
     title: 'Seasonal Waiter',
@@ -884,6 +894,8 @@ describe('Quick add from a job import', () => {
     await vi.waitFor(() => expect(w.findAll('[data-testid="quick-add-row"]')).toHaveLength(1))
     expect(requests.checks).toEqual([collection.map((r) => r.url)])
     expect(requests.parses).toEqual([])
+    // Straight to the rows: the paste and AI steps are for manual input only.
+    expect(w.find('[data-testid="quick-add-paste"]').exists()).toBe(false)
     expect(w.get('[data-testid="quick-add-import"]').text()).toContain('From import: it')
     expect(w.get('[data-testid="quick-add-paste-summary"]').text()).toContain(
       'Added 1 collected job.'
@@ -899,7 +911,14 @@ describe('Quick add from a job import', () => {
     // A lone listing doesn't open: the done state leads on to the next import instead.
     const done = w.get('[data-testid="quick-add-import-done"]')
     expect(done.text()).toContain('Import done')
-    expect(done.text()).toContain('1 listing saved.')
+    expect(done.text()).toContain('2 saved · Marked as reviewed')
+    // Both jobs show as cards: the one saved just now and the one that already was.
+    const cards = w.findAll('[data-testid="import-job"]')
+    expect(cards.map((c) => c.get('a').attributes('href'))).toEqual([
+      expect.stringMatching(/^\/listings\/\d+$/),
+      '/listings/101'
+    ])
+    expect(cards[0]!.text()).toContain('Seasonal Waiter')
     expect(w.find('[data-testid="quick-add-row"]').exists()).toBe(false)
     expect(w.find('[data-testid="quick-add-save"]').exists()).toBe(false)
     await done.get('[data-testid="quick-add-done-next"]').trigger('click')
@@ -913,13 +932,35 @@ describe('Quick add from a job import', () => {
     )
     const w = await openImport()
     await vi.waitFor(() =>
-      expect(w.find('[data-testid="quick-add-check-empty"]').exists()).toBe(true)
+      expect(w.find('[data-testid="quick-add-import-reviewed"]').exists()).toBe(true)
     )
+    expect(w.get('[data-testid="quick-add-import-done"]').text()).toContain('Nothing left to save')
+    expect(w.findAll('[data-testid="import-job"]')).toHaveLength(2)
+    expect(w.find('[data-testid="quick-add-paste"]').exists()).toBe(false)
+    expect(w.find('[data-testid="quick-add-save"]').exists()).toBe(false)
     await w.get('[data-testid="quick-add-import-reviewed"]').trigger('click')
     await vi.waitFor(() =>
       expect(w.find('[data-testid="quick-add-import-reviewed"]').exists()).toBe(false)
     )
     expect(requests.reviewed).toEqual([{ id: 7, isReviewed: true }])
+  })
+
+  it('leaves an import with nothing new without asking', async () => {
+    storedImport = listingImport(JSON.stringify(collection))
+    collectedApi((urls) => eligible(urls).map((r) => ({ ...r, shouldProcess: false })))
+    const w = await openImport()
+    await vi.waitFor(() =>
+      expect(w.find('[data-testid="quick-add-import-reviewed"]').exists()).toBe(true)
+    )
+    expect(routing.guard!({ fullPath: '/listings' })).toBe(true)
+    await w.get('[data-testid="quick-add-import-reviewed"]').trigger('click')
+    await vi.waitFor(() =>
+      expect(w.get('[data-testid="quick-add-import-done"]').text()).toContain('Import done')
+    )
+    expect(routing.guard!({ fullPath: '/listings' })).toBe(true)
+    await w.get('[data-testid="quick-add-done-next"]').trigger('click')
+    expect(navigation).toHaveBeenCalledWith('/listings/quick-add?import=9')
+    expect(document.body.textContent).not.toContain('Leave collected jobs?')
   })
 
   it('shows a failed import’s error instead of filling anything in', async () => {

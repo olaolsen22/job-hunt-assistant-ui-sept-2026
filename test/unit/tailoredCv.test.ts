@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { ProfileData } from '~/composables/useProfile'
 import type { TailoredCvAnalysis } from '~/composables/useTailoredCvDraft'
 import {
+  clearCvFlags,
+  cvFlagCounts,
+  removeCvFlagItem,
   changedCvSections,
   cvSectionFromAnalysis,
   cvSectionText,
@@ -402,5 +405,36 @@ describe('documentOriginLabel', () => {
     expect(documentOriginLabel({ origin: 'TAILORED' })).toBe('Tailored for this listing')
     expect(documentOriginLabel({ origin: 'UPLOADED' })).toBe('Uploaded')
     expect(documentOriginLabel({ origin: null })).toBeUndefined()
+  })
+})
+
+describe('untranslated field flags', () => {
+  it('groups paths by the card that shows them', () => {
+    const counts = cvFlagCounts([
+      'summary',
+      'headline',
+      'experiences[0].bullets[2]',
+      'experiences[0].title',
+      'projects[1].paragraph',
+      'skills[3].group'
+    ])
+    expect(Object.fromEntries(counts)).toEqual({
+      summary: 1,
+      contact: 1,
+      'experiences[0]': 2,
+      'projects[1]': 1,
+      skills: 1
+    })
+    expect(clearCvFlags(['summary', 'experiences[0].title'], 'experiences[0]')).toEqual(['summary'])
+  })
+
+  it('drops a removed item’s paths and moves later ones up', () => {
+    expect(
+      removeCvFlagItem(
+        ['experiences[0].title', 'experiences[1].bullets[0]', 'experiences[2].title', 'summary'],
+        'experiences',
+        1
+      )
+    ).toEqual(['experiences[0].title', 'experiences[1].title', 'summary'])
   })
 })

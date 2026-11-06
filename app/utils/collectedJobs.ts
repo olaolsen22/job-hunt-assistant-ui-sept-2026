@@ -7,6 +7,7 @@ const CHECK_LISTING_URLS = graphql(`
     checkListingUrls(urls: $urls) {
       index
       normalizedUrl
+      existingListingIds
       shouldProcess
     }
   }
@@ -18,8 +19,16 @@ export interface CollectedJob extends Record<string, unknown> {
   url: string
 }
 
+// What the check found for one job in the file.
+export interface CheckedJob {
+  job: CollectedJob
+  savedListingIds: number[]
+  isRepeat: boolean
+}
+
 export interface PreparedJobs {
   rows: CollectedJob[]
+  jobs: CheckedJob[]
   remaining: number
   skipped: number
 }
@@ -49,6 +58,7 @@ export const prepareCollectedJobs = async (source: string): Promise<PreparedJobs
   const jobs = parseCollectedJobs(source)
   const seen = new Set<string>()
   const rows: CollectedJob[] = []
+  const checked: CheckedJob[] = []
   for (let offset = 0; offset < jobs.length; offset += 100) {
     const batch = jobs.slice(offset, offset + 100)
     const { checkListingUrls: results } = await gql(CHECK_LISTING_URLS, {
@@ -71,12 +81,18 @@ export const prepareCollectedJobs = async (source: string): Promise<PreparedJobs
     }
     batch.forEach((job, index) => {
       const result = byIndex.get(index)!
-      if (result.shouldProcess && !seen.has(result.normalizedUrl)) rows.push(job)
+      const isNew = result.shouldProcess && !seen.has(result.normalizedUrl)
+      if (isNew) rows.push(job)
+      checked.push({
+        job,
+        savedListingIds: result.existingListingIds,
+        isRepeat: !isNew && !result.existingListingIds.length
+      })
     })
     // The API handles repeats within a batch; include skipped URLs for later chunks too.
     results.forEach((result) => seen.add(result.normalizedUrl))
   }
-  return { rows, remaining: rows.length, skipped: jobs.length - rows.length }
+  return { rows, jobs: checked, remaining: rows.length, skipped: jobs.length - rows.length }
 }
 
 export const collectedJobsPosting = (jobs: CollectedJob[]) =>
