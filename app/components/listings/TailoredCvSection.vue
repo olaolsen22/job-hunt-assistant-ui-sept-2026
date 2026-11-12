@@ -15,7 +15,13 @@ defineProps<{
   analyzing?: boolean
   disabled?: boolean
   emptyMessage?: string
-  suggestions?: { key: TailoredCvSectionKey; current: string; suggested: string }[]
+  suggestions?: {
+    key: TailoredCvSectionKey
+    current: string
+    suggested: string
+    // An entry the AI reply left out: Accept removes it.
+    removal?: boolean
+  }[]
   // Names what a suggestion replaces when the card holds more than one thing.
   suggestionLabel?: string
   addItems?: DropdownMenuItem[]
@@ -101,6 +107,7 @@ const emit = defineEmits<{
         :label="suggestionLabel"
         :current="s.current"
         :suggested="s.suggested"
+        :removal="s.removal"
         @accept="emit('accept', s.key)"
         @dismiss="emit('dismiss', s.key)"
       />

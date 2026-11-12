@@ -25,7 +25,7 @@ const SAVE_LAYOUT = graphql(`
   }
 `)
 
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 
 // Edits happen on a copy, so closing just drops it and the dashboard only changes after a save.
 const copy = () => props.layout.map((w) => ({ ...w }))

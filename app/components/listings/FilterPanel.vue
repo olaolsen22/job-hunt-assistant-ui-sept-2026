@@ -15,13 +15,63 @@ const { companyName = '', quickCounts } = defineProps<{
   quickCounts: Record<QuickToggle, number>
 }>()
 
-// Yes/no facets with a count each, one tap away under the search row.
-const QUICK_TOGGLES = [
-  { key: 'preferred', facet: 'preferredLocations', label: 'Preferred locations' },
-  { key: 'it', facet: 'itRoles', label: 'IT roles' },
-  { key: 'englishPosting', facet: 'englishPosting', label: 'English posting' },
-  { key: 'englishMentioned', facet: 'englishMentioned', label: 'English mentioned' }
-] as const
+// One pill per quick filter, always visible. Favorites has no count; the others show how many
+// listings they would leave under the active preset, facets and search.
+type PillFacet = Extract<
+  keyof ListingsFacets,
+  | 'favorites'
+  | 'preferredLocations'
+  | 'norwayOnly'
+  | 'itRoles'
+  | 'nonItRoles'
+  | 'englishPosting'
+  | 'englishMentioned'
+>
+const PILLS: { key: string; facet: PillFacet; label: string; count?: QuickToggle }[] = [
+  { key: 'favorites', facet: 'favorites', label: 'Favorites' },
+  {
+    key: 'preferred',
+    facet: 'preferredLocations',
+    label: 'Preferred locations',
+    count: 'preferred'
+  },
+  {
+    key: 'norway',
+    facet: 'norwayOnly',
+    label: 'Norway only',
+    count: 'norway'
+  },
+  { key: 'it', facet: 'itRoles', label: 'IT roles', count: 'it' },
+  {
+    key: 'nonIt',
+    facet: 'nonItRoles',
+    label: 'Non-IT roles',
+    count: 'nonIt'
+  },
+  {
+    key: 'englishPosting',
+    facet: 'englishPosting',
+    label: 'English posting',
+    count: 'englishPosting'
+  },
+  {
+    key: 'englishMentioned',
+    facet: 'englishMentioned',
+    label: 'English mentioned',
+    count: 'englishMentioned'
+  }
+]
+
+// IT and non-IT together would always be empty, so turning one on turns the other off.
+const EXCLUSIVE: Partial<Record<PillFacet, PillFacet>> = {
+  itRoles: 'nonItRoles',
+  nonItRoles: 'itRoles'
+}
+const toggle = (facet: PillFacet) => {
+  facets.value[facet] = !facets.value[facet]
+  const other = EXCLUSIVE[facet]
+  if (other && facets.value[facet]) facets.value[other] = false
+}
 
 // USelect can't hold null, so "Any" is a sentinel that maps back to null.
 const DUE_ITEMS = [
@@ -29,20 +79,24 @@ const DUE_ITEMS = [
   ...DUE_WITHIN_OPTIONS.map((days) => ({ label: `Due within ${days} days`, value: days }))
 ]
 
-// These are set outside the sheet (the toolbar toggles, or the company from a dashboard link), so the Filters badge counts only what is inside it, and the
-// sheet's own Clear leaves them alone. Clear all still resets every facet.
+// The pills and the company (from a dashboard link) are set outside the sheet, so the Filters badge counts only
+// what is inside it, and the sheet's own Clear leaves them alone. Clear all still resets every facet.
 const outsideSheet = ({
   favorites,
   companyId,
   preferredLocations,
+  norwayOnly,
   itRoles,
+  nonItRoles,
   englishPosting,
   englishMentioned
 }: ListingsFacets) => ({
   favorites,
   companyId,
   preferredLocations,
+  norwayOnly,
   itRoles,
+  nonItRoles,
   englishPosting,
   englishMentioned
 })
@@ -54,7 +108,7 @@ const anyActive = computed(() => countActiveFacets(facets.value) > 0)
 const labels = (options: readonly { label: string; value: string }[], values: string[]) =>
   values.map((v) => options.find((o) => o.value === v)?.label ?? v).join(', ')
 
-// One removable chip per facet in the sheet, plus the company (the toolbar toggles show their own state), so a deep link or a forgotten filter stays visible.
+// One removable chip per facet in the sheet, plus the company (the pills show their own state), so a deep link or a forgotten filter stays visible.
 // Locations are ids whose labels only the lookup knows, so that chip shows a count.
 const chips = computed(() => {
   const f = facets.value
@@ -99,6 +153,11 @@ const chips = computed(() => {
       key: 'due',
       label: `Due within ${f.dueWithinDays} days`,
       clear: () => (f.dueWithinDays = null)
+    },
+    f.showRejected && {
+      key: 'rejected',
+      label: 'Rejected shown',
+      clear: () => (f.showRejected = false)
     }
   ].filter((chip) => !!chip)
 })
@@ -110,16 +169,16 @@ const open = ref(false)
 </script>
 
 <template>
+  <!-- Two rows: search + Filters share one (so Filters lines up with Sort above), then the quick
+       filter pills. Phones scroll the pills in one line, since wrapping seven would take four rows. -->
   <div class="space-y-3">
-    <!-- One row at every width: below lg the two buttons shrink to icons (their labels stay for
-         screen readers), so phones keep most of the width for search. -->
     <div class="flex items-center gap-2">
       <UInput
         v-model="search"
         icon="i-lucide-search"
         placeholder="Search listings"
         aria-label="Search title, company or role"
-        class="min-w-0 flex-1 lg:max-w-md"
+        class="min-w-0 flex-1"
         data-testid="listings-search"
       >
         <template v-if="search" #trailing>
@@ -134,23 +193,6 @@ const open = ref(false)
         </template>
       </UInput>
       <UButton
-        :color="facets.favorites ? 'warning' : 'neutral'"
-        :variant="facets.favorites ? 'soft' : 'subtle'"
-        :aria-pressed="facets.favorites"
-        class="shrink-0"
-        data-testid="listings-facet-favorites"
-        @click="facets.favorites = !facets.favorites"
-      >
-        <!-- Filled when on, like ListingsFavoriteButton; see the comment there. -->
-        <UIcon
-          name="i-lucide-star"
-          mode="svg"
-          class="size-5"
-          :class="{ '[&_*]:fill-current': facets.favorites }"
-        />
-        <span class="max-lg:sr-only">Favorites</span>
-      </UButton>
-      <UButton
         color="neutral"
         variant="subtle"
         icon="i-lucide-sliders-horizontal"
@@ -158,26 +200,45 @@ const open = ref(false)
         data-testid="listings-filters-toggle"
         @click="open = true"
       >
-        <span class="max-lg:sr-only">Filters</span>
+        Filters
         <UBadge v-if="sheetCount" size="sm">{{ sheetCount }}</UBadge>
       </UButton>
     </div>
 
-    <div class="flex flex-wrap gap-2" role="group" aria-label="Quick filters">
-      <UButton
-        v-for="t in QUICK_TOGGLES"
-        :key="t.key"
-        :color="facets[t.facet] ? 'primary' : 'neutral'"
-        :variant="facets[t.facet] ? 'soft' : 'subtle'"
-        :icon="facets[t.facet] ? 'i-lucide-check' : undefined"
-        :aria-pressed="facets[t.facet]"
-        class="whitespace-nowrap"
-        :data-testid="`listings-facet-${t.key}`"
-        @click="facets[t.facet] = !facets[t.facet]"
+    <div class="flex items-start gap-2">
+      <span class="hidden shrink-0 pt-2 text-xs text-muted 2xl:block">Quick filters</span>
+      <!-- The right fade hints that more pills scroll in; the end padding matches its width, so the
+           last pill clears the fade once scrolled to the end. -->
+      <div
+        class="flex min-w-0 gap-1.5 overflow-x-auto pr-8 pb-1 mask-r-from-[calc(100%-2rem)] md:flex-wrap md:overflow-visible md:pr-0 md:pb-0 md:mask-none"
+        role="group"
+        aria-label="Quick filters"
       >
-        {{ t.label }}
-        <span class="text-muted tabular-nums">{{ quickCounts[t.key] }}</span>
-      </UButton>
+        <UButton
+          v-for="p in PILLS"
+          :key="p.key"
+          :color="facets[p.facet] ? (p.facet === 'favorites' ? 'warning' : 'primary') : 'neutral'"
+          :variant="facets[p.facet] ? 'soft' : 'subtle'"
+          :aria-pressed="facets[p.facet]"
+          class="shrink-0 rounded-full whitespace-nowrap"
+          :data-testid="`listings-facet-${p.key}`"
+          @click="toggle(p.facet)"
+        >
+          <!-- A check when on (a second cue besides colour); Favorites shows its star, filled when on,
+               like ListingsFavoriteButton. Idle pills carry no icon, which keeps all seven on one
+               line from xl. -->
+          <UIcon
+            v-if="p.facet === 'favorites'"
+            name="i-lucide-star"
+            mode="svg"
+            class="size-4"
+            :class="{ '[&_*]:fill-current': facets.favorites }"
+          />
+          <UIcon v-else-if="facets[p.facet]" name="i-lucide-check" class="size-4" />
+          {{ p.label }}
+          <span v-if="p.count" class="text-muted tabular-nums">{{ quickCounts[p.count] }}</span>
+        </UButton>
+      </div>
     </div>
 
     <AppFilterChips
@@ -193,7 +254,8 @@ const open = ref(false)
       :clear-disabled="!sheetCount"
       @clear="clearSheet"
     >
-      <UFormField label="Status">
+      <section class="space-y-3">
+        <h3 class="text-sm font-semibold text-highlighted">Status</h3>
         <USelectMenu
           v-model="facets.statuses"
           :items="[...APPLICATION_STATUS_OPTIONS]"
@@ -202,78 +264,93 @@ const open = ref(false)
           placeholder="Any status"
           :search-input="false"
           class="w-full"
+          aria-label="Status"
           data-testid="listings-facet-status"
         />
-      </UFormField>
-      <UFormField label="Skill">
-        <AppFilterCombobox
-          v-model="facets.skills"
-          lookup="skills"
-          placeholder="Any skill"
-          data-testid="listings-facet-skill"
+        <USwitch
+          v-model="facets.showRejected"
+          label="Show rejected applications"
+          description="Picking statuses above always shows exactly those."
+          data-testid="listings-facet-rejected"
         />
-      </UFormField>
-      <UFormField label="Location">
+      </section>
+      <section class="space-y-3">
+        <h3 class="text-sm font-semibold text-highlighted">Location</h3>
         <AppFilterCombobox
           v-model="facets.locationIds"
           lookup="locations"
           placeholder="Any location"
           data-testid="listings-facet-location"
         />
-      </UFormField>
-      <UFormField label="Due">
-        <USelect
-          :model-value="facets.dueWithinDays ?? 0"
-          :items="DUE_ITEMS"
-          class="w-full"
-          data-testid="listings-facet-due"
-          @update:model-value="facets.dueWithinDays = $event || null"
-        />
-      </UFormField>
-      <div class="grid grid-cols-2 gap-3">
-        <UFormField label="Posted from">
-          <UInput
-            v-model="facets.postedFrom"
-            type="date"
-            :max="facets.postedTo || undefined"
+      </section>
+      <section class="space-y-3">
+        <h3 class="text-sm font-semibold text-highlighted">Language</h3>
+        <UFormField label="Posting language">
+          <USelectMenu
+            v-model="facets.postingLanguages"
+            :items="[...LANGUAGE_OPTIONS]"
+            value-key="value"
+            multiple
+            placeholder="Any"
+            :search-input="false"
             class="w-full"
-            data-testid="listings-facet-postedFrom"
+            data-testid="listings-facet-postingLanguage"
           />
         </UFormField>
-        <UFormField label="Posted to">
-          <UInput
-            v-model="facets.postedTo"
-            type="date"
-            :min="facets.postedFrom || undefined"
+        <UFormField label="Required language">
+          <USelectMenu
+            v-model="facets.languages"
+            :items="[...LANGUAGE_OPTIONS]"
+            value-key="value"
+            multiple
+            placeholder="Any"
+            :search-input="false"
             class="w-full"
-            data-testid="listings-facet-postedTo"
+            data-testid="listings-facet-requiredLanguage"
           />
         </UFormField>
-      </div>
-      <UFormField label="Posting language">
-        <USelectMenu
-          v-model="facets.postingLanguages"
-          :items="[...LANGUAGE_OPTIONS]"
-          value-key="value"
-          multiple
-          placeholder="Any"
-          :search-input="false"
-          class="w-full"
-          data-testid="listings-facet-postingLanguage"
+      </section>
+      <section class="space-y-3">
+        <h3 class="text-sm font-semibold text-highlighted">Skills</h3>
+        <AppFilterCombobox
+          v-model="facets.skills"
+          lookup="skills"
+          placeholder="Any skill"
+          data-testid="listings-facet-skill"
         />
-      </UFormField>
-      <UFormField label="Required language">
-        <USelectMenu
-          v-model="facets.languages"
-          :items="[...LANGUAGE_OPTIONS]"
-          value-key="value"
-          multiple
-          placeholder="Any"
-          :search-input="false"
-          class="w-full"
-          data-testid="listings-facet-requiredLanguage"
-        />
-      </UFormField>
+      </section>
+      <section class="space-y-3">
+        <h3 class="text-sm font-semibold text-highlighted">Dates</h3>
+        <UFormField label="Due">
+          <USelect
+            :model-value="facets.dueWithinDays ?? 0"
+            :items="DUE_ITEMS"
+            class="w-full"
+            data-testid="listings-facet-due"
+            @update:model-value="facets.dueWithinDays = $event || null"
+          />
+        </UFormField>
+        <div class="grid grid-cols-2 gap-3">
+          <UFormField label="Posted from">
+            <UInput
+              v-model="facets.postedFrom"
+              type="date"
+              :max="facets.postedTo || undefined"
+              class="w-full"
+              data-testid="listings-facet-postedFrom"
+            />
+          </UFormField>
+          <UFormField label="Posted to">
+            <UInput
+              v-model="facets.postedTo"
+              type="date"
+              :min="facets.postedFrom || undefined"
+              class="w-full"
+              data-testid="listings-facet-postedTo"
+            />
+          </UFormField>
+        </div>
+      </section>
     </AppFilterSheet>
   </div>
 </template>

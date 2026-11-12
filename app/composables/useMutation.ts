@@ -5,7 +5,7 @@ type PayloadErrors = readonly { __typename: string; message: string }[] | null |
 // Runs a mutation whose payload has typed `errors`, showing the API's own message on failure.
 // A *NotFoundError means our copy of the listing is stale, so `onStale` refetches it.
 export const useMutation = (onStale?: () => void) => {
-  const toast = useToast()
+  const notify = useAppToast()
   const loading = ref(false)
 
   const run = async (mutate: () => Promise<PayloadErrors>) => {
@@ -13,11 +13,11 @@ export const useMutation = (onStale?: () => void) => {
     try {
       const error = (await mutate())?.[0]
       if (!error) return true
-      toast.add({ title: error.message, color: 'error' })
+      notify.error(error.message)
       if (error.__typename.endsWith('NotFoundError')) onStale?.()
       return false
     } catch {
-      toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
+      notify.error(ERROR_MESSAGES.generic)
       return false
     } finally {
       loading.value = false

@@ -110,7 +110,7 @@ export type ParseOutcome = { result: string } | { error: string; code?: string; 
 // Call load() (or loadPrompt() where promptError is shown) before the user can click copy:
 // browsers can refuse a clipboard write that follows an await.
 export const useParsePrompt = (name: PromptName) => {
-  const toast = useToast()
+  const notify = useAppToast()
   const llm = useLlmModels()
   const { attempt, needsConfirm, safetyMessage, confirmRetry } = useAiRequest()
   const { instructions, promptLoading, promptError, copied, loadPrompt, copyText } = useAiPrompt(
@@ -121,7 +121,7 @@ export const useParsePrompt = (name: PromptName) => {
   const load = async () => {
     await loadPrompt()
     if (promptError.value) {
-      toast.add({ title: ERROR_MESSAGES.generic, color: 'error', icon: 'i-lucide-circle-alert' })
+      notify.error(ERROR_MESSAGES.generic)
     }
   }
 
@@ -136,13 +136,10 @@ export const useParsePrompt = (name: PromptName) => {
 
   // For pages without an error spot of their own. A daily limit is changed in Settings.
   const toastError = ({ error, code }: { error: string; code?: string }) =>
-    toast.add({
-      title: error,
-      color: 'error',
-      icon: 'i-lucide-circle-alert',
-      actions:
+    notify.error(error, {
+      action:
         code === 'daily-limit-reached'
-          ? [{ label: 'Daily limits in Settings', to: '/settings' }]
+          ? { label: 'Daily limits in Settings', to: '/settings' }
           : undefined
     })
 

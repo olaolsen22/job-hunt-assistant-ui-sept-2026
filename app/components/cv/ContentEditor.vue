@@ -40,8 +40,8 @@ const clearFlags = (key: string) => {
   if (flagCounts.value.has(key)) flagged.value = clearCvFlags(flagged.value, key)
 }
 
-const toast = useToast()
-const entryStyle = computed(() => cvEntryStyle(cv.value))
+const notify = useAppToast()
+const entryStyle = computed(() => cv.value.contentStyle)
 
 // The owner's categories (edited on the skills page); a deleted one shows as uncategorized.
 const { items: categoryItems, known: knownCategory } = useSkillCategories()
@@ -71,18 +71,11 @@ const applyGroups = (groups: Map<string, string>) => {
   const before = skills.map((s) => [s, s.group] as const)
   for (const skill of skills) skill.group = groups.get(skill.name) ?? skill.group
   clearFlags('skills')
-  toast.add({
-    title: 'Groups suggested. Review them, then save.',
-    icon: 'i-lucide-sparkles',
-    actions: [
-      {
-        label: 'Undo',
-        color: 'neutral',
-        variant: 'outline',
-        onClick: () => before.forEach(([skill, group]) => (skill.group = group))
-      }
-    ]
-  })
+  notify.undoable(
+    'Groups suggested',
+    () => before.forEach(([skill, group]) => (skill.group = group)),
+    { description: 'Review them, then save.', icon: 'i-lucide-sparkles' }
+  )
 }
 
 const dates = (start?: string | null, end?: string | null, open?: string) =>
@@ -151,21 +144,14 @@ const removeItem = (list: CvProfileList, index: number, name: string) => {
   const [item] = (cv.value[list] as unknown[]).splice(index, 1)
   // Undo puts the item back without its flags; it was looked at before removing.
   if (flagged.value.length) flagged.value = removeCvFlagItem(flagged.value, list, index)
-  toast.add({
-    title: name.trim() ? `Removed ${name} from this CV` : 'Removed from this CV',
-    icon: 'i-lucide-trash-2',
-    actions: [
-      {
-        label: 'Undo',
-        color: 'neutral',
-        variant: 'outline',
-        onClick: () => {
-          const items = cv.value[list] as unknown[]
-          items.splice(Math.min(index, items.length), 0, item)
-        }
-      }
-    ]
-  })
+  notify.undoable(
+    name.trim() ? `Removed ${name} from this CV` : 'Removed from this CV',
+    () => {
+      const items = cv.value[list] as unknown[]
+      items.splice(Math.min(index, items.length), 0, item)
+    },
+    { icon: 'i-lucide-trash-2' }
+  )
 }
 
 const PROFILE_LISTS = ['experiences', 'educations', 'certifications', 'projects', 'skills'] as const
@@ -227,11 +213,11 @@ const emptyMessage = (list: CvProfileList, none: string) => {
     testid="tailored-cv-summary"
     :warning="warning('summary')"
     editable
-    :analyzable="!!ai"
+    :analyzable="!!ai?.analyze"
     v-bind="ai?.section('summary')"
     :empty-message="cv.summary.trim() ? undefined : 'No summary yet.'"
     @edit="editSummary"
-    @analyze="ai?.analyze('summary', 'the summary')"
+    @analyze="ai?.analyze?.('summary', 'the summary')"
   >
     <p
       v-if="cv.summary.trim()"
@@ -247,7 +233,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
     testid="tailored-cv-experience"
     :empty-message="emptyMessage('experiences', 'No experience in this CV.')"
     v-bind="ai?.review('experiences')"
-    suggestion-label="All experience"
+    suggestion-label="All experience (entries added or reordered)"
     :add-items="addItems('experiences')"
     add-label="Add experience from your profile"
   >
@@ -265,9 +251,9 @@ const emptyMessage = (list: CvProfileList, none: string) => {
         :dates="dates(e.startMonth, e.endMonth, 'Present')"
         :location="e.location"
         :technologies="e.technologies"
-        :analyzable="!!ai && e.sourceEntryId != null"
+        :analyzable="!!ai?.analyze && e.sourceEntryId != null"
         @edit="editEntry('experiences', i)"
-        @analyze="ai?.analyze(`experience:${e.sourceEntryId!}`, experienceName(e))"
+        @analyze="ai?.analyze?.(`experience:${e.sourceEntryId!}`, experienceName(e))"
         @remove="removeItem('experiences', i, e.title)"
       />
     </ul>
@@ -277,12 +263,12 @@ const emptyMessage = (list: CvProfileList, none: string) => {
     title="Skills"
     testid="tailored-cv-skills"
     :warning="warning('skills')"
-    :analyzable="!!ai"
+    :analyzable="!!ai?.analyze"
     v-bind="ai?.section('skills')"
     :empty-message="emptyMessage('skills', 'No skills in this CV.')"
     :add-items="addItems('skills')"
     add-label="Add a skill from your profile"
-    @analyze="ai?.analyze('skills', 'skills')"
+    @analyze="ai?.analyze?.('skills', 'skills')"
   >
     <div class="space-y-2">
       <VueDraggable
@@ -397,7 +383,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
     testid="tailored-cv-education"
     :empty-message="emptyMessage('educations', 'No education in this CV.')"
     v-bind="ai?.review('educations')"
-    suggestion-label="All education"
+    suggestion-label="All education (entries added or reordered)"
     :add-items="addItems('educations')"
     add-label="Add education from your profile"
   >
@@ -414,9 +400,9 @@ const emptyMessage = (list: CvProfileList, none: string) => {
         :subtitle="[e.degree, e.field].filter(Boolean).join(', ')"
         :dates="dates(e.startMonth, e.endMonth)"
         :location="e.location"
-        :analyzable="!!ai && e.sourceEntryId != null"
+        :analyzable="!!ai?.analyze && e.sourceEntryId != null"
         @edit="editEntry('educations', i)"
-        @analyze="ai?.analyze(`education:${e.sourceEntryId!}`, e.school)"
+        @analyze="ai?.analyze?.(`education:${e.sourceEntryId!}`, e.school)"
         @remove="removeItem('educations', i, e.school)"
       />
     </ul>
@@ -453,7 +439,7 @@ const emptyMessage = (list: CvProfileList, none: string) => {
     testid="tailored-cv-projects"
     :empty-message="emptyMessage('projects', 'No projects in this CV.')"
     v-bind="ai?.review('projects')"
-    suggestion-label="All projects"
+    suggestion-label="All projects (entries added or reordered)"
     :add-items="addItems('projects')"
     add-label="Add a project from your profile"
   >
@@ -472,9 +458,9 @@ const emptyMessage = (list: CvProfileList, none: string) => {
         :location="p.location"
         :badge="projectKindLabel(p.kind)"
         :technologies="p.technologies"
-        :analyzable="!!ai && p.sourceEntryId != null"
+        :analyzable="!!ai?.analyze && p.sourceEntryId != null"
         @edit="editEntry('projects', i)"
-        @analyze="ai?.analyze(`project:${p.sourceEntryId!}`, p.name)"
+        @analyze="ai?.analyze?.(`project:${p.sourceEntryId!}`, p.name)"
         @remove="removeItem('projects', i, p.name)"
       />
     </ul>

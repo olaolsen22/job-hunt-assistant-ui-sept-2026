@@ -2,7 +2,14 @@
 import { VueDraggable } from 'vue-draggable-plus'
 import type { ProfileReference } from '~/composables/useProfile'
 
-const props = defineProps<{ references: readonly ProfileReference[] }>()
+const props = withDefaults(
+  defineProps<{
+    references: readonly ProfileReference[]
+    defaultOpen?: boolean
+    count?: number
+  }>(),
+  { defaultOpen: true, count: undefined }
+)
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const MOVE_REFERENCE = graphql(`
@@ -101,6 +108,8 @@ const remove = async () => {
     icon="i-lucide-users"
     testid="profile-references"
     :empty="!references.length"
+    :default-open="defaultOpen"
+    :count="count"
     empty-message="No references yet."
     add-label="Add reference"
     @clear="emit('clear')"

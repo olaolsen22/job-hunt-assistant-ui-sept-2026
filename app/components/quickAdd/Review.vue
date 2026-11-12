@@ -6,7 +6,7 @@ import type { QuickAddRow, QuickAddRows } from '~/composables/useQuickAddRows'
 const { rows } = defineProps<{ rows: QuickAddRows; processing: boolean; hideAdded: boolean }>()
 
 const { flagged, added, deleting } = rows
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 const addedOpen = ref(false)
 
 const toRemove = ref<QuickAddRow>()

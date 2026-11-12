@@ -14,7 +14,14 @@ const mount = (facets: Partial<ListingsFacets>) =>
     attachTo: document.body
   })
 
-const quickCounts = { preferred: 3, it: 5, englishPosting: 2, englishMentioned: 4 }
+const quickCounts = {
+  preferred: 3,
+  norway: 7,
+  it: 5,
+  nonIt: 6,
+  englishPosting: 2,
+  englishMentioned: 4
+}
 
 // The facet sheet is a slideover, teleported out of the wrapper.
 const inSheet = (testid: string) => document.body.querySelector(`[data-testid="${testid}"]`)
@@ -63,6 +70,22 @@ describe('FilterPanel', () => {
     expect(facets.companyId).toBeNull()
   })
 
+  it('shows rejected applications from the sheet, with a chip to hide them again', async () => {
+    const facets = reactive(emptyFacets())
+    const wrapper = await mountSuspended(FilterPanel, {
+      props: { facets, search: '', quickCounts },
+      attachTo: document.body
+    })
+    await wrapper.get('[data-testid="listings-filters-toggle"]').trigger('click')
+    await vi.waitFor(() => expect(inSheet('listings-facet-rejected')).not.toBeNull())
+    ;(inSheet('listings-facet-rejected') as HTMLElement).click()
+    await vi.waitFor(() => expect(facets.showRejected).toBe(true))
+
+    await wrapper.get('[data-testid="listings-chip-rejected"]').trigger('click')
+    expect(facets.showRejected).toBe(false)
+    wrapper.unmount()
+  })
+
   it('toggles favorites from the toolbar', async () => {
     const facets = reactive(emptyFacets())
     const wrapper = await mountSuspended(FilterPanel, {
@@ -87,31 +110,40 @@ describe('FilterPanel', () => {
     wrapper.unmount()
   })
 
-  it('toggles a quick filter from the toolbar, showing its count, without a chip', async () => {
+  it('toggles a pill, showing its count, without a chip or a Filters badge', async () => {
     const facets = reactive(emptyFacets())
     const wrapper = await mountSuspended(FilterPanel, {
       props: { facets, search: '', quickCounts }
     })
-    const button = wrapper.get('[data-testid="listings-facet-it"]')
-    expect(button.text()).toContain('IT roles')
-    expect(button.text()).toContain('5')
+    const button = wrapper.get('[data-testid="listings-facet-norway"]')
+    expect(button.text()).toContain('7')
     expect(button.attributes('aria-pressed')).toBe('false')
 
     await button.trigger('click')
-    expect(facets.itRoles).toBe(true)
+    expect(facets.norwayOnly).toBe(true)
     expect(button.attributes('aria-pressed')).toBe('true')
-    expect(wrapper.find('[data-testid="listings-chip-it"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="listings-chip-norway"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="listings-filters-toggle"]').text()).not.toContain('1')
-
-    await button.trigger('click')
-    expect(facets.itRoles).toBe(false)
   })
 
-  it('keeps quick filters on when the sheet clears, and resets them with Clear all', async () => {
+  it('turns IT roles off when non-IT roles is turned on, and back', async () => {
+    const facets = reactive({ ...emptyFacets(), itRoles: true })
+    const wrapper = await mountSuspended(FilterPanel, {
+      props: { facets, search: '', quickCounts }
+    })
+    await wrapper.get('[data-testid="listings-facet-nonIt"]').trigger('click')
+    expect(facets).toMatchObject({ nonItRoles: true, itRoles: false })
+    await wrapper.get('[data-testid="listings-facet-it"]').trigger('click')
+    expect(facets).toMatchObject({ nonItRoles: false, itRoles: true })
+  })
+
+  it('keeps the pills on when the sheet clears, and resets them with Clear all', async () => {
     const facets = reactive<ListingsFacets>({
       ...emptyFacets(),
       itRoles: true,
+      norwayOnly: true,
       favorites: true,
+      preferredLocations: true,
       statuses: ['APPLIED']
     })
     const wrapper = await mountSuspended(FilterPanel, {
@@ -121,7 +153,13 @@ describe('FilterPanel', () => {
     await wrapper.get('[data-testid="listings-filters-toggle"]').trigger('click')
     await vi.waitFor(() => expect(inSheet('listings-sheet-clear')).not.toBeNull())
     ;(inSheet('listings-sheet-clear') as HTMLElement).click()
-    expect(facets).toEqual({ ...emptyFacets(), itRoles: true, favorites: true })
+    expect(facets).toEqual({
+      ...emptyFacets(),
+      itRoles: true,
+      norwayOnly: true,
+      favorites: true,
+      preferredLocations: true
+    })
 
     await wrapper.get('[data-testid="listings-filters-clear"]').trigger('click')
     expect(facets).toEqual(emptyFacets())

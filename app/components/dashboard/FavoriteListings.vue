@@ -1,7 +1,11 @@
 <script setup lang="ts">
 const FAVORITE_LISTINGS = graphql(`
   query DashboardFavoriteListings {
-    listings(take: 5, where: { favoritedAt: { neq: null } }, order: [{ favoritedAt: DESC }]) {
+    listings(
+      take: 5
+      where: { favoritedAt: { neq: null }, status: { neq: REJECTED } }
+      order: [{ favoritedAt: DESC }]
+    ) {
       items {
         id
         title
@@ -15,6 +19,7 @@ const FAVORITE_LISTINGS = graphql(`
   }
 `)
 
+// Rejected applications are left out, like on /listings (which "View all" opens).
 const { data, status, error, refresh } = useAsyncData(
   'dashboard-favorite-listings',
   () => gql(FAVORITE_LISTINGS),

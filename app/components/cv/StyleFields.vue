@@ -11,8 +11,6 @@ import {
 // parent's grid.
 const cv = defineModel<TailoredCv>('cv', { required: true })
 defineProps<{ disabled?: boolean }>()
-
-const entryStyle = computed(() => cvEntryStyle(cv.value))
 </script>
 
 <template>
@@ -25,12 +23,12 @@ const entryStyle = computed(() => cvEntryStyle(cv.value))
       data-testid="tailored-cv-template"
     />
   </UFormField>
-  <UFormField label="Entry format" :description="CONTENT_STYLE_DESCRIPTION[cv.template]">
+  <UFormField label="Entry format" :description="CONTENT_STYLE_DESCRIPTION">
     <URadioGroup
-      :model-value="entryStyle"
+      :model-value="cv.contentStyle"
       :items="CONTENT_STYLE_OPTIONS"
       orientation="horizontal"
-      :disabled="disabled || cv.template === 'CONCISE'"
+      :disabled="disabled"
       data-testid="tailored-cv-content-style"
       @update:model-value="setCvContentStyle(cv, $event as CvContentStyle)"
     />

@@ -86,6 +86,23 @@ const mountPage = async (overrides: Partial<typeof listing> = {}) => {
 }
 
 describe('Listing page', () => {
+  it.each(['SAVED', 'APPLIED'])(
+    'shows one requirements card in the agreed %s order',
+    async (status) => {
+      const wrapper = await mountPage({ status })
+      expect(wrapper.findAll('[data-testid="requirement-map-card"]')).toHaveLength(1)
+      const text = wrapper.text()
+      const requirements = text.indexOf('Requirements')
+      const cv = text.indexOf('Tailored CV')
+      expect(requirements).toBeLessThan(cv)
+      if (status === 'SAVED') expect(text.indexOf('Summary')).toBeLessThan(requirements)
+      else expect(text.indexOf('Application')).toBeLessThan(requirements)
+      expect(wrapper.find('[data-testid="listing-more"]').exists()).toBe(true)
+      expect(text).toContain('Analyze ad')
+      wrapper.unmount()
+    }
+  )
+
   it('shows the position share only when the ad states one', async () => {
     const stated = await mountPage({ positionPercent: 80 } as Partial<typeof listing>)
     expect(stated.get('[data-testid="listing-key-facts"]').text()).toContain('80%')

@@ -17,7 +17,7 @@ remove it when you delete one.
   `ProfileSkillCleanupModal`, `ProfileCvReview` and `ProfileCvEntryReview`.
 - `<AppAiCostNotice :usage?>` — says who pays for built-in AI: the app's AI key (warning), or the owner's own provider key when the default model's `keySource` is `USER` (info, with what is left of that provider's daily limit via `useLlmCallLimits`, fetched only then). Shows today's `LlmUsage` (for the default model, named by label) when given, names the default model (via `useLlmModels`) and links to `/settings` to change it. Used by `ListingsParseModal`, `ProfileCvImportModal` and `ListingsTailoredCvAiModal`.
 - `<AppAiModal v-model:open title description? busy? wide? close?>` — the frame of every built-in/own-AI modal: phone fullscreen, not dismissible and Cancel disabled while `busy`, `wide` = `max-w-4xl` for in-modal reviews, `close` runs instead of closing (confirm discard). Slots: default body, `#footer-top` (apply/save errors), `#back` (far left, review Back), `#footer-info` (left, counts/problems), `#actions` (primary after Cancel; primary on top on phones). Body order in every modal: description, method tabs, inputs, cost notice, then retry confirm or error.
-- `<AppAiReviewRow v-model:include? testid-prefix label? badge? note? invalid? description? current? suggested? remove-label? disabled? @remove>` — one reviewed AI suggestion (`<li>`): include tick (when `include` is bound) or change badge + note, optional Remove, current next to suggested via `AppCompareBlock`; `#suggested` for editable fields. Test ids `${prefix}-row|-include|-remove`. Used by `ProfileSkillWordingModal` and `ProfileSkillCleanupModal`.
+- `<AppAiReviewRow v-model:include? testid-prefix label? badge? note? invalid? description? current? suggested? remove-label? disabled? @remove>` — one reviewed AI suggestion (`<li>`): include tick (when `include` is bound) or change badge + note, optional Remove, current next to suggested via `AppCompareBlock`; `#suggested` for editable fields. Test ids `${prefix}-row|-include|-remove`. Used by `ProfileSkillWordingModal`, `ProfileBulletRefinementModal` and `ProfileSkillCleanupModal`.
 - `<AppAiReviewEmpty icon text>` — centered muted icon above "Nothing to change". `<AppAiReviewSelectAll selected total @all @none>` — "N of M selected" with Select all / none (`review-select-all|none`).
 - `<AppAiMethodTabs v-model builtin? extra? disabled?>` — "Built-in AI" then "Your own AI" (`own`); `builtin` items replace the first tab (CV import: Paste CV); `extra` adds non-AI tabs after them (cover letter: Paste a letter).
 - `<AppAiOwnSteps :ai v-model:reply testid-prefix copy? copy-disabled? note? reply-help? reply-error? start-step?>` — the own-AI steps: copy prompt, prompt-load error with retry, "View prompt / copy manually", paste the reply. `#before` holds a feature's own first step (set `start-step` after it). Test ids `${prefix}-copy-prompt`, `-prompt-error`, `-json`.
@@ -76,8 +76,10 @@ remove it when you delete one.
 - `<ListingsToggleGroup v-model :options>` — button group for an optional enum; clicking the
   active option clears it. Generic over the option value type. Rule in the form: 3 or fewer options use this, more use a
   clearable `USelectMenu` (`USelect` can't go back to empty).
-- `<ListingsFilterPanel :facets v-model:sort v-model:search :quick-counts>` — the `/listings` toolbar (search, sort, "Filters (n)",
-  Favorites toggle, a wrapping row of quick toggles with `quick-counts`), a removable chip per active sheet facet (plus `companyId`, labelled by the optional `company-name` prop) + Clear all, and the facet sheet; edits `facets` in place.
+- `<ListingsFilterPanel v-model:facets v-model:search :quick-counts>` — the `/listings` filter bar: search + "Filters (n)" row, a row of seven
+  quick-filter pills (Favorites, Preferred, Norway only, IT, Non-IT, English posting/mentioned; counts from `quick-counts`; one scrolling line on phones),
+  a removable chip per active sheet facet (plus `companyId`, labelled by the optional `company-name` prop) + Clear all, and the grouped facet sheet
+  (Status, Location, Language, Skills, Dates). Pills are outside the badge and the sheet's Clear; edits `facets` in place.
 - `<CompaniesFilterPanel v-model:facets v-model:search>` — the same toolbar, chips and sheet for `/companies` (hide avoided, has contacts,
   research any/yes/no, size, industry, skill, location, work mode, working language). Query/URL logic in `utils/companiesQuery.ts`, state in `useCompaniesList(grid)`.
 - `<AppFilterSheet v-model:open testid-prefix clear-disabled @clear>` — the Filters slideover both panels use (right from `md`, bottom on
@@ -185,7 +187,7 @@ remove it when you delete one.
 - `useAiMethod()` → cookie `ai-method` (`builtin | own | null`): AI modals and quick-add open on it and write it after a successful run.
 - `useLeaveConfirm(unsaved)` → `{ open, leave }` — a page's in-app "Leave without saving?" (route-leave guard + confirm state); `useAiLeaveGuard()` → `{ open, leave }` — used once by the default layout: any navigation to another path while a built-in AI request is in flight asks first; `navigateAfterConfirm(to)` navigates past it after a page already asked. Reload/close is `plugins/leave-guard.client.ts`.
 - `useDeleteDocument(done)` → `{ target, confirmOpen, deleting, ask(pdf), confirm, isDeleted(id) }` — confirmed delete of a listing's unsent PDF; deleted ids stay hidden until the documents refetch; `done(deletedId | null)` after every attempt.
-- `useSuccessToast()` → `(title, description?)` — the green check toast with `SUCCESS_TOAST_DURATION`. `useCopyAsText(noun)` → `{ copied, copy(text) }` — clipboard write with an error toast; `copied` flips for 2 s.
+- `useAppToast()` → `{ success, info, warning, error, undoable(title, onUndo, opts?) }`, each `(title, { description?, icon?, action?: { label, to?, onClick? }, id? }?)`. This is the only way to show a toast: a fixed color, icon and `TOAST_DURATION` per kind, one outline `md` action, and the id defaults to `kind:title`, so a repeated message replaces the old one. The PWA update toast is the one direct `useToast` exception. `useCopyAsText(noun)` → `{ copied, copy(text) }` — clipboard write with an error toast; `copied` flips for 2 s.
 - `useDebounce(fn, ms)` — debounced `fn`, dropped on unmount (search fields). `useOpenedOnce(open)` — latch for `<LazyX v-if="opened">`: loads a modal on its first open and keeps it mounted so the close animation plays.
 - `useParsePrompt(name)` → `{ instructions, promptLoading, promptError, copied, load (toasts on failure), loadPrompt, copy(posting), parsing, parse(posting), parsingUrl, parseFromUrl(listingId), parsingNewUrl, parseNewUrl(url) }` — fetches
   `listingParsePrompt`, `listingQuickParsePrompt` or `companyParsePrompt` and copies it + `<posting>` text
@@ -261,3 +263,19 @@ remove it when you delete one.
   status's badge color; `Outcome` is `OUTCOME_OPTIONS`' value type), `CEFR_LEVELS`, `SKILL_LEVELS` (`{ label: 'Level n', value: n }`), `LINK_KIND_OPTIONS` (profile link kinds with icon), `PROJECT_KIND_OPTIONS` + `projectKindLabel(kind)`, and their value types.
 - `company.ts` — `COMPANY_KIND_OPTIONS`, `COMPANY_SIZE_OPTIONS` (`label` with the range for selects, short `range` for badges), `companyKindLabel(kind)`, `companySizeRange(size)`, `CompanyKind`/`CompanySize`, and the research limits `DESCRIPTION_MAX`, `SKILLS_MAX`, `FOUNDED_MIN`.
 - `errorMessages.ts` — `ERROR_MESSAGES` for user-facing errors.
+
+### Requirement maps
+
+- `useRequirementMapQuery(listingId)` shares the saved map under `requirement-map-<id>`; null is an empty saved state.
+- `useRequirementMap(listingId, profileRef)` owns the local editor: `needs`, `normalized`, `dirty`, `candidateLoaded`,
+  `issues`, `countIssue`, `submitted`, `error`, `loadCandidate(content)`, `discard()`, `save()`, `remove()`, plus
+  generation/preview and the existing prompt/safety state. AI operations never save; failed mutations preserve edits.
+- `<ListingsRequirementMapCard :listing>` shows saved counts and review needs. `<ListingsRequirementMapAiModal
+v-model:open :editor>` confirms replacing unsaved edits before running AI or previewing a reply.
+- `<ListingsRequirementNeedRow v-model :profile :index :issue? @remove>` edits one need. Its
+  `<ListingsRequirementEvidenceModal v-model:open :need :profile @apply>` edits a copy, caps bullets/entries
+  independently at 10, preserves selection order, and applies only on Use evidence.
+- `profileEntries(profile)` maps `KIND:id` to `{ kind, id, name, bullets }`; `profileBullets(profile)` resolves bullet
+  labels through the same entries. Wait for a successful profile request before pruning snapshot evidence ids.
+- `requirementMap.ts`: `toRequirementMapInput`, `needIssue`, `matchCounts`, `needsToReview`, `requirementMapStale`,
+  `newRequirementNeed`, `allowsRequirementEvidence`, and requirement field options; types derive from GraphQL results.

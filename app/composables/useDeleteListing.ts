@@ -15,7 +15,7 @@ const DELETE_LISTING = graphql(`
 
 // The API only allows this while a listing is SAVED; its message explains a refusal.
 export const useDeleteListing = () => {
-  const toast = useToast()
+  const notify = useAppToast()
   const deleting = ref(false)
   // Returns whether the listing was deleted, so callers only update their state on success.
   const remove = async (id: number) => {
@@ -23,12 +23,12 @@ export const useDeleteListing = () => {
     try {
       const { deleteListing } = await gql(DELETE_LISTING, { id })
       if (deleteListing.errors?.length) {
-        toast.add({ title: deleteListing.errors.map((e) => e.message).join(' '), color: 'error' })
+        notify.error(deleteListing.errors.map((e) => e.message).join(' '))
         return false
       }
       return true
     } catch {
-      toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
+      notify.error(ERROR_MESSAGES.generic)
       return false
     } finally {
       deleting.value = false

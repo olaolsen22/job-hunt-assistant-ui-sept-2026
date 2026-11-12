@@ -12,6 +12,10 @@ defineProps<{
   bullets: readonly ProfileBullet[]
 }>()
 const emit = defineEmits<{ edit: []; delete: []; changed: [] }>()
+
+const refineOpen = ref(false)
+const refineOpened = useOpenedOnce(refineOpen)
+const { profile } = useProfile()
 </script>
 
 <template>
@@ -27,15 +31,25 @@ const emit = defineEmits<{ edit: []; delete: []; changed: [] }>()
       </div>
       <ProfileRowActions
         :name="title"
+        :refine="!!bullets.length"
         testid="profile-entry-actions"
         @edit="emit('edit')"
         @remove="emit('delete')"
+        @refine="refineOpen = true"
       />
     </div>
     <ProfileBullets
       :kind="kind"
       :entry-id="entryId"
       :bullets="bullets"
+      @changed="emit('changed')"
+    />
+    <LazyProfileBulletRefinementModal
+      v-if="refineOpened && profile"
+      v-model:open="refineOpen"
+      :profile="profile"
+      :scope="{ kind, entryId }"
+      :scope-name="title"
       @changed="emit('changed')"
     />
   </li>

@@ -3,7 +3,7 @@ import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 // The model every built-in AI action runs on. Saves on change: it is the section's only field.
 const { models, defaultModel, status, error, label, setDefault, saving } = useLlmModels()
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 
 // A sentinel stands for "no model" because USelect values can't be null; it maps back to null on save.
 const APP_DEFAULT = 'app-default'

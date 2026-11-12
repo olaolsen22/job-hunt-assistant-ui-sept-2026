@@ -7,7 +7,7 @@ import EditPage from '~/pages/listings/[id]/edit.vue'
 
 const { navigateTo, toastAdd } = vi.hoisted(() => ({ navigateTo: vi.fn(), toastAdd: vi.fn() }))
 mockNuxtImport('navigateTo', () => navigateTo)
-mockNuxtImport('useToast', () => () => ({ add: toastAdd }))
+mockNuxtImport('useToast', () => () => ({ add: toastAdd, remove: vi.fn(), toasts: ref([]) }))
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
 
 describe('Leaving a listing form after saving', () => {

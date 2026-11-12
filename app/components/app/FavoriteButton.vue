@@ -60,10 +60,16 @@ const save = async (isFavorite: boolean) => {
   return { errors: payload.errors, saved: payload.listing }
 }
 
-const toast = useToast()
+const notify = useAppToast()
 // Props are read-only, so the button keeps its own copy to flip optimistically.
 const favoritedAt = ref(initialFavoritedAt)
 const saving = ref(false)
+// A list can hand this button another row's data (UTable reuses row components by position, so
+// toggling the Favorites filter swaps the listing under it), so the copy follows the prop.
+watch(
+  () => initialFavoritedAt,
+  (value) => (favoritedAt.value = value)
+)
 
 const toggleFavorite = async () => {
   const previous = favoritedAt.value
@@ -73,13 +79,13 @@ const toggleFavorite = async () => {
     const { errors, saved } = await save(!previous)
     if (errors?.length || !saved) {
       favoritedAt.value = previous
-      toast.add({ title: errors?.[0]?.message ?? ERROR_MESSAGES.generic, color: 'error' })
+      notify.error(errors?.[0]?.message ?? ERROR_MESSAGES.generic)
       return
     }
     favoritedAt.value = saved.favoritedAt
   } catch {
     favoritedAt.value = previous
-    toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
+    notify.error(ERROR_MESSAGES.generic)
   } finally {
     saving.value = false
   }

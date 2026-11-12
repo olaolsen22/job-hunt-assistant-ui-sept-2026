@@ -4,11 +4,15 @@ import type { TailoredCvAnalysis } from '~/composables/useTailoredCvDraft'
 import {
   addFromProfile,
   changedCvSections,
+  cloneCv,
   cvSectionFromAnalysis,
+  getCvSection,
   missingFromProfile,
   mergeExternalCandidate,
+  setCvSection,
   tailoredCvFromContent,
-  toTailoredCvInput
+  toTailoredCvInput,
+  type TailoredCv
 } from '~/utils/tailoredCv'
 import { clearCvFlags, cvFlagCounts, removeCvFlagItem } from '~/utils/tailoredCvFlags'
 import { cvSectionText, tailoredCvToText } from '~/utils/tailoredCvText'
@@ -100,6 +104,21 @@ describe('tailored CV candidate', () => {
     expect(input.contentStyle).toBe('PARAGRAPH')
     expect(input.template).toBe('CONCISE')
     expect(input.experiences?.[0]?.paragraph).toBe('Built checkout flows.')
+  })
+
+  it('joins the new bullets when the paragraph failed the word check, and keeps a bulletless entry', () => {
+    const cv = tailoredCvFromProfile(profile())
+    cv.experiences[0]!.paragraph = 'Old paragraph'
+    const bullets = [
+      { text: 'Built checkout.', sourceBulletId: 100 },
+      { text: 'Mentored juniors.', sourceBulletId: 102 }
+    ]
+    const failed = cvSectionFromAnalysis(cv, source(), result({ bullets, paragraph: null }))
+    expect(failed?.value).toMatchObject({ paragraph: 'Built checkout. Mentored juniors.' })
+
+    const outside = cvSectionFromAnalysis(cv, source(), result({ bullets: [], paragraph: null }))
+    expect(outside?.key).toBe('experience:10')
+    expect(outside?.value).toMatchObject({ title: cv.experiences[0]!.title, bullets: [] })
   })
 
   it("takes the result's bullet text over the profile's, and keeps the edited title", () => {
@@ -242,6 +261,16 @@ describe('tailored CV candidate', () => {
     expect(cvSectionFromAnalysis(cv, source(), result({ status: 'FAILED', error: 'x' }))).toBeNull()
   })
 
+  it('fills a null paragraph in an external paragraph reply from its bullets, like the PDF', () => {
+    const cv = tailoredCvFromProfile(profile())
+    const external = { ...tailoredCvFromProfile(profile()), contentStyle: 'PARAGRAPH' as const }
+    external.experiences[0]!.paragraph = null
+    const merged = mergeExternalCandidate(cv, external)
+    expect(merged.experiences[0]!.paragraph).toBe(
+      external.experiences[0]!.bullets.map((b) => b.text).join(' ')
+    )
+  })
+
   it('keeps contact details and layout from the candidate when taking an external reply', () => {
     const cv = { ...tailoredCvFromProfile(profile()), sectionOrder: 'DEVELOPER' as const }
     const external = {
@@ -261,6 +290,52 @@ describe('tailored CV candidate', () => {
     // No headline in the reply keeps the draft's; a new one is offered.
     expect(mergeExternalCandidate(cv, { ...external, headline: '' }).headline).toBe(cv.headline)
     expect(mergeExternalCandidate(cv, { ...external, headline: 'Lead' }).headline).toBe('Lead')
+  })
+
+  describe('splitting an external reply per entry', () => {
+    // Three experiences (companies) with their own profile ids.
+    const threeJobs = () => {
+      const cv = tailoredCvFromProfile(profile())
+      const first = cv.experiences[0]!
+      cv.experiences = [1, 2, 3].map((id) => ({
+        ...cloneCv(first),
+        sourceEntryId: id,
+        employer: `Co ${id}`
+      }))
+      return cv
+    }
+    const keys = (cv: TailoredCv, next: TailoredCv) => changedCvSections(cv, next).map((s) => s.key)
+
+    it('offers each changed company on its own', () => {
+      const cv = threeJobs()
+      const next = cloneCv(cv)
+      next.experiences[0]!.bullets[0]!.text = 'Reworded'
+      next.experiences[2]!.title = 'Lead'
+      expect(keys(cv, next)).toEqual(['experience:1', 'experience:3'])
+      const accepted = cloneCv(cv)
+      setCvSection(accepted, 'experience:1', getCvSection(next, 'experience:1'))
+      expect(accepted.experiences[0]!.bullets[0]!.text).toBe('Reworded')
+      expect(accepted.experiences[2]!.title).toBe(cv.experiences[2]!.title)
+    })
+
+    it('offers removing a company the reply left out, and accepting removes only that one', () => {
+      const cv = threeJobs()
+      const next = cloneCv(cv)
+      next.experiences.splice(1, 1)
+      expect(changedCvSections(cv, next)).toEqual([{ key: 'experience:2', value: null }])
+      setCvSection(cv, 'experience:2', null)
+      expect(cv.experiences.map((e) => e.sourceEntryId)).toEqual([1, 3])
+    })
+
+    it('offers the whole list when the reply adds or reorders entries', () => {
+      const cv = threeJobs()
+      const reordered = cloneCv(cv)
+      reordered.experiences.reverse()
+      expect(keys(cv, reordered)).toEqual(['experiences'])
+      const added = cloneCv(cv)
+      added.experiences.push({ ...cloneCv(cv.experiences[0]!), sourceEntryId: 9 })
+      expect(keys(cv, added)).toEqual(['experiences'])
+    })
   })
 
   it('sends the complete candidate with blanks as null and empty bullets dropped', () => {

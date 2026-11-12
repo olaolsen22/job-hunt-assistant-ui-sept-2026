@@ -10,6 +10,8 @@ export type RewriteRow = {
   current?: string
   text: string
   include: boolean
+  // The AI's question about a missing fact (bullet refinement); shown on the row, never applied.
+  note?: string | null
 }
 
 // What the apply mutations take: the ticked bullets, and null for an unchanged headline/summary.

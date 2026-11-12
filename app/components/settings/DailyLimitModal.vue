@@ -13,7 +13,7 @@ const {
   saving?: boolean
 }>()
 const open = defineModel<boolean>('open', { required: true })
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 
 type Mode = 'none' | 'paused' | 'daily'
 const MODES = [

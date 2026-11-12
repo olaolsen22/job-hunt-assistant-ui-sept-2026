@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { ListingsFilter } from '~/composables/useListingsList'
+import { useMediaQuery } from '@vueuse/core'
+import type { ListingsFilter, ListingsSort } from '~/composables/useListingsList'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
 definePageMeta({ title: 'Job listings' })
@@ -92,12 +93,31 @@ const heading = computed(() => {
   return `${n} ${adjective} ${plural}`
 })
 
+// The table (xl+) needs about 1000px for its columns, which the sidebar leaves only from xl;
+// smaller screens keep the card / two-line rows. The view is swapped with v-if, not hidden.
+const isTable = useMediaQuery('(min-width: 80rem)')
+
 const SORT_OPTIONS = [
   { label: 'Due date', value: 'due' },
   { label: 'Newest posted', value: 'posted' },
   { label: 'Newest added', value: 'newest' },
   { label: 'Recently changed', value: 'changed' }
 ]
+// Column sorts come from the table headers (or a link). They join the select only while active,
+// so it still names the current order; the select's own options stay the everyday four.
+const COLUMN_SORT_LABELS: Partial<Record<ListingsSort, string>> = {
+  'posted-asc': 'Oldest posted',
+  'title-asc': 'Title A–Z',
+  'title-desc': 'Title Z–A',
+  'seniority-asc': 'Seniority ascending',
+  'seniority-desc': 'Seniority descending',
+  'status-asc': 'Status ascending',
+  'status-desc': 'Status descending'
+}
+const sortItems = computed(() => {
+  const label = COLUMN_SORT_LABELS[sort.value]
+  return label ? [...SORT_OPTIONS, { label, value: sort.value }] : SORT_OPTIONS
+})
 
 const clearEverything = () => {
   Object.assign(facets, emptyFacets())
@@ -153,7 +173,7 @@ const ADD_ITEMS = [
           class="min-w-0 flex-1 md:hidden"
           data-testid="listings-presets-select"
         />
-        <div class="hidden min-w-0 items-center gap-2 md:flex">
+        <div class="hidden min-w-0 items-center gap-2 overflow-x-auto md:flex">
           <UTabs
             v-model="tab"
             :items="tabItems"
@@ -183,7 +203,7 @@ const ADD_ITEMS = [
              sheet. A visible value, not an icon menu, so the current order reads at a glance. -->
         <USelect
           v-model="sort"
-          :items="SORT_OPTIONS"
+          :items="sortItems"
           icon="i-lucide-arrow-up-down"
           aria-label="Sort by"
           class="min-w-0 flex-1 md:ml-auto md:w-48 md:flex-none"
@@ -217,42 +237,49 @@ const ADD_ITEMS = [
         @click="clearEverything"
         >Clear search and filters</UButton
       >
+      <!-- Rejected listings are hidden by default, so an empty list may still hold some. -->
+      <UButton
+        v-if="!facets.showRejected && !facets.statuses.length"
+        color="neutral"
+        variant="link"
+        data-testid="listings-empty-show-rejected"
+        @click="facets.showRejected = true"
+        >Show rejected applications</UButton
+      >
     </div>
 
     <template v-else>
-      <ul
+      <!-- One stable element to measure the page size on, whichever view is inside. Only one view is
+           ever rendered (v-if, not CSS hiding). The app is client-only, so the media query is
+           already right on the first render. -->
+      <div
         ref="grid"
-        class="space-y-3 md:divide-y md:divide-default md:space-y-0 md:overflow-hidden md:rounded-lg md:border md:border-default"
+        class="md:overflow-hidden md:rounded-lg md:border md:border-default"
         data-testid="listings-grid"
       >
-        <!-- Column labels only where the row is a real column layout (lg+); widths mirror Row.vue.
-             A <li> so the divider and padding match the rows exactly. -->
-        <li
-          class="hidden gap-4 px-4 py-2 text-xs font-medium text-muted uppercase lg:flex"
-          aria-hidden="true"
-        >
-          <span class="w-8 shrink-0" />
-          <span class="min-w-48 flex-1">Title</span>
-          <span class="w-40 shrink-0">Location</span>
-          <span class="w-16 shrink-0">Seniority</span>
-          <span class="w-20 shrink-0">Posted</span>
-          <span class="w-44 shrink-0">Due</span>
-          <span class="w-52 shrink-0">Status</span>
-          <span class="w-17 shrink-0" />
-        </li>
-        <template v-if="firstLoad">
-          <li v-for="i in pageSize" :key="i" class="p-3 md:px-4">
-            <USkeleton class="h-24 w-full md:h-10" />
-          </li>
-        </template>
-        <ListingsRow
-          v-for="listing in listings"
-          v-else
-          :key="listing.id"
-          :listing="listing"
+        <ListingsTable
+          v-if="isTable"
+          v-model:sort="sort"
+          :listings="listings"
+          :loading="loading"
+          :skeleton-rows="pageSize"
           @changed="refresh"
         />
-      </ul>
+        <ul v-else class="space-y-3 md:divide-y md:divide-default md:space-y-0">
+          <template v-if="firstLoad">
+            <li v-for="i in pageSize" :key="i" class="p-3 md:px-4">
+              <USkeleton class="h-24 w-full md:h-10" />
+            </li>
+          </template>
+          <ListingsRow
+            v-for="listing in listings"
+            v-else
+            :key="listing.id"
+            :listing="listing"
+            @changed="refresh"
+          />
+        </ul>
+      </div>
 
       <!-- UPagination still renders a lone "1" with disabled arrows when everything fits on one page. -->
       <div v-if="totalCount > pageSize" class="flex justify-center sm:justify-end">

@@ -11,7 +11,7 @@ const current = computed(() => (pending.value?.listing.id === listingId ? pendin
 const notice = useTemplateRef('notice')
 onMounted(() => notice.value?.scrollIntoView({ block: 'center' }))
 
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 const listingsView = useListingsView()
 const { remove, deleting } = useDeleteListing()
 

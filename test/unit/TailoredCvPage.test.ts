@@ -500,21 +500,21 @@ describe('Tailored CV page', () => {
     })
   })
 
-  it('restores a Concise draft with bullets only, and asks for a new run after switching', async () => {
+  it('restores a Concise paragraph draft, and asks for a new run after switching', async () => {
     savedDraft = savedSummary()
     savedDraft.content.template = 'CONCISE'
     savedDraft.content.contentStyle = 'PARAGRAPH'
     await mountPage()
     await vi.waitFor(() => expect(el('tailored-cv-template')).not.toBeNull())
     expect(checkedRadio('tailored-cv-template')).toBe('Concise')
-    // Concise prints bullets, so the entry format shows that and can't be changed.
-    expect(checkedRadio('tailored-cv-content-style')).toBe('Bullets')
-    expect(radio('tailored-cv-content-style', 'Paragraphs').disabled).toBe(true)
+    // Concise prints paragraphs too, so the choice shows and stays editable.
+    expect(checkedRadio('tailored-cv-content-style')).toBe('Paragraphs')
+    expect(radio('tailored-cv-content-style', 'Bullets').disabled).toBe(false)
     expect(el('tailored-cv-template-changed')).toBeNull()
 
     radio('tailored-cv-template', 'Detailed').click()
     await flushPromises()
-    // The owner's paragraph choice comes back, and the entries wait for a new run.
+    // The format is kept, and the entries wait for a new run.
     expect(checkedRadio('tailored-cv-content-style')).toBe('Paragraphs')
     expect(el('tailored-cv-template-changed')).not.toBeNull()
     expect(ops('AnalyzeTailoredCvSection')).toHaveLength(0)
@@ -553,6 +553,68 @@ describe('Tailored CV page', () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain('Unknown bullet id 999.'))
     expect(summaryValue()).toBe('Mine')
     expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved')
+    vi.unstubAllGlobals()
+  })
+
+  it('offers an external reply per company, with a removal for a left-out one', async () => {
+    // Three experiences (companies) in the saved draft; the reply rewords two and drops the third.
+    const cv = tailoredCvFromProfile(cvProfile())
+    const job = cv.experiences[0]!
+    cv.experiences = [10, 11, 12].map((id) => ({
+      ...structuredClone(job),
+      sourceEntryId: id,
+      employer: `Co ${id}`
+    }))
+    savedDraft = { id: 1, updatedAt: '2026-10-12T10:00:00Z', content: toTailoredCvInput(cv) }
+    const reply = structuredClone(cv)
+    reply.experiences = reply.experiences.slice(0, 2)
+    reply.experiences[0]!.bullets[0]!.text = 'Reworded at Co 10'
+    reply.experiences[1]!.bullets[0]!.text = 'Reworded at Co 11'
+    previewReply = {
+      candidate: { schemaVersion: 1, content: toTailoredCvInput(reply) },
+      errors: null
+    }
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn(async () => {}) } })
+    await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-optimize')).not.toBeNull())
+    await click('tailored-cv-optimize')
+    const external = [...document.body.querySelectorAll<HTMLElement>('button[role="tab"]')].find(
+      (b) => b.textContent?.includes('Your own AI')
+    )!
+    external.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    await flushPromises()
+    await vi.waitFor(() =>
+      expect((el('tailored-cv-copy-prompt') as HTMLButtonElement).disabled).toBe(false)
+    )
+    await click('tailored-cv-copy-prompt')
+    const json = el('tailored-cv-json') as HTMLTextAreaElement
+    json.value = '{"content":{}}'
+    json.dispatchEvent(new Event('input'))
+    await flushPromises()
+    await click('tailored-cv-preview')
+
+    const entries = () => [
+      ...el('tailored-cv-experience')!.querySelectorAll<HTMLElement>(
+        '[data-testid="tailored-cv-entry"]'
+      )
+    ]
+    await vi.waitFor(() =>
+      expect(
+        entries().filter((e) => e.querySelector('[data-testid="tailored-cv-suggestion"]'))
+      ).toHaveLength(3)
+    )
+    expect(el('tailored-cv-experience')!.textContent).not.toContain('All experience')
+    expect(entries()[0]!.textContent).toContain('Reworded at Co 10')
+    expect(entries()[2]!.textContent).toContain('Not in the AI draft')
+
+    // Accepting the first company changes only it; removing the third drops only that one.
+    entries()[0]!.querySelector<HTMLElement>('[data-testid="tailored-cv-accept"]')!.click()
+    await flushPromises()
+    entries()[2]!.querySelector<HTMLElement>('[data-testid="tailored-cv-accept"]')!.click()
+    await flushPromises()
+    expect(entries()).toHaveLength(2)
+    expect(entries()[0]!.querySelector('[data-testid="tailored-cv-suggestion"]')).toBeNull()
+    expect(entries()[1]!.querySelector('[data-testid="tailored-cv-suggestion"]')).not.toBeNull()
     vi.unstubAllGlobals()
   })
 

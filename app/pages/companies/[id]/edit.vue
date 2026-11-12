@@ -201,7 +201,7 @@ const validate = (s: typeof state): FormError[] => {
   return errors
 }
 
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 const saving = ref(false)
 const errorMessage = ref('')
 

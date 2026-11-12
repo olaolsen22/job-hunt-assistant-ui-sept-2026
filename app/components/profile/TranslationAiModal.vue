@@ -17,7 +17,7 @@ const target = computed(() => translationTarget(profile.contentLanguage))
 const targetLabel = computed(() => languageLabel(target.value))
 const api = useProfileTranslationAi(target)
 const { busy, needsConfirm, safetyMessage } = api
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 
 // The writing sample list on the profile page has already fetched them; null until it has.
 const { data: samples } = useNuxtData<WritingSample[]>('writing-samples')

@@ -3,9 +3,6 @@ import { flushPromises } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import CvTemplatesPage from '~/pages/cv-templates/index.vue'
-import { toTailoredCvInput } from '~/utils/tailoredCv'
-import { tailoredCvFromProfile } from '../fixtures/tailoredCv'
-import { cvProfile } from '../fixtures/profileCv'
 
 const { navigateTo } = vi.hoisted(() => ({ navigateTo: vi.fn() }))
 mockNuxtImport('navigateTo', () => navigateTo)
@@ -43,7 +40,6 @@ const row = (id: number, name: string, archivedAt: string | null = null) => ({
 let calls: Body[]
 let lists: { active: unknown[]; archived: unknown[] }
 let deleteReply: unknown
-let createReply: unknown
 
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
 registerEndpoint('/graphql', {
@@ -54,15 +50,6 @@ registerEndpoint('/graphql', {
     const { query, variables } = body
     if (query.includes('query BaseCvs('))
       return { data: { baseCvs: variables.archived ? lists.archived : lists.active } }
-    if (query.includes('query BaseCvFromProfile'))
-      return {
-        data: {
-          baseCvFromProfile: toTailoredCvInput(
-            tailoredCvFromProfile(cvProfile(), variables.language as 'NORWEGIAN')
-          )
-        }
-      }
-    if (query.includes('mutation CreateBaseCv')) return { data: { createBaseCv: createReply } }
     if (query.includes('mutation DeleteBaseCv')) return { data: { deleteBaseCv: deleteReply } }
     if (query.includes('mutation SetBaseCvArchived'))
       return { data: { setBaseCvArchived: { baseCv: { id: 1 }, errors: null } } }
@@ -76,7 +63,6 @@ beforeEach(() => {
   calls = []
   lists = { active: [row(1, 'Frontend (EN)'), row(2, 'Generic (NO)')], archived: [] }
   deleteReply = { errors: null }
-  createReply = { baseCv: { id: 9 }, errors: null }
 })
 
 const inBody = <T extends HTMLElement = HTMLElement>(testid: string) =>
@@ -176,85 +162,21 @@ describe('CV templates list', () => {
 })
 
 describe('New CV template', () => {
-  const fillAndCreate = async (name: string) => {
-    inBody('cv-templates-new')!.click()
-    await flushPromises()
-    const input = inBody<HTMLInputElement>('cv-template-name')!
-    input.value = name
-    input.dispatchEvent(new Event('input'))
-    const norwegian = [...document.body.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
-      (el) => el.closest('[data-testid="cv-template-language"]') && el.id.endsWith('NORWEGIAN')
-    )
-    norwegian!.click()
-    await flushPromises()
-    input.closest('form')!.dispatchEvent(new Event('submit'))
-  }
-
-  it('starts from the profile in the chosen language and opens the editor', async () => {
+  it('goes straight to the create page, with no dialog and nothing created', async () => {
     const wrapper = await mountPage()
-    await fillAndCreate('Generic (NO)')
+    expect(inBody('cv-templates-new')!.getAttribute('href')).toBe('/cv-templates/new')
+    expect(inBody('cv-template-name')).toBeNull()
 
-    await vi.waitFor(() => expect(navigateTo).toHaveBeenCalledWith('/cv-templates/9'))
-    const fromProfile = calls.find((c) => c.query.includes('query BaseCvFromProfile'))!
-    expect(fromProfile.variables.language).toBe('NORWEGIAN')
-    const create = calls.find((c) => c.query.includes('mutation CreateBaseCv'))!
-    expect(create.variables.input).toMatchObject({
-      name: 'Generic (NO)',
-      description: null,
-      language: 'NORWEGIAN'
-    })
-    expect((create.variables.input!.content as { language: string }).language).toBe('NORWEGIAN')
     wrapper.unmount()
-  })
-
-  it('starting from an AI draft creates nothing yet and carries the answers to the draft page', async () => {
-    const wrapper = await mountPage()
-    inBody('cv-templates-new')!.click()
-    await flushPromises()
-    const input = inBody<HTMLInputElement>('cv-template-name')!
-    input.value = 'Frontend (AI)'
-    input.dispatchEvent(new Event('input'))
-    const aiDraft = [...document.body.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
-      (el) => el.closest('[data-testid="cv-template-start-from"]') && el.id.endsWith('ai')
-    )
-    aiDraft!.click()
-    await flushPromises()
-    expect(document.body.textContent).toContain('Continue to AI draft')
-    input.closest('form')!.dispatchEvent(new Event('submit'))
-
-    await vi.waitFor(() =>
-      expect(navigateTo).toHaveBeenCalledWith({
-        path: '/cv-templates/new',
-        query: { name: 'Frontend (AI)', description: undefined, lang: 'en' }
-      })
-    )
-    expect(calls.some((c) => c.query.includes('mutation CreateBaseCv'))).toBe(false)
-    expect(calls.some((c) => c.query.includes('query BaseCvFromProfile'))).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('shows a taken name on the field with a link to that template', async () => {
-    createReply = {
-      baseCv: null,
-      errors: [
-        {
-          __typename: 'DuplicateBaseCvError',
-          message: 'A CV template with this name already exists.',
-          existingBaseCvId: 1
-        }
-      ]
-    }
-    const wrapper = await mountPage()
-    await fillAndCreate('frontend (en)')
-
-    await vi.waitFor(() =>
-      expect(document.body.textContent).toContain('A CV template with this name already exists.')
-    )
-    const link = [...document.body.querySelectorAll('a')].find(
-      (a) => a.textContent === 'Open the existing template'
+    clearNuxtData()
+    lists.active = []
+    const empty = await mountPage()
+    await vi.waitFor(() => expect(inBody('cv-templates-empty')).not.toBeNull())
+    const start = [...inBody('cv-templates-empty')!.querySelectorAll('a')].find((a) =>
+      a.textContent?.includes('New CV template')
     )!
-    expect(link.getAttribute('href')).toBe('/cv-templates/1')
-    expect(navigateTo).not.toHaveBeenCalled()
-    wrapper.unmount()
+    expect(start.getAttribute('href')).toBe('/cv-templates/new')
+    expect(calls.some((c) => c.query.includes('mutation CreateBaseCv'))).toBe(false)
+    empty.unmount()
   })
 })

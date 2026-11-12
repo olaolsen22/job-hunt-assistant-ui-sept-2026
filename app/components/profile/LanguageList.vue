@@ -2,7 +2,10 @@
 import { PROFICIENCY_OPTIONS } from '~/constants/listing'
 import type { ProfileLanguage } from '~/composables/useProfile'
 
-defineProps<{ languages: readonly ProfileLanguage[] }>()
+withDefaults(
+  defineProps<{ languages: readonly ProfileLanguage[]; defaultOpen?: boolean; count?: number }>(),
+  { defaultOpen: true, count: undefined }
+)
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const REMOVE_LANGUAGE = graphql(`
@@ -57,6 +60,8 @@ const remove = async () => {
     icon="i-lucide-languages"
     testid="profile-languages"
     :empty="!languages.length"
+    :default-open="defaultOpen"
+    :count="count"
     empty-message="No languages yet."
     add-label="Add language"
     @clear="emit('clear')"

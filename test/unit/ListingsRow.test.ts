@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
+import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import Row from '~/components/listings/Row.vue'
 import type { ListingListItem } from '~/composables/useListingsList'
+
+const { refreshNuxtData } = vi.hoisted(() => ({ refreshNuxtData: vi.fn() }))
+mockNuxtImport('refreshNuxtData', () => refreshNuxtData)
 
 const listing = (overrides: Partial<ListingListItem> = {}): ListingListItem => ({
   id: 7,
@@ -75,6 +78,35 @@ describe('ListingsRow', () => {
 
     await vi.waitFor(() => expect(inputs).toEqual([{ id: 7, isArchived: true }]))
     await vi.waitFor(() => expect(wrapper.emitted('changed')).toHaveLength(1))
+  })
+
+  it('offers Undo after archiving, but not again after that Undo', async () => {
+    useToast().clear()
+    const inputs: { isArchived: boolean }[] = []
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: async (event) => {
+        const input = (await readBody(event)).variables.input
+        inputs.push(input)
+        const archivedAt = input.isArchived ? '2026-10-15T10:00:00Z' : null
+        return { data: { setListingArchived: { listing: { id: 7, archivedAt }, errors: null } } }
+      }
+    })
+    const wrapper = await mountSuspended(Row, { props: { listing: listing() } })
+    await wrapper.get('[data-testid="listing-archive"]').trigger('click')
+
+    const { toasts } = useToast()
+    await vi.waitFor(() => expect(toasts.value.at(-1)?.title).toBe('Archived Frontend Developer'))
+    const undo = toasts.value.at(-1)!.actions!
+    expect(undo.map((a) => a.label)).toEqual(['Undo'])
+    // The refreshed list no longer has the row, so Undo must work without it.
+    wrapper.unmount()
+    undo[0]!.onClick!(new MouseEvent('click'))
+
+    await vi.waitFor(() => expect(toasts.value.at(-1)?.title).toBe('Unarchived Frontend Developer'))
+    expect(inputs.map((i) => i.isArchived)).toEqual([true, false])
+    expect(toasts.value.at(-1)!.actions).toBeUndefined()
+    await vi.waitFor(() => expect(refreshNuxtData).toHaveBeenCalledWith('listings'))
   })
 
   it('offers Unarchive on an archived listing', async () => {

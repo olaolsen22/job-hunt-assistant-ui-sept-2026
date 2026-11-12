@@ -3,7 +3,15 @@ import type { ProfileData, ProfileSkill } from '~/composables/useProfile'
 
 // Read-only list; Add opens the single-skill form (it has the name search), Edit the bulk one.
 // `profile` lets the wording review show each bullet's current text.
-defineProps<{ skills: readonly ProfileSkill[]; profile: ProfileData }>()
+withDefaults(
+  defineProps<{
+    skills: readonly ProfileSkill[]
+    profile: ProfileData
+    defaultOpen?: boolean
+    count?: number
+  }>(),
+  { defaultOpen: true, count: undefined }
+)
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const addOpen = ref(false)
@@ -25,6 +33,8 @@ const translated = (s: ProfileSkill) =>
     icon="i-lucide-wrench"
     testid="profile-skills"
     :empty="!skills.length"
+    :default-open="defaultOpen"
+    :count="count"
     empty-message="No skills yet."
     add-label="Add skill"
     @clear="emit('clear')"

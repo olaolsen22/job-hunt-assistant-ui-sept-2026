@@ -65,7 +65,7 @@ const contact = computed(() => data.value?.contactById ?? null)
 const listings = computed(() => data.value?.listings?.items ?? [])
 const loading = computed(() => status.value === 'pending')
 
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 const editOpen = ref(false)
 const deleteOpen = ref(false)
 const openApplication = computed(() => `/listings/add?contact=${id}`)

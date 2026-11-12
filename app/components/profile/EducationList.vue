@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import type { ProfileEducation } from '~/composables/useProfile'
 
-const props = defineProps<{ educations: readonly ProfileEducation[] }>()
+const props = withDefaults(
+  defineProps<{
+    educations: readonly ProfileEducation[]
+    defaultOpen?: boolean
+    count?: number
+  }>(),
+  { defaultOpen: true, count: undefined }
+)
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const { locale, translating } = useProfileTranslation()
@@ -57,6 +64,8 @@ const remove = async () => {
     icon="i-lucide-graduation-cap"
     testid="profile-education"
     :empty="!educations.length"
+    :default-open="defaultOpen"
+    :count="count"
     empty-message="No education yet."
     add-label="Add education"
     @clear="emit('clear')"

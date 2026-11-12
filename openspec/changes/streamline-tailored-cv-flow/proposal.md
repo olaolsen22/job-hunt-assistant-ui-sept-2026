@@ -66,3 +66,6 @@ None.
     `application-tracking` requirements are not in the main specs yet. Archive it before this change.
   - `cv-pdf-export` duplicates the archived `generate-cv-pdf` change, which is now the `cv-documents` spec, and its
     behavior has shipped. Archive or drop it without syncing.
+- Follow-up (2026-11-08): `rework-cv-template-flow` changes how a whole-CV reply is split into suggestions (per entry
+  instead of per list, so experience is reviewed per company) and reuses this change's suggestion banner in the CV
+  template editor. Archive this change before that one.

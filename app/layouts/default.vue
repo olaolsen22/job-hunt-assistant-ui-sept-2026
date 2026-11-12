@@ -116,11 +116,18 @@ const { coordsStart, lengthX } = useSwipe(window, {
       </template>
 
       <template #default="{ collapsed }">
-        <UNavigationMenu :items="items" :collapsed="collapsed" orientation="vertical" />
+        <!-- Taller tap targets in the phone slideover; desktop keeps the default density. -->
+        <UNavigationMenu
+          :items="items"
+          :collapsed="collapsed"
+          orientation="vertical"
+          :ui="{ link: 'py-3 lg:py-1.5' }"
+        />
         <UNavigationMenu
           :items="themeItems"
           :collapsed="collapsed"
           orientation="vertical"
+          :ui="{ link: 'py-3 lg:py-1.5' }"
           class="mt-auto"
         />
       </template>

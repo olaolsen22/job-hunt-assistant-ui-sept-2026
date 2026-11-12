@@ -85,7 +85,7 @@ const onLoad = () => {
   clearTimers()
 }
 // Shares the previewed copy, or fetches one when the preview hasn't got it.
-const toast = useToast()
+const notify = useAppToast()
 const save = async () => {
   try {
     const pdf =
@@ -97,9 +97,7 @@ const save = async () => {
   } catch (error) {
     // Closing the share sheet without choosing anything.
     if (error instanceof DOMException && error.name === 'AbortError') return
-    toast.add({
-      color: 'error',
-      title: "Couldn't save the PDF",
+    notify.error("Couldn't save the PDF", {
       description: 'Open the PDF and save it from there.'
     })
   }

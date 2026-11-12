@@ -25,7 +25,7 @@ const { method, tab, error, errorCode, usage, refreshUsage } = useAiModalState<'
   open,
   { tabFor: (m) => (m === 'own' ? 'own' : 'paste'), onOpen: () => api.loadPrompt() }
 )
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 const cv = ref('')
 const json = ref('')
 const attempted = ref(false)

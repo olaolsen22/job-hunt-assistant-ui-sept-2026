@@ -35,7 +35,7 @@ const SET_ARCHIVED = graphql(`
   }
 `)
 
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 const { state, toInput, fill } = useListingForm()
 const markOpen = ref(false)
 const applyOpen = ref(false)
@@ -316,6 +316,7 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
             :listing="listing"
             @changed="refresh"
           />
+          <ListingsRequirementMapCard :listing="listing" />
           <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
           <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
           <ListingsQuestionsCard :listing="listing" @changed="refresh" />
@@ -363,6 +364,7 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
               <p v-else class="mt-4 text-sm text-muted">No summary</p>
             </AppCard>
             <template v-if="listing.status === 'SAVED'">
+              <ListingsRequirementMapCard :listing="listing" />
               <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
               <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
               <ListingsQuestionsCard :listing="listing" @changed="refresh" />

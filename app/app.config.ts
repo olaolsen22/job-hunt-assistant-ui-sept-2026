@@ -15,6 +15,8 @@ export default defineAppConfig({
     textarea: touchInput,
     // py-2.5 makes buttons 40px on phones, level with the 16px-text inputs next to them.
     button: { defaultVariants: { size: 'lg' }, slots: { base: 'max-sm:py-2.5' } },
-    switch: { defaultVariants: { size: 'lg' } }
+    switch: { defaultVariants: { size: 'lg' } },
+    // A toast added without useAppToast must not look like a success (the default is primary).
+    toast: { defaultVariants: { color: 'neutral' } }
   }
 })

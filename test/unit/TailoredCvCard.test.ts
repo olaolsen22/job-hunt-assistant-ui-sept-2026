@@ -93,7 +93,7 @@ describe('Tailored CV card', () => {
     wrapper.unmount()
   })
 
-  it('shows the saved state with Edit and Copy as text, and no PDF row without one', async () => {
+  it('shows the saved state with Edit and Copy as text (confirmed on the button), and no PDF row without one', async () => {
     withDraft()
     const writeText = vi.fn(async () => {})
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
@@ -105,9 +105,13 @@ describe('Tailored CV card', () => {
       '/listings/5/cv'
     )
 
+    useToast().clear()
     await wrapper.get('[data-testid="tailored-cv-card-copy"]').trigger('click')
     await flushPromises()
     expect(writeText).toHaveBeenCalledWith(expect.stringMatching(/^Existing owner\nEngineer/))
+    // The button confirms the copy, so no toast repeats it.
+    expect(wrapper.get('[data-testid="tailored-cv-card-copy"]').text()).toBe('Copied')
+    expect(useToast().toasts.value).toEqual([])
     expect(wrapper.find('[data-testid="tailored-cv-card-pdf"]').exists()).toBe(false)
     vi.unstubAllGlobals()
     wrapper.unmount()

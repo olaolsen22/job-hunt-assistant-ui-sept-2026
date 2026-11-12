@@ -159,7 +159,7 @@ const savedText = (row: Row) => {
     : 'Already existed, nothing new to add'
 }
 
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 const saving = ref(false)
 const saveError = ref('')
 

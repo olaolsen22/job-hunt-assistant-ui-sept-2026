@@ -21,8 +21,9 @@ export type TailoredCvCertification = TailoredCv['certifications'][number]
 export type TailoredCvProject = TailoredCv['projects'][number]
 export type TailoredCvBullet = TailoredCvExperience['bullets'][number]
 
-// A part of the draft that AI output can replace on its own. Built-in analysis works per experience
-// and education entry; an external reply can change any list, so it is compared per whole section.
+// A part of the draft that AI output can replace on its own. Built-in analysis works per experience,
+// education and project entry; an external reply is split the same way when its entries pair up
+// (see changedCvSections), else compared per whole section.
 export type TailoredCvSectionKey =
   | 'headline'
   | 'summary'
@@ -186,8 +187,11 @@ export const setCvSection = (cv: TailoredCv, key: TailoredCvSectionKey, value: u
   if (entry) {
     const list = cv[entry.list] as { sourceEntryId?: number | null }[]
     const index = list.findIndex((e) => e.sourceEntryId === entry.id)
-    // An entry the owner removed comes back at the end rather than being lost.
-    if (index === -1) list.push(value as (typeof list)[number])
+    // Null removes the entry (an AI reply that left it out). An entry the owner removed comes back
+    // at the end rather than being lost.
+    if (value == null) {
+      if (index !== -1) list.splice(index, 1)
+    } else if (index === -1) list.push(value as (typeof list)[number])
     else list[index] = value as (typeof list)[number]
     return
   }
@@ -195,27 +199,34 @@ export const setCvSection = (cv: TailoredCv, key: TailoredCvSectionKey, value: u
 }
 
 export type CvContentStyle = TailoredCv['contentStyle']
-// Concise always prints bullets; the stored choice and paragraphs stay for switching back.
-export const cvEntryStyle = (cv: TailoredCv): CvContentStyle =>
-  cv.template === 'CONCISE' ? 'BULLETS' : cv.contentStyle
 
-// One format for the whole CV. Entries with no paragraph yet start from their bullets joined;
-// bullets stay in the draft either way, since they carry the source ids.
-export const setCvContentStyle = (cv: TailoredCv, style: CvContentStyle) => {
-  cv.contentStyle = style
-  if (style !== 'PARAGRAPH') return
+const joinedBullets = (e: { bullets: { text: string }[] }) => e.bullets.map((b) => b.text).join(' ')
+
+// What the PDF prints for an entry without a paragraph, so the editor shows the same text.
+// Mutates `cv`; a no-op in bullets mode, where a missing paragraph never prints.
+export const fillMissingParagraphs = (cv: TailoredCv) => {
+  if (cv.contentStyle !== 'PARAGRAPH') return cv
   for (const e of [...cv.experiences, ...cv.educations, ...cv.certifications, ...cv.projects]) {
-    if (!e.paragraph?.trim()) e.paragraph = e.bullets.map((b) => b.text).join(' ')
+    if (!e.paragraph?.trim()) e.paragraph = joinedBullets(e)
   }
+  return cv
 }
 
-// What the tailored CV page adds to the shared editor's cards and entries. `review` and `section`
-// return props and listeners for v-bind (Vue 3 passes `on*` keys as listeners): `review` for a
-// card's suggestions, `section` also for its own AI run.
+// One format for the whole CV, Detailed or Concise. Bullets stay in the draft either way, since
+// they carry the source ids.
+export const setCvContentStyle = (cv: TailoredCv, style: CvContentStyle) => {
+  cv.contentStyle = style
+  fillMissingParagraphs(cv)
+}
+
+// What an editor page adds to the shared editor's cards and entries. `review` and `section` return
+// props and listeners for v-bind (Vue 3 passes `on*` keys as listeners): `review` for a card's
+// suggestions, `section` also for its own AI run. Without `analyze` (CV templates) cards only show
+// suggestions, with no per-section AI.
 export interface CvEditorAi {
   review: (key: TailoredCvSectionKey) => Record<string, unknown>
   section: (key: TailoredCvSectionKey) => Record<string, unknown>
-  analyze: (key: TailoredCvSectionKey, label: string) => void
+  analyze?: (key: TailoredCvSectionKey, label: string) => void
 }
 
 // The lists whose profile items the owner can remove from this CV and add back.
@@ -292,17 +303,20 @@ export const cvSectionFromAnalysis = (
   const fromProfile = getCvSection(source, key) as AnalyzedEntry | undefined
   if (!fromProfile) return null
   const current = (getCvSection(cv, key) as AnalyzedEntry | undefined) ?? fromProfile
+  const bullets = (result.bullets ?? []).map((b) => ({
+    text: b.text,
+    sourceBulletId: b.sourceBulletId
+  }))
   return {
     key,
     value: {
       ...current,
-      // A project may have no relevant bullets; it stays, and the owner decides whether to remove it.
-      bullets: (result.bullets ?? []).map((b) => ({
-        text: b.text,
-        sourceBulletId: b.sourceBulletId
-      })),
-      // Written from the selected bullets; it shows once the entry is in paragraph mode.
-      paragraph: result.paragraph ?? current.paragraph,
+      // Any entry may have no relevant bullets (a listing outside the owner's field); it stays with
+      // its title and dates, and the owner decides whether to remove it.
+      bullets,
+      // Written from the selected bullets; it shows once the entry is in paragraph mode. Null means
+      // it failed the API's word check and the PDF joins the bullets, so the draft does too.
+      paragraph: result.paragraph ?? joinedBullets({ bullets }),
       // Education has none. A list replaces the entry's, null means no suggestion and keeps it.
       ...('technologies' in current && {
         technologies: result.technologies ? [...result.technologies] : current.technologies
@@ -313,19 +327,47 @@ export const cvSectionFromAnalysis = (
 
 // The external prompt has no contact details or layout, so the previewed candidate keeps the current ones.
 // A reply without a headline (null, read as '') keeps the draft's rather than clearing it.
-export const mergeExternalCandidate = (cv: TailoredCv, external: TailoredCv): TailoredCv => ({
-  ...external,
-  headline: external.headline || cv.headline,
-  sectionOrder: cv.sectionOrder,
-  template: cv.template,
-  fullName: cv.fullName,
-  email: cv.email,
-  phone: cv.phone,
-  address: cv.address,
-  links: cv.links
-})
+// A paragraph that failed the API's word check comes back null and is filled like the PDF does.
+export const mergeExternalCandidate = (cv: TailoredCv, external: TailoredCv): TailoredCv =>
+  fillMissingParagraphs({
+    ...external,
+    headline: external.headline || cv.headline,
+    sectionOrder: cv.sectionOrder,
+    template: cv.template,
+    fullName: cv.fullName,
+    email: cv.email,
+    phone: cv.phone,
+    address: cv.address,
+    links: cv.links
+  })
 
-// Sections where the external reply differs from the candidate, for review as suggestions.
+// An entry list's changes one entry at a time, so each experience (company) is reviewed on its own
+// card: a changed entry suggests its new value, a left-out one suggests null (remove it). Null when
+// the reply added entries or changed their order, which can't be paired, so the list goes as one.
+const ENTRY_PREFIXES = {
+  experiences: 'experience',
+  educations: 'education',
+  projects: 'project'
+} as const
+type EntryList = keyof typeof ENTRY_PREFIXES
+const entryChanges = (list: EntryList, cv: TailoredCv, next: TailoredCv) => {
+  const before = cv[list] as { sourceEntryId?: number | null }[]
+  const after = next[list] as { sourceEntryId?: number | null }[]
+  const ids = before.map((e) => e.sourceEntryId)
+  const nextIds = after.map((e) => e.sourceEntryId)
+  if ([...ids, ...nextIds].some((id) => id == null)) return null
+  if (nextIds.some((id) => !ids.includes(id))) return null
+  if (ids.filter((id) => nextIds.includes(id)).some((id, i) => id !== nextIds[i])) return null
+  return before.flatMap((entry) => {
+    const value = after.find((e) => e.sourceEntryId === entry.sourceEntryId) ?? null
+    if (JSON.stringify(value) === JSON.stringify(entry)) return []
+    const key: TailoredCvSectionKey = `${ENTRY_PREFIXES[list]}:${entry.sourceEntryId!}`
+    return [{ key, value: value as unknown }]
+  })
+}
+
+// Where the external reply differs from the candidate, for review as suggestions: entry lists per
+// entry when they can be paired, everything else per whole section.
 export const changedCvSections = (cv: TailoredCv, next: TailoredCv) =>
   (
     [
@@ -338,6 +380,8 @@ export const changedCvSections = (cv: TailoredCv, next: TailoredCv) =>
       'projects',
       'languages'
     ] as const
-  )
-    .filter((key) => JSON.stringify(cv[key]) !== JSON.stringify(next[key]))
-    .map((key) => ({ key, value: next[key] as unknown }))
+  ).flatMap((key): { key: TailoredCvSectionKey; value: unknown }[] => {
+    if (JSON.stringify(cv[key]) === JSON.stringify(next[key])) return []
+    const entries = key in ENTRY_PREFIXES ? entryChanges(key as EntryList, cv, next) : null
+    return entries ?? [{ key, value: next[key] as unknown }]
+  })

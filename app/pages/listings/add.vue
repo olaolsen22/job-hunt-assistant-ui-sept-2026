@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { SUCCESS_TOAST_DURATION } from '~/constants/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { APPLICATION_STATUS_OPTIONS } from '~/constants/listing'
 
@@ -56,7 +55,7 @@ const CONTACT_FOR_LISTING = graphql(`
 const { state, validate, toInput, fillDraft } = useListingForm()
 const { checkNewNames } = provideNewNames()
 
-const toast = useToast()
+const notify = useAppToast()
 const toastDuplicate = useDuplicateListingToast()
 const parseOpen = ref(false)
 const listingForm = useTemplateRef('listingForm')
@@ -79,7 +78,7 @@ onMounted(async () => {
     state.contacts = [{ name: c.name, title: c.title, email: c.email, phone: c.phone, url: c.url }]
     addressedTo.value = c.name
   } catch {
-    toast.add({ title: ERROR_MESSAGES.generic, color: 'error', icon: 'i-lucide-circle-alert' })
+    notify.error(ERROR_MESSAGES.generic)
   }
 })
 
@@ -115,28 +114,13 @@ const onConfirm = async () => {
       : null
     // Newest first, so [0] is the latest earlier attempt at this posting.
     const previous = createListing.previousAttempts?.[0]
-    toast.add(
-      previous
-        ? {
-            title: 'Listing added',
-            description: `You closed an earlier listing for this URL (${APPLICATION_STATUS_OPTIONS.find((o) => o.value === previous.status)!.label}).`,
-            color: 'success',
-            icon: 'i-lucide-history',
-            actions: [
-              {
-                label: 'View previous attempt',
-                to: `/listings/${previous.id}`,
-                color: 'neutral',
-                variant: 'outline'
-              }
-            ]
-          }
-        : {
-            title: 'Listing added',
-            color: 'success',
-            duration: SUCCESS_TOAST_DURATION,
-            icon: 'i-lucide-check'
-          }
+    notify.success(
+      'Listing added',
+      previous && {
+        description: `You closed an earlier listing for this URL (${APPLICATION_STATUS_OPTIONS.find((o) => o.value === previous.status)!.label}).`,
+        icon: 'i-lucide-history',
+        action: { label: 'View previous attempt', to: `/listings/${previous.id}` }
+      }
     )
     await navigateTo(`/listings/${createListing.listing!.id}`, { replace: true })
   } catch {

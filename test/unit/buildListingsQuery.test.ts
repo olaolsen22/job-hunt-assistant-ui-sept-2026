@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { print } from '@0no-co/graphql.web'
-import { buildListingsQuery, emptyFacets, type ListingsFacets } from '~/composables/useListingsList'
+import { parse, print } from '@0no-co/graphql.web'
+import {
+  LISTINGS_SORTS,
+  buildListingsQuery,
+  emptyFacets,
+  type ListingsFacets,
+  type ListingsFilter
+} from '~/composables/useListingsList'
+import { argumentProblems, inputValueProblems } from './helpers/apiInputContract'
 
 const build = (facets: Partial<ListingsFacets>) => {
   const { document, variables } = buildListingsQuery(null, { ...emptyFacets(), ...facets }, 'due')
@@ -19,6 +26,15 @@ describe('buildListingsQuery', () => {
   it('orders by posted date, newest first, for the posted sort', () => {
     const { variables } = buildListingsQuery(null, emptyFacets(), 'posted')
     expect(variables.order).toEqual([{ postedOn: 'DESC' }])
+  })
+
+  it('orders by a table column in the chosen direction', () => {
+    expect(buildListingsQuery(null, emptyFacets(), 'title-desc').variables.order).toEqual([
+      { title: 'DESC' }
+    ])
+    expect(buildListingsQuery(null, emptyFacets(), 'posted-asc').variables.order).toEqual([
+      { postedOn: 'ASC' }
+    ])
   })
 
   it('drops the expiry clause when statuses are picked', () => {
@@ -40,7 +56,7 @@ describe('buildListingsQuery', () => {
   it('joins two facets under and', () => {
     const { text } = build({ favorites: true, skills: ['Vue'] })
     expect(text).toContain(
-      'where: {and: [{or: [{deadlineType: {neq: DATE}}, {deadlineOn: {gte: $today}}]}, {favoritedAt: {neq: null}}, {skills: {some: {skill: {name: {in: $skills}}}}}]}'
+      'where: {and: [{or: [{deadlineType: {neq: DATE}}, {deadlineOn: {gte: $today}}]}, {favoritedAt: {neq: null}}, {status: {neq: REJECTED}}, {skills: {some: {skill: {name: {in: $skills}}}}}]}'
     )
   })
 })
@@ -56,9 +72,39 @@ describe('preferred locations', () => {
 
   it('narrows the list and every count when on, without repeating the clause', () => {
     const { text } = build({ preferredLocations: true })
-    // The list, its five preset counts and the four quick-toggle counts.
-    expect(text.match(/isTarget/g)).toHaveLength(10)
+    // The list, its five preset counts and the five quick-toggle counts.
+    expect(text.match(/isTarget/g)).toHaveLength(12)
     expect(text).not.toContain(`${clause}}, {${clause}`)
+  })
+})
+
+describe('rejected applications', () => {
+  const clause = '{status: {neq: REJECTED}}'
+
+  it('are left out of the list and every count by default', () => {
+    const { text } = build({})
+    // The list, its five preset counts and the five quick-toggle counts.
+    expect(text.split(clause)).toHaveLength(13)
+  })
+
+  it('come back with the show rejected switch', () => {
+    expect(build({ showRejected: true }).text).not.toContain(clause)
+  })
+
+  it('come back when statuses are picked, so ?status=REJECTED shows them', () => {
+    const { text } = build({ statuses: ['REJECTED'] })
+    expect(text).not.toContain(clause)
+    expect(text).toContain('status: {in: $statuses}')
+  })
+})
+
+describe('Norway only', () => {
+  it('keeps listings whose every location is in Norway, and at least one', () => {
+    const { text } = build({ norwayOnly: true })
+    expect(text).toMatch(
+      /listings\([^)]*locations: \{all: \{location: \{countryCode: \{eq: "NO"\}\}\}, any: true\}/
+    )
+    expect(text).toMatch(/norway: listings\(/)
   })
 })
 
@@ -74,13 +120,23 @@ describe('IT and English toggles', () => {
     expect(text).toMatch(
       /englishMentioned: listings\([^)]*languages: \{some: \{language: \{eq: ENGLISH\}\}\}/
     )
-    expect(text.match(/category:/g)).toHaveLength(1)
+    expect(text).toMatch(
+      /nonIt: listings\([^)]*jobRoleId: \{gt: 0\}[^)]*category: \{name: \{neq: "IT"\}/
+    )
+    expect(text.match(/category: \{name: \{eq: "IT"/g)).toHaveLength(1)
   })
 
   it('narrows the list and every count to IT roles when on', () => {
     const { text } = build({ itRoles: true })
-    expect(text.match(/category:/g)).toHaveLength(10)
+    expect(text.match(/category: \{name: \{eq: "IT"/g)).toHaveLength(12)
     expect(text).not.toContain(`${itClause}}, {${itClause}`)
+  })
+
+  it('narrows the list to roles with a non-IT category when on', () => {
+    const { text } = build({ nonItRoles: true })
+    const args = text.split('query Listings')[1]!.split('listings(')[1]!.split(') {')[0]
+    expect(args).toContain('jobRoleId: {gt: 0}')
+    expect(args).toContain('jobRole: {categoryId: {gt: 0}, category: {name: {neq: "IT"}}}')
   })
 })
 
@@ -124,10 +180,13 @@ describe('date facets', () => {
 
   it('adds dueWithinDays to the list and the counts, narrowing closing soon', () => {
     const { text } = build({ dueWithinDays: 3 })
-    expect(text).toContain('closingSoon: listings(take: 1, search: $search, dueWithinDays: 3')
-    expect(text.match(/dueWithinDays: 3/g)).toHaveLength(10)
-    expect(build({ dueWithinDays: 14 }).text).toContain(
-      'closingSoon: listings(take: 1, search: $search, dueWithinDays: 7'
+    // The printer puts long argument lists one per line, so match across either layout.
+    expect(text).toMatch(
+      /closingSoon: listings\(\s*take: 1,?\s+search: \$search,?\s+dueWithinDays: 3/
+    )
+    expect(text.match(/dueWithinDays: 3/g)).toHaveLength(12)
+    expect(build({ dueWithinDays: 14 }).text).toMatch(
+      /closingSoon: listings\(\s*take: 1,?\s+search: \$search,?\s+dueWithinDays: 7/
     )
   })
 
@@ -135,5 +194,67 @@ describe('date facets', () => {
     const { text } = build({})
     expect(text).not.toContain('postedOn: {')
     expect(text.match(/dueWithinDays/g)).toHaveLength(1)
+  })
+})
+
+// The query is built as text, so nothing else checks it against the API before it runs. Every
+// alias is in every request: one rejected clause fails the whole page, even with its toggle off.
+describe('API input contract', () => {
+  const PRESETS: (ListingsFilter | null)[] = [
+    null,
+    'closingSoon',
+    'toAnalyze',
+    'withExpired',
+    'archived'
+  ]
+  const toggles = (Object.keys(emptyFacets()) as (keyof ListingsFacets)[]).filter(
+    (key) => emptyFacets()[key] === false
+  )
+  const everything: Partial<ListingsFacets> = {
+    ...Object.fromEntries(toggles.map((key) => [key, true])),
+    statuses: ['APPLIED'],
+    skills: ['Vue'],
+    locationIds: [1],
+    postingLanguages: ['ENGLISH'],
+    languages: ['ENGLISH'],
+    postedFrom: '2026-10-01',
+    postedTo: '2026-10-31',
+    dueWithinDays: 3,
+    companyId: 1
+  }
+  const facetSets: [string, Partial<ListingsFacets>][] = [
+    ['nothing', {}],
+    ...toggles.map((key): [string, Partial<ListingsFacets>] => [key, { [key]: true }]),
+    ['everything', everything]
+  ]
+  const problems = (preset: ListingsFilter | null, facets: Partial<ListingsFacets>) =>
+    argumentProblems(
+      buildListingsQuery(preset, { ...emptyFacets(), ...facets }, 'due').document,
+      'listings',
+      { where: 'ListingFilterInput', order: 'ListingSortInput' }
+    )
+
+  for (const preset of PRESETS)
+    it.each(facetSets)(
+      `uses only filters the API accepts (${preset ?? 'no preset'}, %s)`,
+      (_, facets) => {
+        expect(problems(preset, facets)).toEqual([])
+      }
+    )
+
+  it.each(LISTINGS_SORTS)('orders by fields the API can sort on (%s)', (sort) => {
+    const { order } = buildListingsQuery(null, emptyFacets(), sort).variables
+    expect(inputValueProblems(order, 'ListingSortInput', 'order')).toEqual([])
+  })
+
+  // Guards the check itself: this is the clause that broke the page.
+  it('flags a null comparison on an id and a field the API lacks', () => {
+    const document = parse(
+      '{ listings(where: { jobRoleId: { neq: null }, favoritedAt: { neq: null }, jobRole: { colour: { eq: "x" } } }) { totalCount } }'
+    )
+    expect(argumentProblems(document, 'listings', { where: 'ListingFilterInput' })).toEqual([
+      'listings(where).jobRoleId.neq: the API rejects null on IntOperationFilterInput (HC0026)',
+      'listings(where).jobRole.colour: no such field on JobRoleFilterInput'
+    ])
   })
 })

@@ -22,7 +22,8 @@ export default defineNuxtPlugin((nuxtApp) => {
         description: 'Reload to get the latest version.',
         icon: 'i-lucide-refresh-cw',
         duration: 0,
-        actions: [{ label: 'Reload', onClick: reload }]
+        // The one solid primary toast action (useAppToast's are outline): it waits until acted on.
+        actions: [{ label: 'Reload', color: 'primary', size: 'md', onClick: reload }]
       })
 
     watch(

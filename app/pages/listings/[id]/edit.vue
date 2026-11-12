@@ -31,7 +31,7 @@ watch(
   { immediate: true }
 )
 
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 const toastDuplicate = useDuplicateListingToast()
 const listingForm = useTemplateRef('listingForm')
 

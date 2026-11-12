@@ -92,7 +92,7 @@ const validate = () =>
   })
 
 const { run, loading } = useMutation(refreshProfile)
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 
 const submit = async () => {
   const ok = await run(

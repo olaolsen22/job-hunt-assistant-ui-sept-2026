@@ -6,6 +6,7 @@ const LISTING = graphql(
       listingById(id: $id) {
         id
         kind
+        updatedAt
         title
         company {
           id

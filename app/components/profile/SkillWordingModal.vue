@@ -12,7 +12,7 @@ const emit = defineEmits<{ changed: [] }>()
 
 const api = useSkillWording()
 const { busy, needsConfirm, safetyMessage } = api
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 
 const reply = ref('')
 const {

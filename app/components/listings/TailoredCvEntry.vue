@@ -21,7 +21,13 @@ const props = defineProps<{
   disabled?: boolean
   error?: string
   errorDetail?: string
-  suggestions?: { key: TailoredCvSectionKey; current: string; suggested: string }[]
+  suggestions?: {
+    key: TailoredCvSectionKey
+    current: string
+    suggested: string
+    // An entry the AI reply left out: Accept removes it.
+    removal?: boolean
+  }[]
   bullets: TailoredCvBullet[]
   paragraph?: string | null
 }>()
@@ -140,6 +146,7 @@ const items = computed<DropdownMenuItem[]>(() => [
         :key="s.key"
         :current="s.current"
         :suggested="s.suggested"
+        :removal="s.removal"
         @accept="emit('accept', s.key)"
         @dismiss="emit('dismiss', s.key)"
       />

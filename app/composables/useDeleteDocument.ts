@@ -19,7 +19,7 @@ type Pdf = { id: number; fileName: string; sentAt?: string | null }
 // `done` runs after every attempt, so the caller can refresh what it shows.
 export const useDeleteDocument = (done: (deletedId: number | null) => unknown) => {
   const { run, loading: deleting } = useMutation()
-  const toastSuccess = useSuccessToast()
+  const { success: toastSuccess } = useAppToast()
   const target = ref<{ id: number; fileName: string } | null>(null)
   const deletedIds = ref<number[]>([])
 

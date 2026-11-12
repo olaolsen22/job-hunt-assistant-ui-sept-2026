@@ -130,7 +130,7 @@ export const useQuickAddRows = (revalidate: () => void) => {
     state.rows = state.rows.filter((row) => row.saved || !keys.includes(row.key))
   }
 
-  const toastSuccess = useSuccessToast()
+  const { success: toastSuccess } = useAppToast()
   const saving = ref(false)
   const saveError = ref('')
   // Returns how many rows were saved.

@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import type { ProfileCertification } from '~/composables/useProfile'
 
-const props = defineProps<{ certifications: readonly ProfileCertification[] }>()
+const props = withDefaults(
+  defineProps<{
+    certifications: readonly ProfileCertification[]
+    defaultOpen?: boolean
+    count?: number
+  }>(),
+  { defaultOpen: true, count: undefined }
+)
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const { locale } = useProfileTranslation()
@@ -57,6 +64,8 @@ const remove = async () => {
     icon="i-lucide-award"
     testid="profile-certifications"
     :empty="!certifications.length"
+    :default-open="defaultOpen"
+    :count="count"
     empty-message="No certifications yet."
     add-label="Add certification"
     @clear="emit('clear')"

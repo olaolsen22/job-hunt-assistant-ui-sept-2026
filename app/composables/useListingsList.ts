@@ -1,4 +1,5 @@
 import type { ShallowRef } from 'vue'
+import { useSessionStorage } from '@vueuse/core'
 import type { ResultOf, TadaDocumentNode } from 'gql.tada'
 import { parse, print } from '@0no-co/graphql.web'
 import { graphql } from '~/utils/graphql'
@@ -72,15 +73,19 @@ export const measurePageSize = (grid: HTMLElement, itemHeight = ROW_HEIGHT, gap 
 
 const FILTER_KEYS = ['closingSoon', 'toAnalyze', 'withExpired', 'archived'] as const
 export type ListingsFilter = (typeof FILTER_KEYS)[number]
-const SORTS = ['due', 'posted', 'newest', 'changed'] as const
-export type ListingsSort = (typeof SORTS)[number]
 
 export interface ListingsFacets {
   favorites: boolean
   // In one of the profile's target locations (Location.isTarget).
   preferredLocations: boolean
+  // Every location is in Norway; listings with an office abroad or no location drop out.
+  norwayOnly: boolean
+  // Rejected applications are hidden unless this is on (or statuses are picked).
+  showRejected: boolean
   // Job role in the "IT" role category (the category belongs to the role, not the listing).
   itRoles: boolean
+  // A known job role whose category isn't "IT"; listings without a role or category drop out.
+  nonItRoles: boolean
   // The ad itself is written in English.
   englishPosting: boolean
   // The ad lists English among its languages, required or not.
@@ -104,7 +109,10 @@ const CLOSING_SOON_DAYS = 7
 export const emptyFacets = (): ListingsFacets => ({
   favorites: false,
   preferredLocations: false,
+  norwayOnly: false,
+  showRejected: false,
   itRoles: false,
+  nonItRoles: false,
   englishPosting: false,
   englishMentioned: false,
   statuses: [],
@@ -143,12 +151,15 @@ export const parseListingsQuery = (query: Record<string, unknown>): ListingsView
   const languages = LANGUAGE_OPTIONS.map((o) => o.value)
   return {
     search: String(query.search ?? '').trim(),
-    sort: known(SORTS, query.sort)[0] ?? 'due',
+    sort: known(LISTINGS_SORTS, query.sort)[0] ?? 'due',
     filter: known(FILTER_KEYS, query.filter)[0] ?? null,
     facets: {
       favorites: query.favorites === '1',
       preferredLocations: query.preferred === '1',
+      norwayOnly: query.norway === '1',
+      showRejected: query.rejected === '1',
       itRoles: query.it === '1',
+      nonItRoles: query.nonIt === '1',
       englishPosting: query.englishPosting === '1',
       englishMentioned: query.englishMentioned === '1',
       statuses: known(
@@ -186,7 +197,10 @@ export const toListingsQuery = ({ search, sort, filter, facets, page }: Listings
     due: facets.dueWithinDays ? String(facets.dueWithinDays) : '',
     favorites: facets.favorites ? '1' : '',
     preferred: facets.preferredLocations ? '1' : '',
+    norway: facets.norwayOnly ? '1' : '',
+    rejected: facets.showRejected ? '1' : '',
     it: facets.itRoles ? '1' : '',
+    nonIt: facets.nonItRoles ? '1' : '',
     englishPosting: facets.englishPosting ? '1' : '',
     englishMentioned: facets.englishMentioned ? '1' : '',
     company: facets.companyId ? String(facets.companyId) : '',
@@ -196,7 +210,10 @@ export const toListingsQuery = ({ search, sort, filter, facets, page }: Listings
 }
 
 // The last /listings URL, so the listing page's Back returns to that view even after an edit.
-export const useListingsView = () => useState('listingsView', () => '/listings')
+// Session storage, not useState: a reload (F5, the update toast, or a Vite reload in dev) wipes
+// in-memory state, and Back would land on the unfiltered list. Per tab, so tabs don't overwrite each
+// other. The app is client-only, so reading storage during setup is safe.
+export const useListingsView = () => useSessionStorage('listingsView', '/listings')
 // Same for /companies, read by the company page's Back.
 export const useCompaniesView = () => useState('companiesView', () => '/companies')
 export const useContactsView = () => useState('contactsView', () => '/contacts')
@@ -209,6 +226,8 @@ type ListingsResult = {
 // day. ASAP and UNSPECIFIED listings have no deadlineOn to filter on, so an "expired" one is
 // flagged in ListingsDates instead of hidden.
 const EXPIRY = 'or: [{ deadlineType: { neq: DATE } }, { deadlineOn: { gte: $today } }]'
+// A rejected application is a closed door, so it stays out of every view and count by default.
+const NOT_REJECTED = 'status: { neq: REJECTED }'
 
 // `dueWithinDays: 7` is due within 7 days (today included), expired excluded, server-side.
 // closingSoon's window is added in `field`, because the Due within facet can narrow it.
@@ -240,7 +259,13 @@ const FACETS = {
 // renamed category just counts 0 and the toggle hides.
 const QUICK = {
   preferred: 'locations: { some: { location: { isTarget: { eq: true } } } }',
+  // `any: true` because `all` alone also matches a listing with no locations.
+  norway: 'locations: { all: { location: { countryCode: { eq: "NO" } } }, any: true }',
   it: 'jobRole: { category: { name: { eq: "IT" } } }',
+  // A listing with no role, or a role with no category, must not count as non-IT. The API rejects
+  // `neq: null` (HC0026), so `gt: 0` (ids are positive) is the "has one" check.
+  nonIt:
+    'jobRoleId: { gt: 0 }, jobRole: { categoryId: { gt: 0 }, category: { name: { neq: "IT" } } }',
   englishPosting: 'postingLanguage: { eq: ENGLISH }',
   englishMentioned: 'languages: { some: { language: { eq: ENGLISH } } }'
 } as const
@@ -248,13 +273,24 @@ export type QuickToggle = keyof typeof QUICK
 
 // No `order` for "due": the backend's default order is upcoming by due date, then expired by due
 // date, then newest added, using the server-computed due date (DATE: deadlineOn, ASAP: postedOn + 14,
-// UNSPECIFIED: postedOn + 30). dueOn itself isn't sortable, and any client `order` turns the default off.
+// UNSPECIFIED: postedOn + 30). dueOn itself isn't sortable, and any client `order` turns the default off,
+// so due has no reverse. The `-asc`/`-desc` values come from the desktop table's column headers;
+// "posted" stays the newest-first value so existing ?sort=posted links keep working.
 const ORDERS = {
   due: undefined,
   posted: [{ postedOn: 'DESC' }],
   newest: [{ createdAt: 'DESC' }],
-  changed: [{ statusChangedAt: 'DESC' }]
+  changed: [{ statusChangedAt: 'DESC' }],
+  'posted-asc': [{ postedOn: 'ASC' }],
+  'title-asc': [{ title: 'ASC' }],
+  'title-desc': [{ title: 'DESC' }],
+  'seniority-asc': [{ seniority: 'ASC' }],
+  'seniority-desc': [{ seniority: 'DESC' }],
+  'status-asc': [{ status: 'ASC' }],
+  'status-desc': [{ status: 'DESC' }]
 } as const
+export type ListingsSort = keyof typeof ORDERS
+export const LISTINGS_SORTS = Object.keys(ORDERS) as ListingsSort[]
 
 export const buildListingsQuery = (
   filter: ListingsFilter | null,
@@ -269,8 +305,12 @@ export const buildListingsQuery = (
   ]
   const variables: Record<string, unknown> = { order: ORDERS[sort] }
   const facetClauses = facets.favorites ? ['favoritedAt: { neq: null }'] : []
+  // Picking statuses (e.g. the dashboard's ?status=REJECTED) shows exactly those, like EXPIRY below.
+  if (!facets.showRejected && !facets.statuses.length) facetClauses.push(NOT_REJECTED)
   if (facets.preferredLocations) facetClauses.push(QUICK.preferred)
+  if (facets.norwayOnly) facetClauses.push(QUICK.norway)
   if (facets.itRoles) facetClauses.push(QUICK.it)
+  if (facets.nonItRoles) facetClauses.push(QUICK.nonIt)
   if (facets.englishPosting) facetClauses.push(QUICK.englishPosting)
   if (facets.englishMentioned) facetClauses.push(QUICK.englishMentioned)
   const posted = [
@@ -438,7 +478,9 @@ export const useListingsList = (grid: Readonly<ShallowRef<HTMLElement | null>>) 
       withExpired: data.value?.withExpired?.totalCount ?? 0,
       archived: data.value?.archived?.totalCount ?? 0,
       preferred: data.value?.preferred?.totalCount ?? 0,
+      norway: data.value?.norway?.totalCount ?? 0,
       it: data.value?.it?.totalCount ?? 0,
+      nonIt: data.value?.nonIt?.totalCount ?? 0,
       englishPosting: data.value?.englishPosting?.totalCount ?? 0,
       englishMentioned: data.value?.englishMentioned?.totalCount ?? 0
     })),

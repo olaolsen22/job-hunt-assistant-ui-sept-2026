@@ -11,6 +11,14 @@
   --ui-bg: var(--ui-color-neutral-950);
 }
 
+@media (width >= 96rem) {
+  :root,
+  .light,
+  .dark {
+    --ui-container: 87.5rem;
+  }
+}
+
 /* Tailwind v4 dropped cursor: pointer on buttons; restore it (snippet from the v4 upgrade guide). */
 @layer base {
   button:not(:disabled),

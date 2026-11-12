@@ -11,10 +11,12 @@ const { align = 'end' } = defineProps<{
   warn: boolean
   align?: 'start' | 'end'
 }>()
+useToastClearance(useTemplateRef('bar'))
 </script>
 
 <template>
   <div
+    ref="bar"
     class="sticky bottom-0 z-10 space-y-3 rounded-md border border-default bg-default/90 p-3 backdrop-blur"
   >
     <slot name="above" />

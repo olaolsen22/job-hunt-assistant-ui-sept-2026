@@ -46,7 +46,7 @@ const tabItems = computed(() => [
 ])
 const loading = computed(() => status.value === 'pending' || status.value === 'idle')
 
-const toast = useToast()
+const notify = useAppToast()
 const loadingMore = ref(false)
 const loadMore = async () => {
   loadingMore.value = true
@@ -59,14 +59,14 @@ const loadMore = async () => {
     endCursor.value = page?.pageInfo.endCursor ?? null
     hasNextPage.value = !!page?.pageInfo.hasNextPage
   } catch {
-    toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
+    notify.error(ERROR_MESSAGES.generic)
   } finally {
     loadingMore.value = false
   }
 }
 
 const { setReviewed } = useSetImportReviewed()
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 const busyId = ref<number>()
 const toggleReviewed = async (item: ListingImportItem) => {
   busyId.value = item.id

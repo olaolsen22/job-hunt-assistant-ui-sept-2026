@@ -57,6 +57,7 @@ const filterLabel = computed(() =>
 
 // Ticks survive filtering and searching, so a merge can pick skills from different categories.
 const selected = ref<number[]>([])
+useToastClearance(useTemplateRef('selection-bar'))
 
 // Counts change with every skill change, so both lists reload; the profile reloads on its next visit.
 const reload = async () => {
@@ -71,8 +72,8 @@ const categorized = (skill: CatalogSkill, categoryId: number | null) => {
 // One category for every ticked skill. The API sets one skill per call, so they go out side by
 // side (an aliased batch of many could exceed the API's cost limit); the ones that fail stay
 // ticked, so Set category again retries just those.
-const toast = useToast()
-const toastSuccess = useSuccessToast()
+const notify = useAppToast()
+const toastSuccess = notify.success
 const bulkCategoryOpen = ref(false)
 const bulkCategory = ref<CategoryChoice>()
 const bulkSaving = ref(false)
@@ -100,11 +101,12 @@ const setBulkCategory = async () => {
     toastSuccess(`Category set for ${ids.length} ${ids.length === 1 ? 'skill' : 'skills'}`)
     return
   }
-  toast.add({
-    title: `Updated ${ids.length - failed.length} of ${ids.length} skills; ${failed.length} failed.`,
-    description: 'They are still selected.',
-    color: 'error'
-  })
+  notify.error(
+    `Updated ${ids.length - failed.length} of ${ids.length} skills; ${failed.length} failed`,
+    {
+      description: 'They are still selected.'
+    }
+  )
 }
 
 const categoriesOpen = ref(false)
@@ -149,13 +151,13 @@ const confirmDelete = async () => {
     const errors = (await gql(DELETE_SKILL, { input: { id: skill.id } })).deleteSkill.errors
     const inUseError = errors?.find((e) => e.__typename === 'SkillInUseError')
     if (inUseError) inUse.value = inUseError.message
-    else if (errors?.length) toast.add({ title: errors[0]!.message, color: 'error' })
+    else if (errors?.length) notify.error(errors[0]!.message)
     else {
       deleteOpen.value = false
       await reload()
     }
   } catch {
-    toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
+    notify.error(ERROR_MESSAGES.generic)
   } finally {
     deleteBusy.value = false
   }
@@ -309,6 +311,7 @@ const confirmDelete = async () => {
         <!-- Sticky so the merge action stays in reach while ticking skills further down. -->
         <div
           v-if="selected.length"
+          ref="selection-bar"
           class="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-default p-3 shadow-lg ring ring-default"
           data-testid="skills-selection"
         >

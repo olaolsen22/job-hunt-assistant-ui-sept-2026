@@ -89,4 +89,18 @@ describe('Favorite button', () => {
       )
     )
   })
+
+  it('follows the prop when the list swaps another listing under it', async () => {
+    const wrapper = await mountSuspended(FavoriteButton, {
+      props: { target: 'listing', id: 1, favoritedAt: null }
+    })
+    const star = () => wrapper.get('[data-testid="listing-favorite"]')
+    expect(star().attributes('aria-pressed')).toBe('false')
+
+    await wrapper.setProps({ id: 2, favoritedAt: '2026-10-06T10:00:00Z' })
+    expect(star().attributes('aria-pressed')).toBe('true')
+
+    await wrapper.setProps({ id: 3, favoritedAt: null })
+    expect(star().attributes('aria-pressed')).toBe('false')
+  })
 })

@@ -21,8 +21,7 @@ const { data, status, error, refresh } = useAsyncData(
 const baseCvs = computed(() => data.value ?? [])
 const loading = computed(() => status.value === 'pending' || status.value === 'idle')
 
-const toastSuccess = useSuccessToast()
-const createOpen = ref(false)
+const { success: toastSuccess } = useAppToast()
 const deleting = ref<BaseCvListItem>()
 const deleteOpen = computed({
   get: () => !!deleting.value,
@@ -76,7 +75,7 @@ const onDeleted = async (name: string, outcome: 'deleted' | 'archived') => {
           aria-label="Show"
           data-testid="cv-templates-tabs"
         />
-        <UButton icon="i-lucide-plus" data-testid="cv-templates-new" @click="createOpen = true"
+        <UButton to="/cv-templates/new" icon="i-lucide-plus" data-testid="cv-templates-new"
           >New CV template</UButton
         >
       </div>
@@ -84,8 +83,11 @@ const onDeleted = async (name: string, outcome: 'deleted' | 'archived') => {
 
     <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />
 
-    <div v-else-if="loading && !baseCvs.length" class="grid gap-3 xl:grid-cols-2">
-      <USkeleton v-for="i in 2" :key="i" class="h-28 w-full" />
+    <div
+      v-else-if="loading && !baseCvs.length"
+      class="grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-3"
+    >
+      <USkeleton v-for="i in 2" :key="i" class="h-24 w-full" />
     </div>
 
     <div
@@ -103,24 +105,31 @@ const onDeleted = async (name: string, outcome: 'deleted' | 'archived') => {
       </p>
       <UButton
         v-if="!archived"
+        to="/cv-templates/new"
         icon="i-lucide-plus"
         color="neutral"
         variant="subtle"
-        @click="createOpen = true"
         >New CV template</UButton
       >
     </div>
 
-    <div v-else class="grid gap-3 xl:grid-cols-2" data-testid="cv-templates-list">
+    <!-- One column on phone and tablet; a grid from xl, where one row per template wastes the width. -->
+    <div
+      v-else
+      class="grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-3"
+      data-testid="cv-templates-list"
+    >
+      <!-- :ui lets the body fill a stretched card, so the languages line sits at the bottom. -->
       <UCard
         v-for="b in baseCvs"
         :key="b.id"
         class="relative transition hover:bg-elevated"
+        :ui="{ root: 'flex flex-col', body: 'flex flex-1 flex-col' }"
         data-testid="cv-templates-row"
       >
-        <div class="flex items-start gap-2">
-          <div class="min-w-0 flex-1 space-y-1">
-            <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-1 items-start gap-2">
+          <div class="flex min-w-0 flex-1 flex-col gap-2 self-stretch">
+            <div class="min-w-0 flex-1 space-y-1">
               <!-- The ::after overlay makes the whole card the link, like /contacts. -->
               <NuxtLink
                 :to="`/cv-templates/${b.id}`"
@@ -128,23 +137,25 @@ const onDeleted = async (name: string, outcome: 'deleted' | 'archived') => {
                 data-testid="cv-templates-row-link"
                 >{{ b.name }}</NuxtLink
               >
+              <p v-if="b.description" class="line-clamp-2 break-words text-sm text-muted">
+                {{ b.description }}
+              </p>
             </div>
             <!-- One badge per language with its own latest version; numbers are per language. -->
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
-              <UBadge
-                v-for="lang in b.languages"
-                :key="lang"
-                color="neutral"
-                variant="subtle"
-                size="sm"
-                data-testid="cv-templates-row-language"
-                >{{ languageCode(lang) }} v{{ latestIn(b.versions, lang)?.number }}</UBadge
-              >
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+              <div class="flex flex-wrap gap-1">
+                <UBadge
+                  v-for="lang in b.languages"
+                  :key="lang"
+                  color="neutral"
+                  variant="subtle"
+                  size="sm"
+                  data-testid="cv-templates-row-language"
+                  >{{ languageCode(lang) }} v{{ latestIn(b.versions, lang)?.number }}</UBadge
+                >
+              </div>
               <span>updated {{ daysAgoLabel(b.updatedAt) }}</span>
             </div>
-            <p v-if="b.description" class="line-clamp-2 break-words text-sm">
-              {{ b.description }}
-            </p>
           </div>
           <!-- Above the card's link overlay, so the menu opens instead of the template. -->
           <UDropdownMenu :items="menuItems(b)" :content="{ align: 'end' }">
@@ -161,7 +172,6 @@ const onDeleted = async (name: string, outcome: 'deleted' | 'archived') => {
       </UCard>
     </div>
 
-    <CvTemplatesDetailsModal v-model:open="createOpen" />
     <CvTemplatesDeleteModal
       v-if="deleting"
       v-model:open="deleteOpen"

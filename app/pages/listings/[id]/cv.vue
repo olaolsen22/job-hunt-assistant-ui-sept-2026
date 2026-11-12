@@ -20,7 +20,7 @@ const {
 } = await listingQuery
 const { cv, dirty, suggestions, sectionErrors, sectionDetails, analyzing, analyzingKey, progress } =
   state
-const copy = useCopyTailoredCv()
+const { copied, copy } = useCopyTailoredCv()
 const { refresh: refreshUsage } = useLlmUsage(false)
 
 // Builds the candidate once it's ready: the saved draft, or the profile as is. AI only runs when the
@@ -89,7 +89,7 @@ const refreshDocuments = async () => {
   await refreshListing()
   refreshFailed.value = !!listingError.value
 }
-const toast = useToast()
+const notify = useAppToast()
 const generatePdf = async () => {
   refreshFailed.value = false
   if (!(await state.generate())) return
@@ -122,11 +122,14 @@ const {
 const rebuild = async (success: { title: string; description?: string }, language?: Language) => {
   const error = await state.reset(language)
   resetOpen.value = languageOpen.value = false
-  if (error) toast.add({ title: error, color: 'error' })
-  else toast.add({ ...success, icon: 'i-lucide-rotate-ccw' })
+  if (error) notify.error(error)
+  else notify.success(success.title, { ...success, icon: 'i-lucide-rotate-ccw' })
 }
 const resetToProfile = () =>
-  rebuild({ title: 'CV reset to your profile. Remove what you don’t need, then save.' })
+  rebuild({
+    title: 'CV reset to your profile',
+    description: 'Remove what you don’t need, then save.'
+  })
 // Nothing to lose on an untouched first draft, so it resets or switches without asking.
 const nothingToLose = () => state.pristine.value && !suggestions.value.length
 const requestReset = () => {
@@ -223,7 +226,8 @@ const suggestionsFor = (key: string) =>
     .map((s) => ({
       ...s,
       current: cvSectionText(s.key, cv.value && getCvSection(cv.value, s.key), entryStyle.value),
-      suggested: cvSectionText(s.key, s.value, entryStyle.value)
+      suggested: cvSectionText(s.key, s.value, entryStyle.value),
+      removal: s.value == null
     }))
 // What the shared editor's cards and entries get from this page: suggestions and AI runs.
 const review = (key: TailoredCvSectionKey) => ({
@@ -243,7 +247,7 @@ const editorAi: CvEditorAi = {
   analyze: (key, label) => openAi(key, label)
 }
 
-const entryStyle = computed(() => (cv.value ? cvEntryStyle(cv.value) : 'BULLETS'))
+const entryStyle = computed(() => cv.value?.contentStyle ?? 'BULLETS')
 // Switching template rewrites nothing by itself; the entries follow it after the next whole-CV run.
 const templateChanged = computed(
   () =>
@@ -508,14 +512,14 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                 >
               </template>
               <UButton
-                icon="i-lucide-copy"
+                :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
                 color="neutral"
                 variant="subtle"
                 class="w-full justify-center sm:order-first sm:w-auto"
                 :class="!dirty && !(pdfCurrent && pdf) ? 'col-span-2 sm:col-auto' : ''"
                 data-testid="tailored-cv-copy"
                 @click="copy(cv)"
-                >Copy as text</UButton
+                >{{ copied ? 'Copied' : 'Copy as text' }}</UButton
               >
               <template v-if="pdfCurrent && pdf">
                 <UButton

@@ -130,7 +130,7 @@ const open = computed({
 })
 
 const { run, loading } = useMutation(() => emit('changed'))
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 
 const clear = async () => {
   const all = !section.value

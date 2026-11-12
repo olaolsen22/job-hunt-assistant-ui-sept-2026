@@ -15,6 +15,18 @@ import ProfileTargetLocations from '~/components/profile/TargetLocations.vue'
 
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
 
+// Simulate desktop so collapsible sections are expanded and sidebar Skills renders.
+vi.stubGlobal('matchMedia', (query: string) => ({
+  matches: query === '(min-width: 768px)',
+  media: query,
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  dispatchEvent: () => false,
+  onchange: null,
+  addListener: () => {},
+  removeListener: () => {}
+}))
+
 const emptyProfile = {
   id: 1,
   contentLanguage: 'NORWEGIAN',
@@ -262,49 +274,26 @@ describe('ProfilePage', () => {
     wrapper.unmount()
   })
 
-  it('offers CV import on empty and populated English-primary profiles, including translated profiles', async () => {
-    for (const profile of [
-      { ...emptyProfile, contentLanguage: 'ENGLISH' },
-      {
-        ...filledProfile,
-        contentLanguage: 'ENGLISH',
-        translations: [
-          {
-            id: 1,
-            language: 'NORWEGIAN',
-            headline: 'Norsk',
-            summary: null,
-            sourceHeadline: 'Engineer',
-            sourceSummary: null,
-            isMachine: false,
-            isHeadlineStale: false,
-            isSummaryStale: false
-          }
-        ]
-      }
-    ]) {
-      const { wrapper } = await mountPage(profile)
-      expect(
-        wrapper.get('[data-testid="profile-import-cv"]').attributes('disabled')
-      ).toBeUndefined()
-      expect(wrapper.find('[data-tooltip]').exists()).toBe(false)
-      wrapper.unmount()
-    }
-  })
+  it('offers CV import in the overflow menu on English-primary profiles but not Norwegian', async () => {
+    const english = await mountPage({ ...filledProfile, contentLanguage: 'ENGLISH' })
+    await english.wrapper.get('[data-testid="profile-menu"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const englishItems = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect(englishItems.some((el) => el.textContent?.trim() === 'Import CV')).toBe(true)
+    english.wrapper.unmount()
 
-  it('explains unavailable CV import for a Norwegian-primary profile', async () => {
-    const { wrapper } = await mountPage(emptyProfile)
-    expect(wrapper.get('[data-testid="profile-import-cv"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-tooltip]').attributes('data-tooltip')).toContain(
-      'English-primary profile'
-    )
-    wrapper.unmount()
+    const norwegian = await mountPage(filledProfile)
+    await norwegian.wrapper.get('[data-testid="profile-menu"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const norwegianItems = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect(norwegianItems.some((el) => el.textContent?.trim() === 'Import CV')).toBe(false)
+    norwegian.wrapper.unmount()
   })
 
   it('shows every section of a filled profile', async () => {
     const { wrapper } = await mountPage()
     expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('Ada Lovelace')
-    expect(wrapper.get('[data-testid="profile-links"] a').attributes('target')).toBe('_blank')
+    expect(wrapper.get('[data-testid="profile-link"]').attributes('target')).toBe('_blank')
     for (const section of [
       'summary',
       'experience',
@@ -355,20 +344,43 @@ describe('ProfilePage', () => {
 
   it('shows an empty state with an add action for a new profile', async () => {
     const { wrapper } = await mountPage(emptyProfile)
+    // Core sections always visible when empty
     for (const section of [
       'summary',
       'experience',
       'projects',
       'education',
-      'references',
-      'hobbies',
       'skills',
       'languages',
       'certifications'
     ]) {
       expect(wrapper.find(`[data-testid="profile-${section}-empty"]`).exists()).toBe(true)
     }
+    // Minor sections hidden behind "Add more sections" when profile is mostly empty
+    for (const section of ['references', 'hobbies']) {
+      expect(wrapper.find(`[data-testid="profile-${section}-empty"]`).exists()).toBe(false)
+    }
+    expect(wrapper.find('[data-testid="profile-onboarding"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="profile-jump"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Add experience')
+
+    await wrapper.get('[data-testid="profile-add-more-sections"]').trigger('click')
+    for (const section of ['references', 'hobbies']) {
+      expect(wrapper.find(`[data-testid="profile-${section}-empty"]`).exists()).toBe(true)
+    }
+    expect(wrapper.find('[data-testid="profile-add-more-sections"]').exists()).toBe(false)
+  })
+
+  it('skips the onboarding card and shows every section for a filled profile', async () => {
+    const { wrapper } = await mountPage(filledProfile)
+    expect(wrapper.find('[data-testid="profile-onboarding"]').exists()).toBe(false)
+    const jumps = wrapper.get('[data-testid="profile-jump"]').findAll('a')
+    expect(jumps.map((a) => a.attributes('href'))).toContain('#profile-skills')
+    for (const jump of jumps) {
+      expect(wrapper.find(jump.attributes('href')!).exists()).toBe(true)
+    }
+    expect(wrapper.find('[data-testid="profile-add-more-sections"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('saves the basics with every other field unchanged and updates without a refetch', async () => {
@@ -437,6 +449,7 @@ describe('ProfilePage', () => {
       return { updateProfile: { profile, errors: null } }
     })
 
+    await wrapper.get('[data-testid="profile-add-more-sections"]').trigger('click')
     await wrapper.get('[data-testid="profile-hobbies-add"]').trigger('click')
     await flushPromises()
     setInput('names-field-input', 'Climbing')
@@ -1070,7 +1083,7 @@ describe('ProfilePage references, hobbies and links', () => {
     const { wrapper } = await mountPage()
     expect(wrapper.get('[data-testid="profile-hobbies"]').text()).toContain('Chess')
     expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('EU citizen')
-    expect(wrapper.get('[data-testid="profile-links"]').text()).toContain('GitHub')
+    expect(wrapper.get('[data-testid="profile-link"]').text()).toContain('GitHub')
     wrapper.unmount()
   })
 
@@ -1181,7 +1194,12 @@ describe('ProfilePage translations', () => {
   const bulletTr = '[data-testid="profile-bullet-translation"]'
 
   const startTranslating = async (wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']) => {
-    await wrapper.get('[data-testid="profile-translate-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="profile-menu"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const item = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((el) =>
+      el.textContent?.trim().startsWith('Translate to')
+    )!
+    item.click()
     await flushPromises()
   }
 
@@ -1416,8 +1434,6 @@ describe('ProfilePage translations', () => {
     expect(wrapper.get('[data-testid="profile-translating-progress"]').text()).toContain(
       '1 of 3 translated'
     )
-    expect(wrapper.find('[data-testid="profile-translate-toggle"]').exists()).toBe(false)
-
     await wrapper.get('[data-testid="profile-translate-done"]').trigger('click')
     expect(wrapper.find('[data-testid="profile-translating-bar"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="profile-bullet-translation"]').exists()).toBe(false)
@@ -1550,9 +1566,7 @@ describe('ProfilePage clearing sections', () => {
     expect(details.textContent).toContain('Kept: your name')
 
     clickConfirm()
-    await vi.waitFor(() =>
-      expect(wrapper.find('[data-testid="profile-menu"]').exists()).toBe(false)
-    )
+    await vi.waitFor(() => expect(clearRequest(requests)).toBeDefined())
     expect(clearRequest(requests)!.variables.input.sections).toHaveLength(9)
     expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('Ada Lovelace')
     wrapper.unmount()

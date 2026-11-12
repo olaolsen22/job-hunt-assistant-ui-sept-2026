@@ -7,6 +7,8 @@ import {
   toCompaniesQuery,
   type CompaniesView
 } from '~/utils/companiesQuery'
+import { COMPANY_SORTS, COMPANY_TABS } from '~/constants/company'
+import { argumentProblems } from './helpers/apiInputContract'
 
 const view = (overrides: Partial<CompaniesView> = {}): CompaniesView => ({
   search: '',
@@ -141,4 +143,41 @@ describe('companies view in the URL', () => {
       })
     )
   })
+})
+
+// Built as text like the listings query, so this is the only check against the API's input types.
+describe('companies query API input contract', () => {
+  const everything = {
+    ...emptyCompaniesFacets(),
+    favorites: true,
+    hideAvoided: true,
+    hasContacts: true,
+    locationIds: [1],
+    industries: ['Consulting'],
+    skills: ['Vue'],
+    sizeBands: ['SMALL' as const],
+    workModes: ['REMOTE' as const],
+    languages: ['ENGLISH' as const]
+  }
+  const cases = COMPANY_TABS.flatMap(({ value: tab }) =>
+    COMPANY_SORTS.flatMap(({ value: sort }) =>
+      (['any', 'yes', 'no'] as const).map((researched) => ({ tab, sort, researched }))
+    )
+  )
+
+  it.each(cases)(
+    'uses only filters and sorts the API accepts ($tab, $sort, researched $researched)',
+    ({ tab, sort, researched }) => {
+      const built = buildCompaniesQuery(
+        view({ tab, sort, facets: { ...everything, researched } }),
+        5
+      )
+      expect(
+        argumentProblems(built.document, 'companies', {
+          where: 'CompanyFilterInput',
+          order: 'CompanySortInput'
+        })
+      ).toEqual([])
+    }
+  )
 })

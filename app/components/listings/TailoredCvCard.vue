@@ -8,7 +8,7 @@ const { listing } = defineProps<{ listing: ListingDetail }>()
 const emit = defineEmits<{ changed: [] }>()
 
 const { data: draft, status, error } = useTailoredCvDraftQuery(listing.id)
-const copy = useCopyTailoredCv()
+const { copied, copy } = useCopyTailoredCv()
 const { reset, resetting, error: resetError } = useResetTailoredCvDraft(listing.id)
 const resetOpen = ref(false)
 const editorPath = computed(() => `/listings/${listing.id}/cv`)
@@ -87,12 +87,12 @@ const openApply = () => {
             >Edit CV</UButton
           >
           <UButton
-            icon="i-lucide-copy"
+            :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
             color="neutral"
             variant="ghost"
             data-testid="tailored-cv-card-copy"
             @click="copy(tailoredCvFromContent(draft.content))"
-            >Copy as text</UButton
+            >{{ copied ? 'Copied' : 'Copy as text' }}</UButton
           >
         </div>
       </section>

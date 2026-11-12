@@ -10,7 +10,10 @@ import { tailoredCvFromProfile } from '../fixtures/tailoredCv'
 const { navigateTo } = vi.hoisted(() => ({ navigateTo: vi.fn() }))
 mockNuxtImport('navigateTo', () => navigateTo)
 
-type Body = { query: string; variables: { input?: Record<string, unknown> } }
+type Body = {
+  query: string
+  variables: { input?: Record<string, unknown>; language?: string }
+}
 let calls: Body[] = []
 let createReply: unknown
 
@@ -24,7 +27,14 @@ registerEndpoint('/graphql', {
     const body = (await readBody(event)) as Body
     calls.push(body)
     if (body.query.includes('query BaseCvFromProfile'))
-      return { data: { baseCvFromProfile: content('From profile') } }
+      return {
+        data: {
+          baseCvFromProfile: {
+            ...content('From profile'),
+            language: (body.variables as { language?: string }).language ?? 'ENGLISH'
+          }
+        }
+      }
     if (body.query.includes('query BaseCvExternalPrompt'))
       return { data: { baseCvExternalPrompt: { instructions: 'Draft a CV' } } }
     if (body.query.includes('mutation PreviewBaseCv'))
@@ -46,13 +56,22 @@ const type = async (testid: string, value: string) => {
   input.dispatchEvent(new Event('input'))
   await flushPromises()
 }
-const mountPage = (route = '/cv-templates/new?name=Frontend&lang=en') =>
-  mountSuspended(NewTemplatePage, { route, attachTo: document.body })
+const mountPage = () =>
+  mountSuspended(NewTemplatePage, { route: '/cv-templates/new', attachTo: document.body })
 
 const created = () => calls.filter((c) => c.query.includes('mutation CreateBaseCv'))
+const fromProfile = () => calls.filter((c) => c.query.includes('query BaseCvFromProfile('))
 
-// Through the AI modal, which opens by itself: role, prompt, reply.
-const loadAiDraft = async () => {
+const startFromProfile = async () => {
+  await vi.waitFor(() => expect(inBody('cv-template-start-profile')).not.toBeNull())
+  inBody('cv-template-start-profile')!.click()
+  await vi.waitFor(() => expect(inBody('tailored-cv-summary-text')).not.toBeNull())
+}
+
+// Draft with my AI from the empty state: the profile loads as what the reply is compared with.
+const draftWithAi = async () => {
+  await vi.waitFor(() => expect(inBody('cv-template-start-ai')).not.toBeNull())
+  inBody('cv-template-start-ai')!.click()
   await vi.waitFor(() => expect(inBody('cv-ai-draft-role')).not.toBeNull())
   await type('cv-ai-draft-role', 'Senior developer')
   inBody('cv-ai-draft-create')!.click()
@@ -61,7 +80,7 @@ const loadAiDraft = async () => {
   )
   await type('cv-ai-draft-json', '{"summary":"From the AI"}')
   inBody('cv-ai-draft-load')!.click()
-  await vi.waitFor(() => expect(inBody('cv-template-ai-draft')).not.toBeNull())
+  await vi.waitFor(() => expect(inBody('cv-template-suggestions')).not.toBeNull())
 }
 
 beforeEach(() => {
@@ -70,20 +89,30 @@ beforeEach(() => {
   createReply = { baseCv: { id: 9 }, errors: null }
 })
 
-describe('New CV template from an AI draft', () => {
-  it('creates nothing until Save, then saves the reviewed draft as the first version', async () => {
+describe('New CV template', () => {
+  it('starts empty, then creates the profile in the chosen language as v1 only on Create', async () => {
     const wrapper = await mountPage()
-    await loadAiDraft()
+    await vi.waitFor(() => expect(inBody('cv-template-start')).not.toBeNull())
+    expect(inBody('tailored-cv-summary-text')).toBeNull()
+
+    await type('cv-template-name', 'Generic')
+    const norwegian = [...document.body.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+      (el) => el.closest('[data-testid="cv-template-language"]') && el.id.endsWith('NORWEGIAN')
+    )!
+    norwegian.click()
+    await flushPromises()
+    await startFromProfile()
+    expect(fromProfile().at(-1)!.variables.language).toBe('NORWEGIAN')
     expect(created()).toHaveLength(0)
-    expect(inBody('tailored-cv-summary-text')!.textContent).toBe('From the AI')
+    expect(inBody('cv-template-save-status')!.textContent).toBe('Nothing is created until you save')
 
     inBody('cv-template-save')!.click()
     await vi.waitFor(() => expect(created()).toHaveLength(1))
     expect(created()[0]!.variables.input).toMatchObject({
-      name: 'Frontend',
+      name: 'Generic',
       description: null,
-      language: 'ENGLISH',
-      content: { summary: 'From the AI' }
+      language: 'NORWEGIAN',
+      content: { summary: 'From profile', language: 'NORWEGIAN' }
     })
     await vi.waitFor(() =>
       expect(navigateTo).toHaveBeenCalledWith('/cv-templates/9', { replace: true })
@@ -91,7 +120,16 @@ describe('New CV template from an AI draft', () => {
     wrapper.unmount()
   })
 
-  it('shows a taken name on the field and keeps the draft', async () => {
+  it('needs a name before anything is created', async () => {
+    const wrapper = await mountPage()
+    await startFromProfile()
+    inBody('cv-template-save')!.click()
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Give the template a name'))
+    expect(created()).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('shows a taken name on the field with a link, and keeps the content', async () => {
     createReply = {
       baseCv: null,
       errors: [
@@ -103,37 +141,35 @@ describe('New CV template from an AI draft', () => {
       ]
     }
     const wrapper = await mountPage()
-    await loadAiDraft()
-
+    await type('cv-template-name', 'frontend')
+    await startFromProfile()
     inBody('cv-template-save')!.click()
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain('A CV template with this name already exists.')
     )
-    const link = [...document.body.querySelectorAll('a')].find(
-      (a) => a.textContent === 'Open the existing template'
-    )!
-    expect(link.getAttribute('href')).toBe('/cv-templates/1')
+    expect(inBody('cv-template-existing')!.getAttribute('href')).toBe('/cv-templates/1')
     expect(navigateTo).not.toHaveBeenCalled()
-    expect(inBody('tailored-cv-summary-text')!.textContent).toBe('From the AI')
-    wrapper.unmount()
-  })
-
-  it('discards the AI draft back to the profile, still unsaved', async () => {
-    const wrapper = await mountPage()
-    await loadAiDraft()
-    const discard = [...inBody('cv-template-ai-draft')!.querySelectorAll('button')].find(
-      (b) => b.textContent?.trim() === 'Discard'
-    )!
-    discard.click()
-    await vi.waitFor(() => expect(inBody('cv-template-ai-draft')).toBeNull())
     expect(inBody('tailored-cv-summary-text')!.textContent).toBe('From profile')
-    expect(created()).toHaveLength(0)
     wrapper.unmount()
   })
 
-  it('goes back to the list when there is no name to continue with', async () => {
-    const wrapper = await mountPage('/cv-templates/new')
-    expect(navigateTo).toHaveBeenCalledWith('/cv-templates', { replace: true })
+  it('reviews an AI draft against the profile, and creates only what was accepted', async () => {
+    const wrapper = await mountPage()
+    await type('cv-template-name', 'Frontend')
+    await draftWithAi()
+    // The summary waits on its card; the content is still the profile's.
+    expect(inBody('tailored-cv-summary-text')!.textContent).toBe('From profile')
+    expect(inBody('cv-template-suggestions')!.textContent).toContain('1 suggestion to review')
+    expect(inBody('cv-template-save-status')!.textContent).toBe('1 suggestion not applied')
+
+    inBody('tailored-cv-accept')!.click()
+    await flushPromises()
+    expect(inBody('tailored-cv-summary-text')!.textContent).toBe('From the AI')
+    expect(inBody('cv-template-suggestions')).toBeNull()
+
+    inBody('cv-template-save')!.click()
+    await vi.waitFor(() => expect(created()).toHaveLength(1))
+    expect(created()[0]!.variables.input).toMatchObject({ content: { summary: 'From the AI' } })
     wrapper.unmount()
   })
 })

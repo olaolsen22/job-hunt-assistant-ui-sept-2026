@@ -41,6 +41,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 // include ones that are no longer listed. One AI reply has to cover them all, hence the cap.
 const MAX_SELECTED = 20
 const selected = ref(new Map<number, string>())
+useToastClearance(useTemplateRef('selection-bar'))
 const selectionNotice = ref('')
 
 const setSelected = (c: { id: number; name: string }, on: boolean) => {
@@ -282,6 +283,7 @@ const researchSelected = () => {
          the last row. -->
     <div
       v-if="selected.size"
+      ref="selection-bar"
       class="sticky bottom-4 z-20 flex flex-wrap items-center gap-3 rounded-lg border border-default bg-default p-3 shadow-lg"
       data-testid="companies-selection-bar"
     >

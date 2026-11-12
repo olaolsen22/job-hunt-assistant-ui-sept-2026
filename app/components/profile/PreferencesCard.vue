@@ -2,7 +2,10 @@
 import { EMPLOYMENT_TYPE_OPTIONS, WORK_MODE_OPTIONS } from '~/constants/listing'
 import type { ProfileData } from '~/composables/useProfile'
 
-const { profile } = defineProps<{ profile: ProfileData }>()
+const { profile, defaultOpen = true } = defineProps<{
+  profile: ProfileData
+  defaultOpen?: boolean
+}>()
 // Read-only; everything, target locations included, is edited in the Preferences form.
 const emit = defineEmits<{ saved: [profile: ProfileData]; changed: [] }>()
 
@@ -43,6 +46,7 @@ const empty = computed(() => !rows.value.length && !profile.targetLocations.leng
     icon="i-lucide-sliders-horizontal"
     testid="profile-preferences"
     :empty="empty"
+    :default-open="defaultOpen"
     empty-message="No preferences yet."
     add-label="Set preferences"
     @add="open = true"

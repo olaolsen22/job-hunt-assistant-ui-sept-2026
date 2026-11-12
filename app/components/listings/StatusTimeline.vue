@@ -52,7 +52,7 @@ const undoDescription = computed(() => {
   return 'The listing goes back to its previous status.'
 })
 
-const toast = useToast()
+const notify = useAppToast()
 const { run, loading } = useMutation(() => emit('changed'))
 
 const undo = async () => {
@@ -65,17 +65,8 @@ const undo = async () => {
     if (!duplicate) return undoStatusChange.errors
     // useMutation's toast has no link, and the user needs the open listing that blocks the undo.
     reopenBlocked = true
-    toast.add({
-      title: duplicate.message,
-      color: 'error',
-      actions: [
-        {
-          label: 'View open listing',
-          to: `/listings/${duplicate.existingListingId}`,
-          color: 'neutral',
-          variant: 'outline'
-        }
-      ]
+    notify.error(duplicate.message, {
+      action: { label: 'View open listing', to: `/listings/${duplicate.existingListingId}` }
     })
   })
   undoOpen.value = false

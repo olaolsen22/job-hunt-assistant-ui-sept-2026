@@ -14,7 +14,7 @@ const emit = defineEmits<{ changed: [] }>()
 
 const api = useSkillCleanup()
 const { busy, needsConfirm, safetyMessage } = api
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 
 const MAX_NAMES = 10
 // A dropped change stays in the list so it can be restored; it just isn't applied.

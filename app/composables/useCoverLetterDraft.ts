@@ -187,8 +187,8 @@ export const useCoverLetterDraft = (listingId: number) => {
   const query = useCoverLetterDraftQuery(listingId)
   const llm = useLlmModels()
   const { attempt, safetyCode, safetyMessage, needsConfirm, confirmRetry } = useAiRequest()
-  const toast = useToast()
-  const toastSuccess = useSuccessToast()
+  const notify = useAppToast()
+  const { success: toastSuccess } = useAppToast()
   const draft = query.data
   // A saved CV is the letter's evidence. The API still writes without one, just more generically.
   const { data: savedCv, status: savedCvStatus } = useTailoredCvDraftQuery(listingId)
@@ -241,11 +241,11 @@ export const useCoverLetterDraft = (listingId: number) => {
     resettingHeader.value = true
     try {
       const prefill = await fetchFromProfile()
-      if (!prefill) return toast.add({ title: 'This listing no longer exists.', color: 'error' })
+      if (!prefill) return notify.error('This listing no longer exists')
       const fresh = coverLetterFromContent(prefill)
       for (const key of COVER_LETTER_HEADER_KEYS) letter.value[key] = fresh[key]
     } catch {
-      toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
+      notify.error(ERROR_MESSAGES.generic)
     } finally {
       resettingHeader.value = false
     }
@@ -363,7 +363,7 @@ export const useCoverLetterDraft = (listingId: number) => {
       const { generateCoverLetterDocument } = await gql(GENERATE_DOCUMENT, { listingId })
       const error = generateCoverLetterDocument.errors?.[0]
       if (error) {
-        toast.add({ title: error.message, color: 'error' })
+        notify.error(error.message)
         // The draft is gone: count the letter as unsaved, so the next try saves it again.
         if (error.__typename === 'CoverLetterDraftNotFoundError') {
           draft.value = null
@@ -376,7 +376,7 @@ export const useCoverLetterDraft = (listingId: number) => {
       generated.value = generateCoverLetterDocument.document ?? undefined
       return !!generated.value
     } catch {
-      toast.add({ title: ERROR_MESSAGES.generic, color: 'error' })
+      notify.error(ERROR_MESSAGES.generic)
       return false
     } finally {
       generatingPdf.value = false

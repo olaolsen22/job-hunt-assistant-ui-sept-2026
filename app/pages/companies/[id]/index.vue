@@ -194,7 +194,7 @@ const links = computed(() =>
 
 const hasResearch = computed(() => !!company.value && hasCompanyResearch(company.value))
 
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 const notesOpen = ref(false)
 const avoidOpen = ref(false)
 const { run: runAvoid, loading: avoiding } = useMutation(refresh)

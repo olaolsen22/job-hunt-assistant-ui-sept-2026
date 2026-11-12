@@ -107,7 +107,7 @@ export const useTailoredCvDraftQuery = (listingId: number) =>
 // with a fresh one built from the profile. The old content is lost, hence callers confirm first.
 export const useResetTailoredCvDraft = (listingId: number) => {
   const query = useTailoredCvDraftQuery(listingId)
-  const toast = useToast()
+  const notify = useAppToast()
   const resetting = ref(false)
   // Shown in the error card next to the Reset button, where the owner is looking.
   const error = ref('')
@@ -135,7 +135,7 @@ export const useResetTailoredCvDraft = (listingId: number) => {
         error.value = `Saved, but reloading the draft failed (${errorDetail(query.error.value)})`
         return false
       }
-      toast.add({ title: 'CV reset to your profile', icon: 'i-lucide-rotate-ccw' })
+      notify.success('CV reset to your profile', { icon: 'i-lucide-rotate-ccw' })
       return true
     } catch (e) {
       // This is the last-resort path, so the technical detail is shown to make the failure diagnosable.
@@ -148,12 +148,10 @@ export const useResetTailoredCvDraft = (listingId: number) => {
   return { reset, resetting, error }
 }
 
+// The button shows `copied`, so a working copy needs no toast.
 export const useCopyTailoredCv = () => {
-  const { copy } = useCopyAsText('CV')
-  const toastSuccess = useSuccessToast()
-  return async (cv: TailoredCv) => {
-    if (await copy(tailoredCvToText(cv))) toastSuccess('CV copied as text')
-  }
+  const { copied, copy } = useCopyAsText('CV')
+  return { copied, copy: (cv: TailoredCv) => copy(tailoredCvToText(cv)) }
 }
 
 interface AnalysisStep {
@@ -399,7 +397,7 @@ export const useTailoredCvDraft = (listingId: number) => {
     }
   }
 
-  const toastSuccess = useSuccessToast()
+  const { success: toastSuccess } = useAppToast()
   const { run, loading: saving } = useMutation()
   const save = async () => {
     if (!cv.value) return false

@@ -29,12 +29,10 @@ const pdfStale = computed(
     Date.parse(pdf.value.createdAt) < Date.parse(draft.value.updatedAt)
 )
 
-const toastSuccess = useSuccessToast()
-const { copy: copyText } = useCopyAsText('cover letter')
-const copy = async () => {
-  if (!draft.value) return
-  const text = coverLetterToText(coverLetterFromContent(draft.value.content))
-  if (await copyText(text)) toastSuccess('Cover letter copied as text')
+// The button shows `copied`, so a working copy needs no toast.
+const { copied, copy: copyText } = useCopyAsText('cover letter')
+const copy = () => {
+  if (draft.value) copyText(coverLetterToText(coverLetterFromContent(draft.value.content)))
 }
 
 const pdfOpen = ref(false)
@@ -73,12 +71,12 @@ const pdfOpen = ref(false)
             >Edit letter</UButton
           >
           <UButton
-            icon="i-lucide-copy"
+            :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
             color="neutral"
             variant="ghost"
             data-testid="cover-letter-card-copy"
             @click="copy"
-            >Copy as text</UButton
+            >{{ copied ? 'Copied' : 'Copy as text' }}</UButton
           >
         </div>
       </section>

@@ -14,7 +14,7 @@ const {
   saving?: boolean
 }>()
 const open = defineModel<boolean>('open', { required: true })
-const toastSuccess = useSuccessToast()
+const { success: toastSuccess } = useAppToast()
 
 const state = reactive({ apiKey: '' })
 const error = ref('')

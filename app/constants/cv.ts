@@ -6,18 +6,15 @@ export const TEMPLATE_OPTIONS = [
 ]
 export const TEMPLATE_HINTS = {
   DETAILED: 'Full bullets or paragraphs with the context behind each role.',
-  CONCISE: 'Shorter bullets, aiming for a tighter, shorter CV.'
+  CONCISE: 'Shorter bullets or paragraphs, aiming for a tighter, shorter CV.'
 } as const
 
 export const CONTENT_STYLE_OPTIONS = [
   { label: 'Bullets', value: 'BULLETS' },
   { label: 'Paragraphs', value: 'PARAGRAPH' }
 ]
-export const CONTENT_STYLE_DESCRIPTION = {
-  CONCISE: 'Concise CVs always use bullets. Your paragraph choice is kept if you switch back.',
-  DETAILED:
-    'Experience, education, certifications and projects are all written as bullets or as paragraphs.'
-} as const
+export const CONTENT_STYLE_DESCRIPTION =
+  'Experience, education, certifications and projects are all written as bullets or as paragraphs.'
 
 export const SECTION_ORDER_OPTIONS = [
   { label: 'Standard', value: 'STANDARD' },

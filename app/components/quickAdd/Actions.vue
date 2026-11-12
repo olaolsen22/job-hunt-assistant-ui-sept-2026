@@ -11,10 +11,12 @@ defineProps<{
   processing: boolean
 }>()
 defineEmits<{ addRow: []; back: []; save: [] }>()
+useToastClearance(useTemplateRef('bar'))
 </script>
 
 <template>
   <div
+    ref="bar"
     class="flex items-end gap-2 sm:items-center"
     :class="
       pendingCount

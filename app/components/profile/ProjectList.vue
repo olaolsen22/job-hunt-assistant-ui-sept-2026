@@ -2,7 +2,14 @@
 import type { ProfileProject } from '~/composables/useProfile'
 import { projectKindLabel } from '~/constants/listing'
 
-const props = defineProps<{ projects: readonly ProfileProject[] }>()
+const props = withDefaults(
+  defineProps<{
+    projects: readonly ProfileProject[]
+    defaultOpen?: boolean
+    count?: number
+  }>(),
+  { defaultOpen: true, count: undefined }
+)
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
 const { locale } = useProfileTranslation()
@@ -58,6 +65,8 @@ const remove = async () => {
     icon="i-lucide-folder-git-2"
     testid="profile-projects"
     :empty="!projects.length"
+    :default-open="defaultOpen"
+    :count="count"
     empty-message="No projects yet."
     add-label="Add project"
     @clear="emit('clear')"
