@@ -10,7 +10,7 @@ import {
 
 const view = (overrides: Partial<ListingsView> = {}): ListingsView => ({
   search: '',
-  sort: 'due',
+  sort: 'posted',
   filter: null,
   facets: emptyFacets(),
   page: 1,
@@ -24,7 +24,9 @@ describe('listings URL query', () => {
       sort: 'newest',
       filter: 'closingSoon',
       facets: {
+        quickPreset: 'genericLocal',
         favorites: true,
+        shortlist: true,
         preferredLocations: true,
         norwayOnly: true,
         showRejected: true,
@@ -45,6 +47,13 @@ describe('listings URL query', () => {
       page: 2
     })
     expect(parseListingsQuery(toListingsQuery(full))).toEqual(full)
+  })
+
+  it('restores Shortlist independently of Favorites', () => {
+    const { facets } = parseListingsQuery({ shortlist: '1' })
+    expect(facets.shortlist).toBe(true)
+    expect(facets.favorites).toBe(false)
+    expect(parseListingsQuery({ shortlist: 'yes' }).facets.shortlist).toBe(false)
   })
 
   it('leaves the default view out of the URL', () => {

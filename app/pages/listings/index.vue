@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useMediaQuery } from '@vueuse/core'
+import { useElementSize } from '@vueuse/core'
 import type { ListingsFilter, ListingsSort } from '~/composables/useListingsList'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 
@@ -93,9 +93,10 @@ const heading = computed(() => {
   return `${n} ${adjective} ${plural}`
 })
 
-// The table (xl+) needs about 1000px for its columns, which the sidebar leaves only from xl;
-// smaller screens keep the card / two-line rows. The view is swapped with v-if, not hidden.
-const isTable = useMediaQuery('(min-width: 80rem)')
+// The results must have room for the columns after navigation and filters take their share.
+// Observe the stable wrapper so opening a sidebar or resizing also updates the view.
+const { width: resultsWidth } = useElementSize(grid)
+const isTable = computed(() => resultsWidth.value >= 768)
 
 const SORT_OPTIONS = [
   { label: 'Due date', value: 'due' },
@@ -161,136 +162,148 @@ const ADD_ITEMS = [
 
     <!-- Kept while a filter is on, so an empty filtered page can still clear it.
          `:facets`, not v-model: the panel edits the composable's reactive object in place. -->
-    <template v-if="loading || listings.length || narrowed">
-      <!-- Presets and sort share one row. Phones get two equal selects, because the pill tabs
-           squash their labels at that width; from md there is room for the tabs, sort goes right. -->
-      <div class="flex items-center gap-2">
-        <USelect
-          v-model="tab"
-          :items="presetItems"
-          :icon="presetIcon"
-          aria-label="Show"
-          class="min-w-0 flex-1 md:hidden"
-          data-testid="listings-presets-select"
-        />
-        <div class="hidden min-w-0 items-center gap-2 overflow-x-auto md:flex">
-          <UTabs
-            v-model="tab"
-            :items="tabItems"
-            :content="false"
-            variant="pill"
-            size="sm"
-            aria-label="Show"
-            data-testid="listings-presets"
-          />
-          <UDropdownMenu v-if="moreItems.length" :items="moreItems">
-            <UButton
-              :color="moreActive ? 'primary' : 'neutral'"
-              :variant="moreActive ? 'soft' : 'ghost'"
-              size="sm"
-              :icon="moreActive?.icon"
-              trailing-icon="i-lucide-chevron-down"
-              class="shrink-0"
-              data-testid="listings-presets-more"
-              >{{ moreActive?.label ?? 'More' }}</UButton
-            >
-            <template #item-trailing="{ item }">
-              <span class="text-muted tabular-nums">{{ item.count }}</span>
-            </template>
-          </UDropdownMenu>
-        </div>
-        <!-- Sort orders the list rather than narrowing it, so it lives here, not in the Filters
-             sheet. A visible value, not an icon menu, so the current order reads at a glance. -->
-        <USelect
-          v-model="sort"
-          :items="sortItems"
-          icon="i-lucide-arrow-up-down"
-          aria-label="Sort by"
-          class="min-w-0 flex-1 md:ml-auto md:w-48 md:flex-none"
-          data-testid="listings-sort"
-        />
-      </div>
-
-      <ListingsFilterPanel
-        v-model:search="search"
-        :facets="facets"
-        :quick-counts="counts"
-        :company-name="facets.companyId ? listings[0]?.company.name : undefined"
-      />
-    </template>
-
-    <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />
-
     <div
-      v-else-if="!loading && listings.length === 0"
-      class="flex flex-col items-center gap-3 py-16 text-center"
-      data-testid="listings-empty"
+      class="grid min-w-0 gap-4 2xl:grid-cols-[24rem_minmax(0,1fr)] 2xl:items-start 2xl:gap-6"
+      data-testid="listings-columns"
     >
-      <UIcon name="i-lucide-inbox" class="size-10 text-muted" />
-      <p>{{ narrowed ? 'No listings match.' : 'No listings yet.' }}</p>
-      <UButton v-if="!narrowed" to="/listings/add">Add listing</UButton>
-      <UButton
-        v-else
-        color="neutral"
-        variant="subtle"
-        data-testid="listings-empty-clear"
-        @click="clearEverything"
-        >Clear search and filters</UButton
+      <aside
+        v-if="loading || listings.length || narrowed"
+        class="min-w-0 space-y-4 2xl:rounded-lg 2xl:border 2xl:border-default 2xl:bg-default 2xl:p-4"
+        aria-label="Search and filters"
+        data-testid="listings-tools"
       >
-      <!-- Rejected listings are hidden by default, so an empty list may still hold some. -->
-      <UButton
-        v-if="!facets.showRejected && !facets.statuses.length"
-        color="neutral"
-        variant="link"
-        data-testid="listings-empty-show-rejected"
-        @click="facets.showRejected = true"
-        >Show rejected applications</UButton
-      >
-    </div>
+        <!-- Presets and sort share one row. Phones get two equal selects, because the pill tabs
+           squash their labels at that width; from md there is room for the tabs, sort goes right. -->
+        <div class="flex items-center gap-2">
+          <USelect
+            v-model="tab"
+            :items="presetItems"
+            :icon="presetIcon"
+            aria-label="Show"
+            class="min-w-0 flex-1 md:hidden 2xl:block 2xl:w-0 2xl:flex-1"
+            data-testid="listings-presets-select"
+          />
+          <div class="hidden min-w-0 items-center gap-2 overflow-x-auto md:flex 2xl:hidden">
+            <UTabs
+              v-model="tab"
+              :items="tabItems"
+              :content="false"
+              variant="pill"
+              size="sm"
+              aria-label="Show"
+              data-testid="listings-presets"
+            />
+            <UDropdownMenu v-if="moreItems.length" :items="moreItems">
+              <UButton
+                :color="moreActive ? 'primary' : 'neutral'"
+                :variant="moreActive ? 'soft' : 'ghost'"
+                size="sm"
+                :icon="moreActive?.icon"
+                trailing-icon="i-lucide-chevron-down"
+                class="shrink-0"
+                data-testid="listings-presets-more"
+                >{{ moreActive?.label ?? 'More' }}</UButton
+              >
+              <template #item-trailing="{ item }">
+                <span class="text-muted tabular-nums">{{ item.count }}</span>
+              </template>
+            </UDropdownMenu>
+          </div>
+          <!-- Sort orders the list rather than narrowing it, so it lives here, not in the Filters
+             sheet. A visible value, not an icon menu, so the current order reads at a glance. -->
+          <USelect
+            v-model="sort"
+            :items="sortItems"
+            icon="i-lucide-arrow-up-down"
+            aria-label="Sort by"
+            class="min-w-0 flex-1 md:ml-auto md:w-48 md:flex-none 2xl:ml-0 2xl:w-0 2xl:flex-1"
+            data-testid="listings-sort"
+          />
+        </div>
 
-    <template v-else>
-      <!-- One stable element to measure the page size on, whichever view is inside. Only one view is
+        <ListingsFilterPanel
+          v-model:search="search"
+          :facets="facets"
+          :quick-counts="counts"
+          :company-name="facets.companyId ? listings[0]?.company.name : undefined"
+        />
+      </aside>
+
+      <div class="min-w-0 space-y-4 2xl:col-start-2" data-testid="listings-results">
+        <UAlert v-if="error" color="error" :description="ERROR_MESSAGES.generic" />
+
+        <div
+          v-else-if="!loading && listings.length === 0"
+          class="flex flex-col items-center gap-3 py-16 text-center"
+          data-testid="listings-empty"
+        >
+          <UIcon name="i-lucide-inbox" class="size-10 text-muted" />
+          <p>{{ narrowed ? 'No listings match.' : 'No listings yet.' }}</p>
+          <UButton v-if="!narrowed" to="/listings/add">Add listing</UButton>
+          <UButton
+            v-else
+            color="neutral"
+            variant="subtle"
+            data-testid="listings-empty-clear"
+            @click="clearEverything"
+            >Clear search and filters</UButton
+          >
+          <!-- Rejected listings are hidden by default, so an empty list may still hold some. -->
+          <UButton
+            v-if="!facets.showRejected && !facets.statuses.length"
+            color="neutral"
+            variant="link"
+            data-testid="listings-empty-show-rejected"
+            @click="facets.showRejected = true"
+            >Show rejected applications</UButton
+          >
+        </div>
+
+        <template v-else>
+          <!-- One stable element to measure the page size on, whichever view is inside. Only one view is
            ever rendered (v-if, not CSS hiding). The app is client-only, so the media query is
            already right on the first render. -->
-      <div
-        ref="grid"
-        class="md:overflow-hidden md:rounded-lg md:border md:border-default"
-        data-testid="listings-grid"
-      >
-        <ListingsTable
-          v-if="isTable"
-          v-model:sort="sort"
-          :listings="listings"
-          :loading="loading"
-          :skeleton-rows="pageSize"
-          @changed="refresh"
-        />
-        <ul v-else class="space-y-3 md:divide-y md:divide-default md:space-y-0">
-          <template v-if="firstLoad">
-            <li v-for="i in pageSize" :key="i" class="p-3 md:px-4">
-              <USkeleton class="h-24 w-full md:h-10" />
-            </li>
-          </template>
-          <ListingsRow
-            v-for="listing in listings"
-            v-else
-            :key="listing.id"
-            :listing="listing"
-            @changed="refresh"
-          />
-        </ul>
-      </div>
+          <div
+            ref="grid"
+            class="md:overflow-hidden md:rounded-lg md:border md:border-default"
+            data-testid="listings-grid"
+          >
+            <ListingsTable
+              v-if="isTable"
+              v-model:sort="sort"
+              :listings="listings"
+              :loading="loading"
+              :skeleton-rows="pageSize"
+              @changed="refresh"
+            />
+            <ul v-else class="space-y-3 md:divide-y md:divide-default md:space-y-0">
+              <template v-if="firstLoad">
+                <li v-for="i in pageSize" :key="i" class="p-3 md:px-4">
+                  <USkeleton class="h-24 w-full md:h-10" />
+                </li>
+              </template>
+              <ListingsRow
+                v-for="listing in listings"
+                v-else
+                :key="listing.id"
+                :listing="listing"
+                @changed="refresh"
+              />
+            </ul>
+          </div>
 
-      <!-- UPagination still renders a lone "1" with disabled arrows when everything fits on one page. -->
-      <div v-if="totalCount > pageSize" class="flex justify-center sm:justify-end">
-        <UPagination
-          v-model:page="page"
-          :total="totalCount"
-          :items-per-page="pageSize"
-          :disabled="loading"
-          data-testid="listings-pagination"
-        />
+          <!-- UPagination still renders a lone "1" with disabled arrows when everything fits on one page. -->
+          <div v-if="totalCount > pageSize" class="flex justify-center sm:justify-end">
+            <UPagination
+              v-model:page="page"
+              :total="totalCount"
+              :items-per-page="pageSize"
+              :disabled="loading"
+              data-testid="listings-pagination"
+            />
+          </div>
+        </template>
       </div>
-    </template>
+    </div>
   </div>
 </template>

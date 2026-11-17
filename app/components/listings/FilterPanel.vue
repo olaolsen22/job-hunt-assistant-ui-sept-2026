@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { useMediaQuery, useResizeObserver, useScroll } from '@vueuse/core'
 import {
-  DUE_WITHIN_OPTIONS,
+  LISTING_QUICK_PRESETS,
+  type ListingQuickPreset,
   type ListingsFacets,
   type QuickToggle
 } from '~/composables/useListingsList'
@@ -20,47 +22,47 @@ const { companyName = '', quickCounts } = defineProps<{
 type PillFacet = Extract<
   keyof ListingsFacets,
   | 'favorites'
-  | 'preferredLocations'
+  | 'shortlist'
   | 'norwayOnly'
   | 'itRoles'
   | 'nonItRoles'
   | 'englishPosting'
   | 'englishMentioned'
 >
-const PILLS: { key: string; facet: PillFacet; label: string; count?: QuickToggle }[] = [
-  { key: 'favorites', facet: 'favorites', label: 'Favorites' },
-  {
-    key: 'preferred',
-    facet: 'preferredLocations',
-    label: 'Preferred locations',
-    count: 'preferred'
-  },
-  {
-    key: 'norway',
-    facet: 'norwayOnly',
-    label: 'Norway only',
-    count: 'norway'
-  },
-  { key: 'it', facet: 'itRoles', label: 'IT roles', count: 'it' },
-  {
-    key: 'nonIt',
-    facet: 'nonItRoles',
-    label: 'Non-IT roles',
-    count: 'nonIt'
-  },
-  {
-    key: 'englishPosting',
-    facet: 'englishPosting',
-    label: 'English posting',
-    count: 'englishPosting'
-  },
-  {
-    key: 'englishMentioned',
-    facet: 'englishMentioned',
-    label: 'English mentioned',
-    count: 'englishMentioned'
-  }
-]
+const PILLS: { key: string; facet: PillFacet; label: string; icon: string; count?: QuickToggle }[] =
+  [
+    { key: 'shortlist', facet: 'shortlist', label: 'Shortlist', icon: 'i-lucide-bookmark' },
+    { key: 'favorites', facet: 'favorites', label: 'Favorites', icon: 'i-lucide-star' },
+    {
+      key: 'norway',
+      facet: 'norwayOnly',
+      label: 'Norway only',
+      icon: 'i-lucide-map-pin',
+      count: 'norway'
+    },
+    { key: 'it', facet: 'itRoles', label: 'IT roles', icon: 'i-lucide-code-xml', count: 'it' },
+    {
+      key: 'nonIt',
+      facet: 'nonItRoles',
+      label: 'Non-IT roles',
+      icon: 'i-lucide-briefcase-business',
+      count: 'nonIt'
+    },
+    {
+      key: 'englishPosting',
+      facet: 'englishPosting',
+      label: 'English posting',
+      icon: 'i-lucide-file-text',
+      count: 'englishPosting'
+    },
+    {
+      key: 'englishMentioned',
+      facet: 'englishMentioned',
+      label: 'English mentioned',
+      icon: 'i-lucide-languages',
+      count: 'englishMentioned'
+    }
+  ]
 
 // IT and non-IT together would always be empty, so turning one on turns the other off.
 const EXCLUSIVE: Partial<Record<PillFacet, PillFacet>> = {
@@ -73,16 +75,31 @@ const toggle = (facet: PillFacet) => {
   if (other && facets.value[facet]) facets.value[other] = false
 }
 
-// USelect can't hold null, so "Any" is a sentinel that maps back to null.
-const DUE_ITEMS = [
-  { label: 'Due: any time', value: 0 },
-  ...DUE_WITHIN_OPTIONS.map((days) => ({ label: `Due within ${days} days`, value: days }))
-]
+const presetIcons: Record<ListingQuickPreset, string> = {
+  itIdeal: 'i-lucide-code-xml',
+  genericLocal: 'i-lucide-map-pin',
+  genericIdeal: 'i-lucide-briefcase-business',
+  remote: 'i-lucide-globe'
+}
+
+const toggleQuickPreset = (preset: ListingQuickPreset) => {
+  const active = facets.value.quickPreset === preset
+  Object.assign(facets.value, {
+    quickPreset: active ? null : preset,
+    preferredLocations: false,
+    norwayOnly: false,
+    itRoles: false,
+    nonItRoles: false,
+    locationIds: []
+  })
+}
 
 // The pills and the company (from a dashboard link) are set outside the sheet, so the Filters badge counts only
 // what is inside it, and the sheet's own Clear leaves them alone. Clear all still resets every facet.
 const outsideSheet = ({
+  quickPreset,
   favorites,
+  shortlist,
   companyId,
   preferredLocations,
   norwayOnly,
@@ -91,7 +108,9 @@ const outsideSheet = ({
   englishPosting,
   englishMentioned
 }: ListingsFacets) => ({
+  quickPreset,
   favorites,
+  shortlist,
   companyId,
   preferredLocations,
   norwayOnly,
@@ -165,12 +184,26 @@ const chips = computed(() => {
 const clearAll = () => Object.assign(facets.value, emptyFacets())
 const clearSheet = () => Object.assign(facets.value, emptyFacets(), outsideSheet(facets.value))
 
+// Keep the overflow hint only while more options remain to the right.
+const quickFilters = useTemplateRef<HTMLElement>('quickFilters')
+const quickPresets = useTemplateRef<HTMLElement>('quickPresets')
+const filterScroll = useScroll(quickFilters, { observe: { mutation: true } })
+const presetScroll = useScroll(quickPresets, { observe: { mutation: true } })
+useResizeObserver([quickFilters, quickPresets], () => {
+  filterScroll.measure()
+  presetScroll.measure()
+})
+
 const open = ref(false)
+const inlineFilters = useMediaQuery('(min-width: 96rem)')
+// Resizing to the desktop sidebar dismisses an open sheet; narrowing again starts closed.
+watch(inlineFilters, (inline) => {
+  if (inline) open.value = false
+})
 </script>
 
 <template>
-  <!-- Two rows: search + Filters share one (so Filters lines up with Sort above), then the quick
-       filter pills. Phones scroll the pills in one line, since wrapping seven would take four rows. -->
+  <!-- Search, individual quick filters, then combined quick presets. -->
   <div class="space-y-3">
     <div class="flex items-center gap-2">
       <UInput
@@ -193,6 +226,7 @@ const open = ref(false)
         </template>
       </UInput>
       <UButton
+        v-if="!inlineFilters"
         color="neutral"
         variant="subtle"
         icon="i-lucide-sliders-horizontal"
@@ -205,14 +239,14 @@ const open = ref(false)
       </UButton>
     </div>
 
-    <div class="flex items-start gap-2">
-      <span class="hidden shrink-0 pt-2 text-xs text-muted 2xl:block">Quick filters</span>
-      <!-- The right fade hints that more pills scroll in; the end padding matches its width, so the
-           last pill clears the fade once scrolled to the end. -->
+    <section class="space-y-2" aria-labelledby="listing-filters-heading">
+      <h3 id="listing-filters-heading" class="text-xs font-medium text-muted">Quick filters</h3>
       <div
-        class="flex min-w-0 gap-1.5 overflow-x-auto pr-8 pb-1 mask-r-from-[calc(100%-2rem)] md:flex-wrap md:overflow-visible md:pr-0 md:pb-0 md:mask-none"
+        ref="quickFilters"
+        class="quick-filter-row flex gap-1.5 overflow-x-auto md:grid md:grid-cols-3 md:overflow-visible 2xl:grid-cols-2"
+        :class="{ 'has-more': !filterScroll.arrivedState.right }"
         role="group"
-        aria-label="Quick filters"
+        aria-labelledby="listing-filters-heading"
       >
         <UButton
           v-for="p in PILLS"
@@ -220,26 +254,64 @@ const open = ref(false)
           :color="facets[p.facet] ? (p.facet === 'favorites' ? 'warning' : 'primary') : 'neutral'"
           :variant="facets[p.facet] ? 'soft' : 'subtle'"
           :aria-pressed="facets[p.facet]"
-          class="shrink-0 rounded-full whitespace-nowrap"
+          class="w-auto min-w-0 shrink-0 justify-start whitespace-nowrap rounded-full md:w-full"
           :data-testid="`listings-facet-${p.key}`"
           @click="toggle(p.facet)"
         >
-          <!-- A check when on (a second cue besides colour); Favorites shows its star, filled when on,
-               like ListingsFavoriteButton. Idle pills carry no icon, which keeps all seven on one
-               line from xl. -->
           <UIcon
-            v-if="p.facet === 'favorites'"
-            name="i-lucide-star"
+            :name="p.icon"
             mode="svg"
-            class="size-4"
-            :class="{ '[&_*]:fill-current': facets.favorites }"
+            class="size-4 shrink-0"
+            :class="{
+              '[&_*]:fill-current':
+                (p.facet === 'favorites' || p.facet === 'shortlist') && facets[p.facet]
+            }"
+            aria-hidden="true"
           />
-          <UIcon v-else-if="facets[p.facet]" name="i-lucide-check" class="size-4" />
-          {{ p.label }}
-          <span v-if="p.count" class="text-muted tabular-nums">{{ quickCounts[p.count] }}</span>
+          <UIcon
+            v-if="p.facet !== 'favorites' && p.facet !== 'shortlist' && facets[p.facet]"
+            name="i-lucide-check"
+            class="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          <span class="min-w-0 flex-1 truncate text-left">{{ p.label }}</span>
+          <span v-if="p.count" class="shrink-0 text-muted tabular-nums">{{
+            quickCounts[p.count]
+          }}</span>
         </UButton>
       </div>
-    </div>
+    </section>
+
+    <section class="space-y-2" aria-labelledby="listing-presets-heading">
+      <h3 id="listing-presets-heading" class="text-xs font-medium text-muted">Quick presets</h3>
+      <div
+        ref="quickPresets"
+        class="quick-filter-row flex gap-1.5 overflow-x-auto md:grid md:grid-cols-4 md:overflow-visible 2xl:grid-cols-2"
+        :class="{ 'has-more': !presetScroll.arrivedState.right }"
+        role="group"
+        aria-labelledby="listing-presets-heading"
+      >
+        <UButton
+          v-for="preset in LISTING_QUICK_PRESETS"
+          :key="preset.value"
+          :color="facets.quickPreset === preset.value ? 'primary' : 'neutral'"
+          :variant="facets.quickPreset === preset.value ? 'soft' : 'subtle'"
+          :aria-pressed="facets.quickPreset === preset.value"
+          class="w-auto min-w-0 shrink-0 justify-start whitespace-nowrap rounded-full md:w-full"
+          :data-testid="`listings-quick-${preset.value}`"
+          @click="toggleQuickPreset(preset.value)"
+        >
+          <UIcon :name="presetIcons[preset.value]" class="size-4" aria-hidden="true" />
+          <UIcon
+            v-if="facets.quickPreset === preset.value"
+            name="i-lucide-check"
+            class="size-4"
+            aria-hidden="true"
+          />
+          <span class="min-w-0 flex-1 truncate text-left">{{ preset.label }}</span>
+        </UButton>
+      </div>
+    </section>
 
     <AppFilterChips
       v-if="anyActive"
@@ -248,109 +320,40 @@ const open = ref(false)
       @clear-all="clearAll"
     />
 
+    <div
+      v-if="inlineFilters"
+      class="space-y-4 border-t border-default pt-4"
+      data-testid="listings-inline-filters"
+    >
+      <ListingsFilterFields v-model:facets="facets" />
+    </div>
+
     <AppFilterSheet
+      v-else
       v-model:open="open"
       testid-prefix="listings"
       :clear-disabled="!sheetCount"
       @clear="clearSheet"
     >
-      <section class="space-y-3">
-        <h3 class="text-sm font-semibold text-highlighted">Status</h3>
-        <USelectMenu
-          v-model="facets.statuses"
-          :items="[...APPLICATION_STATUS_OPTIONS]"
-          value-key="value"
-          multiple
-          placeholder="Any status"
-          :search-input="false"
-          class="w-full"
-          aria-label="Status"
-          data-testid="listings-facet-status"
-        />
-        <USwitch
-          v-model="facets.showRejected"
-          label="Show rejected applications"
-          description="Picking statuses above always shows exactly those."
-          data-testid="listings-facet-rejected"
-        />
-      </section>
-      <section class="space-y-3">
-        <h3 class="text-sm font-semibold text-highlighted">Location</h3>
-        <AppFilterCombobox
-          v-model="facets.locationIds"
-          lookup="locations"
-          placeholder="Any location"
-          data-testid="listings-facet-location"
-        />
-      </section>
-      <section class="space-y-3">
-        <h3 class="text-sm font-semibold text-highlighted">Language</h3>
-        <UFormField label="Posting language">
-          <USelectMenu
-            v-model="facets.postingLanguages"
-            :items="[...LANGUAGE_OPTIONS]"
-            value-key="value"
-            multiple
-            placeholder="Any"
-            :search-input="false"
-            class="w-full"
-            data-testid="listings-facet-postingLanguage"
-          />
-        </UFormField>
-        <UFormField label="Required language">
-          <USelectMenu
-            v-model="facets.languages"
-            :items="[...LANGUAGE_OPTIONS]"
-            value-key="value"
-            multiple
-            placeholder="Any"
-            :search-input="false"
-            class="w-full"
-            data-testid="listings-facet-requiredLanguage"
-          />
-        </UFormField>
-      </section>
-      <section class="space-y-3">
-        <h3 class="text-sm font-semibold text-highlighted">Skills</h3>
-        <AppFilterCombobox
-          v-model="facets.skills"
-          lookup="skills"
-          placeholder="Any skill"
-          data-testid="listings-facet-skill"
-        />
-      </section>
-      <section class="space-y-3">
-        <h3 class="text-sm font-semibold text-highlighted">Dates</h3>
-        <UFormField label="Due">
-          <USelect
-            :model-value="facets.dueWithinDays ?? 0"
-            :items="DUE_ITEMS"
-            class="w-full"
-            data-testid="listings-facet-due"
-            @update:model-value="facets.dueWithinDays = $event || null"
-          />
-        </UFormField>
-        <div class="grid grid-cols-2 gap-3">
-          <UFormField label="Posted from">
-            <UInput
-              v-model="facets.postedFrom"
-              type="date"
-              :max="facets.postedTo || undefined"
-              class="w-full"
-              data-testid="listings-facet-postedFrom"
-            />
-          </UFormField>
-          <UFormField label="Posted to">
-            <UInput
-              v-model="facets.postedTo"
-              type="date"
-              :min="facets.postedFrom || undefined"
-              class="w-full"
-              data-testid="listings-facet-postedTo"
-            />
-          </UFormField>
-        </div>
-      </section>
+      <ListingsFilterFields v-model:facets="facets" />
     </AppFilterSheet>
   </div>
 </template>
+
+<style scoped>
+@media (width < 48rem) {
+  .quick-filter-row {
+    /* Leave room for focus outlines and for the final pill to clear the fade. */
+    padding: 2px 1.5rem 2px 2px;
+    scrollbar-width: none;
+  }
+
+  .quick-filter-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .quick-filter-row.has-more {
+    mask-image: linear-gradient(to right, black calc(100% - 1.5rem), transparent);
+  }
+}
+</style>

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
-import { useMediaQuery } from '@vueuse/core'
+import { useElementSize } from '@vueuse/core'
 import type { ListingListItem, ListingsSort } from '~/composables/useListingsList'
 
-// Desktop view of the list page (xl+); phones and tablets get ListingsRow instead.
+// Used when the results area has at least 48rem; narrower areas get ListingsRow instead.
 // Sorting is server-side (the list is paginated), so a header click only changes `sort`.
 const { listings, loading, skeletonRows } = defineProps<{
   listings: ListingListItem[]
@@ -14,23 +14,31 @@ const { listings, loading, skeletonRows } = defineProps<{
 const sort = defineModel<ListingsSort>('sort', { required: true })
 defineEmits<{ changed: [] }>()
 
-// Widths keep the columns aligned across pages; Title takes what is left.
+// Compact tables keep the title, dates, status and actions aligned in columns.
+// Location gets a separate column only when it leaves enough room for the title.
 const columns: TableColumn<ListingListItem>[] = [
-  { id: 'favorite', meta: { class: { th: 'w-12', td: 'w-12' } } },
+  { id: 'favorite', meta: { class: { th: 'w-24', td: 'w-24' } } },
   { id: 'title', header: 'Title' },
-  { id: 'location', header: 'Location', meta: { class: { th: 'w-36', td: 'w-36' } } },
+  { id: 'location', header: 'Location', meta: { class: { th: 'w-40', td: 'w-40' } } },
   { id: 'seniority', header: 'Seniority', meta: { class: { th: 'w-24', td: 'w-24' } } },
   { id: 'posted', header: 'Posted', meta: { class: { th: 'w-24', td: 'w-24' } } },
-  { id: 'due', header: 'Due', meta: { class: { th: 'w-44', td: 'w-44' } } },
-  // Wide enough for the longest pair, "Interviewing" + "To analyze", on one line.
-  { id: 'status', header: 'Status', meta: { class: { th: 'w-56', td: 'w-56' } } },
+  { id: 'due', header: 'Due', meta: { class: { th: 'w-40', td: 'w-40' } } },
+  { id: 'status', header: 'Status', meta: { class: { th: 'w-32', td: 'w-32' } } },
   { id: 'actions', meta: { class: { th: 'w-24', td: 'w-24' } } }
 ]
 
-// From 1280 to 1440 the sidebar leaves too little room for every column, so Seniority is left out
-// (not rendered, like the list/table swap) and joins the company line under the title instead.
-const wide = useMediaQuery('(min-width: 90rem)')
-const columnVisibility = computed(() => ({ seniority: wide.value }))
+// Measure the table itself: both navigation and filters can reduce its available width.
+const table = useTemplateRef('table')
+const { width } = useElementSize(table)
+const wide = computed(() => width.value >= 1216)
+const detailed = computed(() => width.value >= 1056)
+const columnVisibility = computed(() => ({
+  seniority: wide.value,
+  location: detailed.value
+}))
+
+const locationLabel = (listing: ListingListItem) =>
+  listing.locations.map((l) => formatLocation(l.location)).join(', ') || 'Location not specified'
 
 // First click picks the natural direction (A–Z, newest posted first), the second reverses it, the
 // third goes back to the default due order. Due itself has no reverse: the server's due date isn't
@@ -82,14 +90,16 @@ const LABELS: Record<SortableKey, string> = {
        `relative` on the row anchors the title link's stretched ::after, so the whole row is a real
        link (middle-click, new tab) like the phone/tablet rows. -->
   <UTable
+    ref="table"
     :data="listings"
     :columns="columns"
     :loading="loading"
     :column-visibility="columnVisibility"
     :ui="{
-      base: 'w-full table-fixed',
+      base: 'w-full min-w-[48rem] max-w-[83rem] table-fixed',
       tr: 'group relative hover:bg-elevated/50',
-      th: 'py-2 text-xs font-medium uppercase text-muted'
+      th: 'px-3 py-2 text-xs font-medium uppercase text-muted',
+      td: 'px-3'
     }"
     data-testid="listings-table"
   >
@@ -109,35 +119,49 @@ const LABELS: Record<SortableKey, string> = {
     </template>
 
     <template #favorite-cell="{ row }">
-      <AppFavoriteButton
-        :id="row.original.id"
-        target="listing"
-        :favorited-at="row.original.favoritedAt"
-        size="md"
-        class="relative z-10"
-      />
+      <div class="flex items-center">
+        <ListingsShortlistButton
+          :id="row.original.id"
+          :shortlisted-at="row.original.shortlistedAt"
+          size="md"
+          class="relative z-10"
+          @changed="$emit('changed')"
+        />
+        <AppFavoriteButton
+          :id="row.original.id"
+          target="listing"
+          :favorited-at="row.original.favoritedAt"
+          size="md"
+          class="relative z-10"
+        />
+      </div>
     </template>
 
     <template #title-cell="{ row }">
       <NuxtLink
         :to="`/listings/${row.original.id}`"
-        class="line-clamp-2 font-semibold whitespace-normal text-highlighted group-hover:underline after:absolute after:inset-0"
+        class="line-clamp-2 font-semibold whitespace-normal wrap-anywhere text-highlighted group-hover:underline after:absolute after:inset-0"
         data-testid="listing-title"
         >{{ row.original.title }}</NuxtLink
       >
       <ListingsCompanyLine :listing="row.original" :with-seniority="!wide" truncate />
+      <p
+        v-if="!detailed"
+        class="mt-1 truncate text-xs text-muted"
+        :title="locationLabel(row.original)"
+        data-testid="listing-location"
+      >
+        {{ locationLabel(row.original) }}
+      </p>
     </template>
 
     <template #location-cell="{ row }">
       <p
-        class="truncate"
-        :title="row.original.locations.map((l) => formatLocation(l.location)).join(', ')"
+        class="line-clamp-2 whitespace-normal wrap-break-word"
+        :title="locationLabel(row.original)"
         data-testid="listing-location"
       >
-        {{ listingFirstLocation(row.original) }}
-        <span v-if="listingMoreLocations(row.original)" class="text-dimmed"
-          >+{{ listingMoreLocations(row.original) }}</span
-        >
+        {{ locationLabel(row.original) }}
       </p>
     </template>
 
@@ -160,7 +184,7 @@ const LABELS: Record<SortableKey, string> = {
     </template>
 
     <template #status-cell="{ row }">
-      <div class="flex flex-wrap gap-1">
+      <div class="flex flex-col items-start gap-1">
         <ListingsStatusBadge :status="row.original.status" />
         <ListingsAnalyzedBadge v-if="!row.original.analyzedAt" :analyzed-at="null" />
       </div>

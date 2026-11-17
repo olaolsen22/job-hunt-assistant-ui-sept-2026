@@ -21,6 +21,7 @@ const listing = (overrides: Partial<ListingListItem> = {}): ListingListItem => (
   dueOn: '2026-12-01',
   url: 'https://example.com/ad',
   favoritedAt: null,
+  shortlistedAt: null,
   archivedAt: null,
   analyzedAt: '2026-10-02T10:00:00Z',
   status: 'SAVED',
@@ -32,6 +33,9 @@ const listing = (overrides: Partial<ListingListItem> = {}): ListingListItem => (
 describe('ListingsRow', () => {
   it('links the title to the listing and the ad externally', async () => {
     const wrapper = await mountSuspended(Row, { props: { listing: listing() } })
+    expect(wrapper.get('[data-testid="listing-shortlist"]').attributes('aria-pressed')).toBe(
+      'false'
+    )
     expect(wrapper.get('h3 a').attributes('href')).toBe('/listings/7')
     const ad = wrapper.get('[data-testid="listing-view-ad"]')
     expect(ad.attributes('href')).toBe('https://example.com/ad')

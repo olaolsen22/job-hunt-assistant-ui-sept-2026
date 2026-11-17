@@ -23,9 +23,12 @@ const emit = defineEmits<{ clearAll: [] }>()
       >{{ chip.label }}</UButton
     >
     <UButton
-      color="neutral"
-      variant="link"
-      size="sm"
+      color="primary"
+      variant="solid"
+      icon="i-lucide-filter-x"
+      size="md"
+      block
+      class="rounded-md"
       :data-testid="`${testidPrefix}-filters-clear`"
       @click="emit('clearAll')"
       >Clear all</UButton

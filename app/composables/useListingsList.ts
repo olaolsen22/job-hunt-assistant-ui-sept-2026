@@ -31,6 +31,7 @@ const LISTING_ITEM = graphql(`
     dueOn
     url
     favoritedAt
+    shortlistedAt
     archivedAt
     analyzedAt
     status
@@ -43,25 +44,34 @@ const LISTING_ITEM = graphql(`
 
 export type ListingListItem = ResultOf<typeof LISTING_ITEM>
 
-// Page size is decided once per page load, not reactive to resize: changing it mid-pagination
-// would shift page boundaries under the user. From `md` up it is how many rows fit between the
-// grid's top and the bottom of the viewport, so the pager is visible without scrolling. Phones keep 5.
+// Decide once on mount so pagination boundaries do not shift while browsing.
+// Phones keep a small fixed page; larger screens fill the space below the results' actual top.
 const PHONE_PAGE_SIZE = 5
 const MAX_PAGE_SIZE = 12
-// Nominal listing row height (`md:min-h-16` plus a little slack); the rows sit flush, without a gap.
-// If the pager ends up below the fold on a device, raise ROW_HEIGHT; if rows go unused, lower it.
+const MAX_TABLE_PAGE_SIZE = 24
 const ROW_HEIGHT = 72
-// Pager (~40) + the gap above it + the panel's bottom padding + the filter chips wrapping onto a second
-// line once counts arrive (the grid is measured before any data exists).
-const RESERVED_BELOW = 120
+// The desktop table's title + company lines (40px) and vertical cell padding (32px).
+// Keep this separate from mobile/tablet sizing even though both currently use 72px.
+const TABLE_ROW_HEIGHT = 72
+const RESERVED_BELOW = 72 // pager, its gap and the panel's bottom padding
+const FILTER_WRAP_ALLOWANCE = 48
 
-export const measurePageSize = (grid: HTMLElement, itemHeight = ROW_HEIGHT, gap = 0) => {
+export const measurePageSize = (grid: HTMLElement, itemHeight?: number, gap = 0) => {
   if (!window.matchMedia('(min-width: 768px)').matches) return PHONE_PAGE_SIZE
-  // Counting the resolved tracks keeps this independent of the grid's breakpoint classes.
-  const columns = getComputedStyle(grid).gridTemplateColumns.split(' ').length
-  const available = window.innerHeight - grid.getBoundingClientRect().top - RESERVED_BELOW
-  const rows = Math.floor((available + gap) / (itemHeight + gap))
-  return Math.min(Math.max(rows, 2) * columns, MAX_PAGE_SIZE)
+  const tracks = (element: Element) => {
+    const columns = getComputedStyle(element).gridTemplateColumns
+    return !columns || columns === 'none' ? 1 : columns.trim().split(/\s+/).length
+  }
+  const layout = grid.closest('[data-testid="listings-columns"]')
+  const sideBySide = !!layout && tracks(layout) > 1
+  const table = grid.querySelector('table')
+  // Filters can grow after counts arrive only when they sit above the results.
+  const reserved = RESERVED_BELOW + (sideBySide ? 0 : FILTER_WRAP_ALLOWANCE)
+  const headerHeight = table?.querySelector('thead')?.getBoundingClientRect().height ?? 0
+  const available = window.innerHeight - grid.getBoundingClientRect().top - reserved - headerHeight
+  const rowHeight = itemHeight ?? (table ? TABLE_ROW_HEIGHT : ROW_HEIGHT)
+  const rows = Math.floor((available + gap) / (rowHeight + gap))
+  return Math.min(Math.max(rows, 2) * tracks(grid), table ? MAX_TABLE_PAGE_SIZE : MAX_PAGE_SIZE)
 }
 
 // The query is built at runtime from fixed clause strings, not written as one literal graphql()
@@ -74,8 +84,18 @@ export const measurePageSize = (grid: HTMLElement, itemHeight = ROW_HEIGHT, gap 
 const FILTER_KEYS = ['closingSoon', 'toAnalyze', 'withExpired', 'archived'] as const
 export type ListingsFilter = (typeof FILTER_KEYS)[number]
 
+export const LISTING_QUICK_PRESETS = [
+  { value: 'itIdeal', label: 'IT Ideal' },
+  { value: 'genericLocal', label: 'Generic Local' },
+  { value: 'genericIdeal', label: 'Generic Ideal' },
+  { value: 'remote', label: 'Remote' }
+] as const
+export type ListingQuickPreset = (typeof LISTING_QUICK_PRESETS)[number]['value']
+
 export interface ListingsFacets {
+  quickPreset: ListingQuickPreset | null
   favorites: boolean
+  shortlist: boolean
   // In one of the profile's target locations (Location.isTarget).
   preferredLocations: boolean
   // Every location is in Norway; listings with an office abroad or no location drop out.
@@ -107,7 +127,9 @@ export const DUE_WITHIN_OPTIONS = [3, 7, 14, 30] as const
 const CLOSING_SOON_DAYS = 7
 
 export const emptyFacets = (): ListingsFacets => ({
+  quickPreset: null,
   favorites: false,
+  shortlist: false,
   preferredLocations: false,
   norwayOnly: false,
   showRejected: false,
@@ -151,10 +173,16 @@ export const parseListingsQuery = (query: Record<string, unknown>): ListingsView
   const languages = LANGUAGE_OPTIONS.map((o) => o.value)
   return {
     search: String(query.search ?? '').trim(),
-    sort: known(LISTINGS_SORTS, query.sort)[0] ?? 'due',
+    sort: known(LISTINGS_SORTS, query.sort)[0] ?? 'posted',
     filter: known(FILTER_KEYS, query.filter)[0] ?? null,
     facets: {
+      quickPreset:
+        known(
+          LISTING_QUICK_PRESETS.map((p) => p.value),
+          query.quick
+        )[0] ?? null,
       favorites: query.favorites === '1',
+      shortlist: query.shortlist === '1',
       preferredLocations: query.preferred === '1',
       norwayOnly: query.norway === '1',
       showRejected: query.rejected === '1',
@@ -185,7 +213,8 @@ export const parseListingsQuery = (query: Record<string, unknown>): ListingsView
 export const toListingsQuery = ({ search, sort, filter, facets, page }: ListingsView) => {
   const query = {
     search,
-    sort: sort === 'due' ? '' : sort,
+    quick: facets.quickPreset ?? '',
+    sort: sort === 'posted' ? '' : sort,
     filter: filter ?? '',
     status: facets.statuses.join(','),
     skill: facets.skills.join(','),
@@ -196,6 +225,7 @@ export const toListingsQuery = ({ search, sort, filter, facets, page }: Listings
     postedTo: facets.postedTo,
     due: facets.dueWithinDays ? String(facets.dueWithinDays) : '',
     favorites: facets.favorites ? '1' : '',
+    shortlist: facets.shortlist ? '1' : '',
     preferred: facets.preferredLocations ? '1' : '',
     norway: facets.norwayOnly ? '1' : '',
     rejected: facets.showRejected ? '1' : '',
@@ -271,6 +301,13 @@ const QUICK = {
 } as const
 export type QuickToggle = keyof typeof QUICK
 
+const QUICK_PRESET_CLAUSES: Record<ListingQuickPreset, string[]> = {
+  itIdeal: [QUICK.it, QUICK.norway, QUICK.preferred],
+  genericLocal: [QUICK.nonIt, 'locations: { some: { location: { city: { eq: "Molde" } } } }'],
+  genericIdeal: [QUICK.preferred, QUICK.nonIt],
+  remote: ['locations: { all: { location: { countryCode: { neq: "NO" } } }, any: true }']
+}
+
 // No `order` for "due": the backend's default order is upcoming by due date, then expired by due
 // date, then newest added, using the server-computed due date (DATE: deadlineOn, ASAP: postedOn + 14,
 // UNSPECIFIED: postedOn + 30). dueOn itself isn't sortable, and any client `order` turns the default off,
@@ -305,8 +342,10 @@ export const buildListingsQuery = (
   ]
   const variables: Record<string, unknown> = { order: ORDERS[sort] }
   const facetClauses = facets.favorites ? ['favoritedAt: { neq: null }'] : []
+  if (facets.shortlist) facetClauses.push('shortlistedAt: { neq: null }')
   // Picking statuses (e.g. the dashboard's ?status=REJECTED) shows exactly those, like EXPIRY below.
   if (!facets.showRejected && !facets.statuses.length) facetClauses.push(NOT_REJECTED)
+  if (facets.quickPreset) facetClauses.push(...QUICK_PRESET_CLAUSES[facets.quickPreset])
   if (facets.preferredLocations) facetClauses.push(QUICK.preferred)
   if (facets.norwayOnly) facetClauses.push(QUICK.norway)
   if (facets.itRoles) facetClauses.push(QUICK.it)

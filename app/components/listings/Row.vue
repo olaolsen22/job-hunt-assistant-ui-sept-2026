@@ -19,6 +19,13 @@ const moreLocations = computed(() => listingMoreLocations(listing))
     class="group relative flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-default p-3 hover:bg-elevated/50 md:gap-x-4 md:gap-y-1 md:rounded-none md:border-0 md:px-4"
     data-testid="listing-row"
   >
+    <ListingsShortlistButton
+      :id="listing.id"
+      :shortlisted-at="listing.shortlistedAt"
+      size="md"
+      class="relative z-10 order-2 md:order-1"
+      @changed="$emit('changed')"
+    />
     <AppFavoriteButton
       :id="listing.id"
       target="listing"

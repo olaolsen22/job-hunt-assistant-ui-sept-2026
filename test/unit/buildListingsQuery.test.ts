@@ -258,3 +258,34 @@ describe('API input contract', () => {
     ])
   })
 })
+
+describe('combined quick presets', () => {
+  it.each([
+    ['itIdeal', ['name: {eq: "IT"}', 'countryCode: {eq: "NO"}', 'isTarget: {eq: true}']],
+    ['genericLocal', ['city: {eq: "Molde"}', 'name: {neq: "IT"}']],
+    ['genericIdeal', ['isTarget: {eq: true}', 'name: {neq: "IT"}']],
+    ['remote', ['all: {location: {countryCode: {neq: "NO"}}}', 'any: true']]
+  ] as const)('applies %s to the listings query', (quickPreset, clauses) => {
+    const { document } = buildListingsQuery(null, { ...emptyFacets(), quickPreset }, 'posted')
+    const operation = document.definitions.find((d) => d.kind === 'OperationDefinition')!
+    const listings = print({ kind: 'Document', definitions: [operation] }).split(
+      'all: listings'
+    )[0]!
+    for (const clause of clauses) expect(listings).toContain(clause)
+  })
+})
+
+describe('shortlist', () => {
+  it('filters by bookmarked timestamp without requiring favorites', () => {
+    const { text } = build({ shortlist: true })
+    expect(text).toContain('shortlistedAt: {neq: null}')
+    expect(text).not.toContain('favoritedAt: {neq: null}')
+  })
+
+  it('can intersect Shortlist and Favorites', () => {
+    const { text } = build({ shortlist: true, favorites: true })
+    expect(text).toContain('shortlistedAt: {neq: null}')
+    expect(text).toContain('favoritedAt: {neq: null}')
+    expect(build({}).text).not.toContain('shortlistedAt: {neq: null}')
+  })
+})
