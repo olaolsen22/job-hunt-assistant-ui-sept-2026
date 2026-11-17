@@ -68,6 +68,10 @@ const route = useRoute()
 const contactId = Number(route.query.contact) || null
 const addressedTo = ref('')
 const backTo = computed(() => (contactId ? `/contacts/${contactId}` : listingsView.value))
+useBackLink({
+  to: backTo,
+  label: () => (contactId ? addressedTo.value || 'Person' : 'Listings')
+})
 onMounted(async () => {
   if (!contactId) return
   try {
@@ -134,20 +138,7 @@ const onConfirm = async () => {
 
 <template>
   <div class="flex flex-col items-center gap-4">
-    <!-- Stacked below sm so Back never shares a line with the actions on a phone. -->
-    <div
-      class="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-    >
-      <UButton
-        :to="backTo"
-        icon="i-lucide-arrow-left"
-        variant="ghost"
-        color="neutral"
-        class="self-start"
-        data-testid="add-listing-back"
-      >
-        Back
-      </UButton>
+    <div class="flex w-full max-w-3xl sm:justify-end">
       <UButton
         icon="i-lucide-sparkles"
         color="neutral"

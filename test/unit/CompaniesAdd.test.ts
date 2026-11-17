@@ -28,6 +28,29 @@ const mountPage = async () => {
 }
 
 describe('Add companies', () => {
+  it('puts Back to the remembered companies view in the navbar', async () => {
+    // Mounting at a route runs the global auth middleware.
+    registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: async (event) => {
+        const { query } = await readBody(event)
+        if (query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
+        return { data: { llmUsageToday: null } }
+      }
+    })
+    useCompaniesView().value = '/companies?kind=CONSULTANCY'
+    const wrapper = await mountSuspended(AddPage, { route: '/companies/add' })
+    await flushPromises()
+    expect(useBackLinkState().value).toEqual({
+      path: '/companies/add',
+      to: '/companies?kind=CONSULTANCY',
+      label: 'Companies'
+    })
+    useCompaniesView().value = '/companies'
+    wrapper.unmount()
+  })
+
   it('previews pasted companies with their research, then reports created, enriched and unchanged', async () => {
     let sent: unknown
     registerEndpoint('/graphql', {

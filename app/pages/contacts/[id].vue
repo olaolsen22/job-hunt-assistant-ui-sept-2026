@@ -55,6 +55,7 @@ const DELETE_INTERACTION = graphql(`
 const route = useRoute()
 const id = Number(route.params.id)
 const contactsView = useContactsView()
+useBackLink({ to: contactsView, label: 'People' })
 
 const { data, status, error, refresh } = await useAsyncData(
   `contact-${id}`,
@@ -126,18 +127,8 @@ const deleteInteraction = async () => {
 <template>
   <div class="flex justify-center">
     <div class="w-full max-w-3xl space-y-4 sm:space-y-6 lg:max-w-6xl">
-      <div class="flex items-center justify-between gap-2">
-        <UButton
-          :to="contactsView"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          color="neutral"
-          class="self-start"
-        >
-          People
-        </UButton>
-
-        <div v-if="contact" class="flex items-center gap-2">
+      <div v-if="contact" class="flex items-center justify-end gap-2">
+        <div class="flex items-center gap-2">
           <UButton
             icon="i-lucide-pencil"
             color="neutral"

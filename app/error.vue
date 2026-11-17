@@ -32,7 +32,7 @@ const view = computed(() => {
   }
 })
 
-useHead({ title: computed(() => `Job Hunt - ${view.value.heading}`) })
+useHead({ title: computed(() => formatBrowserTitle(view.value.heading)) })
 
 const retrying = ref(false)
 // Re-runs the route (and its auth check) without location.reload(), which the leave guard

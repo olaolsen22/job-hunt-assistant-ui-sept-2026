@@ -24,6 +24,7 @@ const editorRef = useTemplateRef('editorRef')
 const backTo = computed(() =>
   baseCv.value?.archivedAt ? '/cv-templates?archived=1' : '/cv-templates'
 )
+useBackLink({ to: backTo, label: 'CV templates' })
 
 const notify = useAppToast()
 const toastSuccess = notify.success
@@ -155,11 +156,8 @@ const preview = (version: { id: number; number: number; language: Language }) =>
 <template>
   <div class="flex justify-center">
     <div class="w-full max-w-3xl space-y-4 pb-4 sm:space-y-6 lg:max-w-none">
-      <div class="space-y-2">
-        <UButton :to="backTo" icon="i-lucide-arrow-left" variant="ghost" color="neutral"
-          >CV templates</UButton
-        >
-        <div v-if="baseCv" class="flex flex-wrap items-start justify-between gap-3">
+      <div v-if="baseCv">
+        <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0 space-y-1">
             <div class="flex flex-wrap items-center gap-2">
               <h1

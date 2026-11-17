@@ -2,6 +2,7 @@
 import { LANGUAGE_OPTIONS } from '~/constants/listing'
 
 definePageMeta({ title: 'New CV template' })
+useBackLink({ to: '/cv-templates', label: 'CV templates' })
 
 // A new template, made here in one place: its details, then content from the profile or the owner's
 // own AI (reviewed against the profile). Nothing exists on the API until Create template, which
@@ -49,9 +50,6 @@ const create = async () => {
   <div class="flex justify-center">
     <div class="w-full max-w-3xl space-y-4 pb-4 sm:space-y-6 lg:max-w-none">
       <div class="space-y-2">
-        <UButton to="/cv-templates" icon="i-lucide-arrow-left" variant="ghost" color="neutral"
-          >CV templates</UButton
-        >
         <div class="flex flex-wrap items-center gap-2">
           <h1 class="text-xl font-semibold text-highlighted">New CV template</h1>
           <UBadge color="neutral" variant="subtle" data-testid="cv-template-not-saved"

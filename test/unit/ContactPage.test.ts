@@ -74,6 +74,19 @@ const mountPage = async () => {
 }
 
 describe('Person page', () => {
+  it('puts Back to the remembered People view in the navbar', async () => {
+    useContactsView().value = '/contacts?q=kari'
+    respond(person())
+    const wrapper = await mountPage()
+    expect(useBackLinkState().value).toEqual({
+      path: '/contacts/5',
+      to: '/contacts?q=kari',
+      label: 'People'
+    })
+    useContactsView().value = '/contacts'
+    wrapper.unmount()
+  })
+
   it('shows the person with their log, follow-up and an open application to start', async () => {
     respond(person())
     const wrapper = await mountPage()

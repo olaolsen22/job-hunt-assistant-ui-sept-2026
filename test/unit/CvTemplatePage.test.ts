@@ -514,6 +514,16 @@ describe('Draft with AI', () => {
 })
 
 describe('CV template page', () => {
+  it('puts Back to the templates in the navbar', async () => {
+    const wrapper = await mountPage()
+    expect(useBackLinkState().value).toEqual({
+      path: '/cv-templates/7',
+      to: '/cv-templates',
+      label: 'CV templates'
+    })
+    wrapper.unmount()
+  })
+
   it('shows the template’s latest version in the editor, without per-section AI', async () => {
     const wrapper = await mountPage()
 

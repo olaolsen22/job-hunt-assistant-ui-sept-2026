@@ -162,6 +162,20 @@ describe('Quick add', () => {
     expect(document.body.textContent).toContain('Leave 1 unsaved listing?')
   })
 
+  it('puts Back to the listings in the navbar', async () => {
+    mockApi([])
+    wrapper = await mountSuspended(QuickAddPage, {
+      route: '/listings/quick-add',
+      attachTo: document.body
+    })
+    await flushPromises()
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/quick-add',
+      to: '/listings',
+      label: 'Listings'
+    })
+  })
+
   // Every save is a full listing; an omitted kind would make an open invitation a vacancy.
   it('saves the kind each parsed ad came with', async () => {
     const saves = mockApi([saved(1), saved(2)])
@@ -913,6 +927,17 @@ const openImport = async () => {
 
 describe('Quick add from a job import', () => {
   afterEach(() => (storedImport = null))
+
+  it('puts Back to the imports in the navbar', async () => {
+    storedImport = listingImport(JSON.stringify(collection))
+    collectedApi(eligible)
+    await openImport()
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/quick-add',
+      to: '/listings/imports',
+      label: 'Imports'
+    })
+  })
 
   it('offers skipping to the next pending import, past this one and broken files', async () => {
     storedImport = listingImport(JSON.stringify(collection))

@@ -94,6 +94,18 @@ const mountPage = async (overrides: Partial<typeof baseCompany> = {}, found = tr
 }
 
 describe('Company page', () => {
+  it('puts Back to the remembered companies view in the navbar', async () => {
+    useCompaniesView().value = '/companies?kind=CONSULTANCY'
+    const { wrapper } = await mountPage()
+    expect(useBackLinkState().value).toEqual({
+      path: '/companies/3',
+      to: '/companies?kind=CONSULTANCY',
+      label: 'Companies'
+    })
+    useCompaniesView().value = '/companies'
+    wrapper.unmount()
+  })
+
   it('shows the header, positions in status order and the stats', async () => {
     const { wrapper } = await mountPage()
     await vi.waitFor(() =>

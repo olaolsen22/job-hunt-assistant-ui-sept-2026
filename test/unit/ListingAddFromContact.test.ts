@@ -50,7 +50,12 @@ describe('Open application to a person', () => {
         { name: 'Kari Nordmann', title: 'Recruiter', email: 'kari@acme.no', phone: null, url: null }
       ]
     })
-    expect(wrapper.get('[data-testid="add-listing-back"]').attributes('href')).toBe('/contacts/5')
+    // Back sits in the layout's navbar, returning to the person this was started from.
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/add',
+      to: '/contacts/5',
+      label: 'Kari Nordmann'
+    })
     wrapper.unmount()
   })
 })

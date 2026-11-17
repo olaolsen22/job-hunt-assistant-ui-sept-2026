@@ -41,10 +41,14 @@ const requestLeave = (destination: string) => {
   return false
 }
 onBeforeRouteLeave((to) => requestLeave(to.fullPath))
+// The bottom Back, shown only outside import mode.
 const onBack = () => {
-  const destination = importId ? '/listings/imports' : '/listings'
-  if (requestLeave(destination)) return navigateTo(destination)
+  if (requestLeave('/listings')) return navigateTo('/listings')
 }
+// A plain link: onBeforeRouteLeave above still confirms unsaved work.
+useBackLink(
+  importId ? { to: '/listings/imports', label: 'Imports' } : { to: '/listings', label: 'Listings' }
+)
 const onNextImport = () => {
   const destination = `/listings/quick-add?import=${nextImportId.value}`
   if (requestLeave(destination)) return navigateTo(destination)
@@ -83,28 +87,9 @@ const confirmDiscard = async () => {
     data-testid="quick-add-form"
     @submit="onSave"
   >
-    <!-- Standalone (home-screen) mode has no browser Back, and the bottom one is a long scroll away.
-         In import mode this is the only exit, sticky on phones, so catching up never needs a scroll. -->
-    <div
-      class="flex items-center justify-between gap-2"
-      :class="
-        importId
-          ? 'sticky top-0 z-10 -mx-4 border-b border-default bg-default px-4 py-2 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0'
-          : ''
-      "
-    >
+    <!-- Hidden once done: the done state's primary button takes over. -->
+    <div v-if="importId && nextImportId && !importDone" class="flex justify-end">
       <UButton
-        icon="i-lucide-arrow-left"
-        :variant="importId ? 'outline' : 'ghost'"
-        color="neutral"
-        data-testid="quick-add-back-top"
-        @click="onBack"
-      >
-        {{ importId ? 'Back to imports' : 'Back' }}
-      </UButton>
-      <!-- Hidden once done: the done state's primary button takes over. -->
-      <UButton
-        v-if="importId && nextImportId && !importDone"
         trailing-icon="i-lucide-arrow-right"
         color="neutral"
         variant="ghost"

@@ -170,6 +170,16 @@ beforeEach(() => {
 })
 afterEach(() => mounted.splice(0).forEach((w) => w.unmount()))
 describe('requirements page', () => {
+  it('puts Back to the listing in the navbar', async () => {
+    saved = null
+    await mountPage()
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/5/requirements',
+      to: '/listings/5',
+      label: 'Listing'
+    })
+  })
+
   it('starts empty without a saved map and lets the owner add a manual need', async () => {
     saved = null
     const w = await mountPage()

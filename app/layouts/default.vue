@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import type { DropdownMenuItem, NavigationMenuItem } from '@nuxt/ui'
 import { useMediaQuery, useSwipe } from '@vueuse/core'
+import { refreshApp } from '~/utils/pwaUpdate'
 
 const auth = useAuthStore()
 const route = useRoute()
 
 const title = computed(() => route.meta.title)
 useHead({ title })
+
+// Sub pages register their parent with useBackLink; it lives in the navbar so it never scrolls away.
+const backLinkState = useBackLinkState()
+const backLink = computed(() =>
+  backLinkState.value?.path === route.path ? backLinkState.value : null
+)
 
 // Asked once when the app opens; reviewing an import refreshes it by key.
 const pendingImports = usePendingImportCount()
@@ -28,11 +35,28 @@ const items = computed<NavigationMenuItem[]>(() => [
   { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' }
 ])
 
+const refreshing = ref(false)
+const refresh = async () => {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    await refreshApp(navigator.serviceWorker)
+  } finally {
+    refreshing.value = false
+  }
+}
+
 const colorMode = useColorMode()
 // A nav item, not UColorModeButton, so it matches the links above it.
 const themeItems = computed<NavigationMenuItem[]>(() => {
   const isDark = colorMode.value === 'dark'
   return [
+    {
+      label: 'Refresh app',
+      icon: 'i-lucide-refresh-cw',
+      disabled: refreshing.value,
+      onSelect: refresh
+    },
     {
       label: isDark ? 'Dark mode' : 'Light mode',
       icon: isDark ? 'i-lucide-moon' : 'i-lucide-sun',
@@ -138,6 +162,21 @@ const { coordsStart, lengthX } = useSwipe(window, {
         <UDashboardNavbar :title="title" class="bg-default">
           <template #leading>
             <UDashboardSidebarCollapse />
+            <template v-if="backLink">
+              <!-- Keeps the two icon buttons from reading as one control on a phone. -->
+              <USeparator orientation="vertical" class="h-5" />
+              <UButton
+                :to="backLink.to"
+                icon="i-lucide-arrow-left"
+                color="neutral"
+                variant="ghost"
+                :aria-label="`Back to ${backLink.label}`"
+                data-testid="navbar-back"
+              >
+                <!-- Icon-only on phones, like the user menu's name. -->
+                <span class="hidden sm:inline">{{ backLink.label }}</span>
+              </UButton>
+            </template>
           </template>
           <template #right>
             <UDropdownMenu :items="userItems" :content="{ align: 'end' }">
@@ -157,8 +196,18 @@ const { coordsStart, lengthX } = useSwipe(window, {
       </template>
 
       <template #body>
-        <!-- Width cap only; UDashboardPanel's body already supplies the side padding. -->
-        <div class="mx-auto w-full max-w-(--ui-container)">
+        <!-- Width cap only; UDashboardPanel's body already supplies the side padding. The tailored
+           CV's two columns get a wider cap, short of full width so bullet lines stay readable; the
+           cover letter's a narrower one, since a letter column reads best at prose width. -->
+        <div
+          class="mx-auto w-full max-w-(--ui-container)"
+          :class="{
+            '2xl:max-w-none': /^\/listings(?:\/\d+(?:\/edit)?)?\/?$/.test(route.path),
+            '2xl:max-w-[100rem]': /^\/listings\/\d+\/cv\/?$/.test(route.path),
+            '2xl:max-w-[80rem]': /^\/listings\/\d+\/cover-letter\/?$/.test(route.path)
+          }"
+          data-testid="page-container"
+        >
           <UAlert
             v-if="showImportsNotice"
             color="info"

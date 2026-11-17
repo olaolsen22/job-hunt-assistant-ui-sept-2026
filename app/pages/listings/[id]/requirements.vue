@@ -1,6 +1,7 @@
 <script setup lang="ts">
 definePageMeta({ title: 'Requirements' })
 const id = Number(useRoute().params.id)
+useBackLink({ to: `/listings/${id}`, label: 'Listing' })
 const listingQuery = useListing(id)
 const {
   profile,
@@ -15,6 +16,8 @@ const {
   error: listingError,
   refresh: refreshListing
 } = await listingQuery
+
+useListingTitle(listing, 'Requirements')
 const {
   needs,
   dirty,
@@ -64,9 +67,6 @@ const remove = async () => {
 </script>
 <template>
   <div class="mx-auto w-full max-w-4xl space-y-4 pb-4 sm:space-y-6">
-    <UButton :to="`/listings/${id}`" color="neutral" variant="ghost" icon="i-lucide-arrow-left"
-      >Back to listing</UButton
-    >
     <header class="space-y-1">
       <h1 class="text-xl font-semibold text-highlighted">Requirements</h1>
       <p v-if="listing" class="text-sm text-muted break-words">

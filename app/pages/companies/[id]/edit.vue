@@ -86,6 +86,7 @@ const UPDATE_COMPANY = graphql(`
 const route = useRoute()
 const router = useRouter()
 const id = Number(route.params.id)
+useBackLink({ to: `/companies/${id}`, label: 'Company' })
 
 // Client-only (`server: false`) since it needs the session cookie.
 const { data, status, error } = await useAsyncData(
@@ -272,21 +273,9 @@ const onSave = async () => {
 
 <template>
   <div class="flex flex-col items-center gap-4">
-    <!-- Same top row as the listing edit page: Back (shown in every state), then the AI action. -->
-    <div
-      class="flex w-full max-w-3xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
-    >
+    <!-- The AI action, right-aligned from sm like Analyze ad on a listing. -->
+    <div v-if="!error && !loading && company" class="flex w-full max-w-3xl sm:justify-end">
       <UButton
-        :to="`/companies/${id}`"
-        icon="i-lucide-arrow-left"
-        variant="ghost"
-        color="neutral"
-        class="self-start"
-        data-testid="edit-company-back"
-        >Back</UButton
-      >
-      <UButton
-        v-if="!error && !loading && company"
         icon="i-lucide-sparkles"
         color="neutral"
         variant="subtle"

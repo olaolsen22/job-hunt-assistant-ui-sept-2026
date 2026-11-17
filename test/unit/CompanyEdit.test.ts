@@ -361,7 +361,11 @@ describe('Editing a company', () => {
 
     // The installed app has no browser Back, so this is the only way out.
     await vi.waitFor(() => expect(wrapper.text()).toContain('Company not found'))
-    expect(wrapper.get('[data-testid="edit-company-back"]').attributes('href')).toBe('/companies/3')
+    expect(useBackLinkState().value).toEqual({
+      path: '/companies/3/edit',
+      to: '/companies/3',
+      label: 'Company'
+    })
     expect(wrapper.find('[data-testid="edit-company-research-ai"]').exists()).toBe(false)
     wrapper.unmount()
   })

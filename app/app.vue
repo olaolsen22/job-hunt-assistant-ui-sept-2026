@@ -5,7 +5,7 @@ const colorMode = useColorMode()
 const themeColor = computed(() => (colorMode.value === 'dark' ? '#020617' : '#ffffff'))
 
 useHead({
-  titleTemplate: (title) => (title ? `Job Hunt - ${title}` : 'Job Hunt'),
+  titleTemplate: formatBrowserTitle,
   meta: [{ name: 'theme-color', content: themeColor }]
 })
 </script>

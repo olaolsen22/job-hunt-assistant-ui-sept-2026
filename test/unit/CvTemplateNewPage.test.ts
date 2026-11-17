@@ -90,6 +90,16 @@ beforeEach(() => {
 })
 
 describe('New CV template', () => {
+  it('puts Back to the templates in the navbar', async () => {
+    const wrapper = await mountPage()
+    expect(useBackLinkState().value).toEqual({
+      path: '/cv-templates/new',
+      to: '/cv-templates',
+      label: 'CV templates'
+    })
+    wrapper.unmount()
+  })
+
   it('starts empty, then creates the profile in the chosen language as v1 only on Create', async () => {
     const wrapper = await mountPage()
     await vi.waitFor(() => expect(inBody('cv-template-start')).not.toBeNull())

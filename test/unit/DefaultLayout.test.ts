@@ -106,3 +106,101 @@ describe('Pending job imports', () => {
     wrapper.unmount()
   })
 })
+
+describe('Listing desktop width', () => {
+  it.each([
+    ['/listings/5', true],
+    ['/listings', true],
+    ['/listings/5/edit', true],
+    ['/', false]
+  ])('uses full desktop width on %s: %s', async (route, fullWidth) => {
+    const wrapper = await mountLayout(undefined, route)
+    expect(wrapper.get('[data-testid="page-container"]').classes().includes('2xl:max-w-none')).toBe(
+      fullWidth
+    )
+    wrapper.unmount()
+  })
+})
+
+describe('Manual app refresh navigation', () => {
+  it('always offers Refresh app immediately before the theme toggle', async () => {
+    const wrapper = await mountLayout()
+    const menus = wrapper.findAllComponents({ name: 'UNavigationMenu' })
+    const actions = menus.find((menu) =>
+      menu.props('items')?.some((item: { label: string }) => item.label === 'Refresh app')
+    )!
+    expect(actions).toBeDefined()
+    expect(actions.props('items').map((item: { label: string }) => item.label)).toEqual([
+      'Refresh app',
+      expect.stringMatching(/^(Dark|Light) mode$/)
+    ])
+    expect(actions.props('items')[0].onSelect).toBeTypeOf('function')
+    wrapper.unmount()
+  })
+})
+
+describe('Navbar back link', () => {
+  afterEach(() => {
+    useBackLinkState().value = null
+  })
+
+  it('shows the registered back link in the navbar on its own page', async () => {
+    useBackLinkState().value = { path: '/listings/5/cv', to: '/listings/5', label: 'Listing' }
+    const wrapper = await mountLayout(undefined, '/listings/5/cv')
+
+    const back = wrapper.get('[data-testid="navbar-back"]')
+    expect(back.attributes('href')).toBe('/listings/5')
+    expect(back.attributes('aria-label')).toBe('Back to Listing')
+    // The label is the visible text from sm up; phones get the arrow and the aria-label.
+    expect(back.get('span.hidden.sm\\:inline').text()).toBe('Listing')
+    wrapper.unmount()
+  })
+
+  it('hides a link left behind by another page', async () => {
+    useBackLinkState().value = { path: '/listings/5/cv', to: '/listings/5', label: 'Listing' }
+    const wrapper = await mountLayout(undefined, '/listings')
+    expect(wrapper.find('[data-testid="navbar-back"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows no back link when no page registered one', async () => {
+    const wrapper = await mountLayout(undefined, '/')
+    expect(wrapper.find('[data-testid="navbar-back"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+describe('useBackLink', () => {
+  afterEach(() => {
+    useBackLinkState().value = null
+  })
+
+  it('registers the current path with its target and follows reactive values', async () => {
+    const label = ref('Person')
+    const to = ref('/contacts/5')
+    const wrapper = await mountSuspended(
+      defineComponent({
+        setup: () => {
+          useBackLink({ to, label: () => label.value })
+          return () => h('p')
+        }
+      }),
+      { route: '/listings/add?contact=5' }
+    )
+
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/add',
+      to: '/contacts/5',
+      label: 'Person'
+    })
+    label.value = 'Kari Nordmann'
+    to.value = '/contacts/6'
+    await nextTick()
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/add',
+      to: '/contacts/6',
+      label: 'Kari Nordmann'
+    })
+    wrapper.unmount()
+  })
+})

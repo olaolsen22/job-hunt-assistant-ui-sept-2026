@@ -11,6 +11,7 @@ definePageMeta({ title: 'Company' })
 const route = useRoute()
 const id = Number(route.params.id)
 const companiesView = useCompaniesView()
+useBackLink({ to: companiesView, label: 'Companies' })
 
 // There is no single-company query, so the list is filtered to one id. Both listing fields are in
 // the same request to avoid a waterfall; archived ones need their own field (`archived: true`).
@@ -250,20 +251,9 @@ const moreItems = computed<DropdownMenuItem[]>(() =>
 <template>
   <div class="flex justify-center">
     <div class="w-full max-w-3xl space-y-4 sm:space-y-6 lg:max-w-6xl">
-      <!-- Stacked below sm so Back never shares a line with the actions on a phone. -->
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <UButton
-          :to="companiesView"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          color="neutral"
-          class="self-start"
-        >
-          Back
-        </UButton>
-
+      <div v-if="company" class="flex sm:justify-end">
         <!-- Research beside Edit, like Analyze ad on a listing. -->
-        <div v-if="company" class="flex w-full items-center gap-2 sm:w-auto">
+        <div class="flex w-full items-center gap-2 sm:w-auto">
           <UButton
             :to="`/companies/${company.id}/edit?analyze`"
             icon="i-lucide-sparkles"
