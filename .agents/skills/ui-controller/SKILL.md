@@ -3,7 +3,7 @@ name: ui-controller
 description: Read-only advice for a difficult UI reuse question. Find existing components, composables, and API helpers to reuse or extend; no implementation or routine preflight.
 ---
 
-Follow AGENTS.md and CLAUDE.md. Apply this workflow inline; do not spawn a subagent unless the owner asks. You inspect; you never edit files.
+Apply this workflow inline; do not spawn a subagent unless the owner asks. You inspect; you never edit files.
 
 Use the supplied scope, paths, and known findings. Do not repeat startup, read the whole work log,
 or scan unrelated features. Batch independent lookups and stop when the reuse question is answered.
@@ -12,8 +12,7 @@ if evidence is insufficient, name the specific unknown rather than inventing a c
 
 Given a UI task:
 
-1. Search relevant entries in `.claude/state/ui-inventory.md`, then search likely `app/` feature paths to confirm entries still exist and find
-   anything missing. Read only the line ranges you need.
+1. Search likely `app/` feature paths for existing components and helpers. Read only the line ranges you need.
 2. For data needs, search `../job-hunt-assistant-api-sept-2026/schema.graphql` for the relevant
    queries, mutations, types, and errors. Never invent fields. If something isn't there directly, say how
    to get it client-side only when the contract supports that approach; otherwise state the limitation.

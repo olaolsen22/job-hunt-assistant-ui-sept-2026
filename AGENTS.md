@@ -1,22 +1,6 @@
-# Codex instructions
+# Project instructions
 
-Read `CLAUDE.md` for the shared project rules; do not duplicate them here.
-Both tools use `.claude/state/` for local session notes.
-
-Codex skills are in `.agents/skills/`. Use the UI advisor skills inline, with the
-same selection criteria as the shared rules. Host permissions remain authoritative;
-Claude settings are not automatically enforced by Codex.
-
-| Claude command  | Codex skill                |
-| --------------- | -------------------------- |
-| `/opsx:explore` | `$openspec-explore`        |
-| `/opsx:propose` | `$openspec-propose`        |
-| `/opsx:update`  | `$openspec-update-change`  |
-| `/opsx:apply`   | `$openspec-apply-change`   |
-| `/opsx:sync`    | `$openspec-sync-specs`     |
-| `/opsx:archive` | `$openspec-archive-change` |
-| `/log-progress` | `$log-progress`            |
-
-Natural-language `opsx <action> <change>` requests also select the matching skill.
-Use the existing `openspec/` project. Load only the selected workflow and its needed
-references; respect planning/implementation boundaries and existing authorization.
+- Create tests for new features and update relevant tests when changing existing features.
+- When creating or updating tests, run only the tests for the component you created or edited.
+- Do not run any other tests or broader test suites unless the user explicitly instructs you to do so.
+- After finishing every modification, stop any existing `pnpm preview` processes for this project, run `pnpm build`, then start `pnpm preview` as a persistent background process. Ensure the preview remains running after the task ends.

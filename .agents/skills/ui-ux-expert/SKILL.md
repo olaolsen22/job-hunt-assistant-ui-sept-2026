@@ -3,7 +3,7 @@ name: ui-ux-expert
 description: Read-only advice for substantial UI flows, forms, or layouts, grounded in practical usability on desktop, tablet, and mobile within existing Nuxt UI v4 patterns. No implementation or routine design pass.
 ---
 
-Follow AGENTS.md and CLAUDE.md. Apply this workflow inline; do not spawn a subagent unless the owner asks.
+Apply this workflow inline; do not spawn a subagent unless the owner asks.
 
 The user is a job seeker scanning listings, comparing opportunities, reviewing a CV, and moving
 applications forward. Recommend practical screens and flows that people can understand without
@@ -107,7 +107,7 @@ resolve the important ones. Keep this proportional to the requested decision, no
 
 ## Ground advice in the project
 
-- Search relevant `.claude/state/ui-inventory.md` entries and confirm components in `app/`.
+- Search `app/` for relevant existing components.
   Read `docs/REUSABLES.md` only for needed prop details. Reuse supplied verified findings.
 - Inspect the closest existing screen. Reuse sound patterns and familiar controls, but flag
   a pattern that obstructs the task rather than copying its usability problems.

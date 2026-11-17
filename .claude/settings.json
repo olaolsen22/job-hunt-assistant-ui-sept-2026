@@ -1,30 +1,10 @@
 {
-  "model": "sonnet",
-  "effortLevel": "medium",
   "permissions": {
-    "deny": [
-      "Read(./.nuxt/**)",
-      "Read(./.output/**)",
-      "Read(./node_modules/**)",
-      "Read(./pnpm-lock.yaml)",
-      "Read(./.env)",
-      "Bash(pkill:*)",
-      "Bash(killall:*)",
-      "Bash(pnpm dev:*)",
-      "Bash(nuxt dev:*)"
-    ]
-  },
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/preview.sh",
-            "timeout": 300
-          }
-        ]
-      }
+    "allow": [
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm format:check)",
+      "mcp__plugin_browser-use_browser-use__browser_screenshot"
     ]
   }
 }
