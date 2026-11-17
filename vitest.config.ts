@@ -6,7 +6,8 @@ const standaloneTests = [
   'test/unit/formatMonth.test.ts',
   'test/unit/useListingForm.test.ts',
   'test/unit/collectedJobs.test.ts',
-  'test/unit/collectedJobBatches.test.ts'
+  'test/unit/collectedJobBatches.test.ts',
+  'test/unit/coverLetter.test.ts'
 ]
 
 export default defineConfig({

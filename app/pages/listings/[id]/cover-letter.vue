@@ -1,14 +1,12 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
-import { LANGUAGE_OPTIONS } from '~/constants/listing'
 
 definePageMeta({ title: 'Cover letter' })
 
-// The API prints line 1 as the street and line 2 as postcode and town, splitting one line at a comma.
-const ADDRESS_HELP = 'Street and number on line 1, postcode and town on line 2.'
-
 const route = useRoute()
 const id = Number(route.params.id)
+useBackLink({ to: `/listings/${id}`, label: 'Listing' })
 
 // The draft request starts alongside the listing's; only the listing is waited for.
 const listingQuery = useListing(id)
@@ -19,7 +17,10 @@ const {
   error: listingError,
   refresh: refreshListing
 } = await listingQuery
-const { letter, dirty } = editor
+const { letter, dirty, candidate, reviewing } = editor
+const notify = useAppToast()
+
+useListingTitle(listing, 'Cover letter')
 
 watch(editor.query.status, () => editor.init(), { immediate: true })
 
@@ -34,29 +35,58 @@ const busy = computed(
     // Save swaps in the API's normalized copy, which would drop text typed meanwhile.
     editor.saving.value
 )
+const hasBody = computed(() => !!letter.value && hasCoverLetterBody(letter.value))
 
-// The header is prefilled and rarely changed, so it starts closed once a letter is saved.
-const headerOpen = ref(false)
-watch(
-  () => !!letter.value,
-  (ready) => {
-    if (ready) headerOpen.value = !editor.draft.value
-  },
-  { immediate: true }
-)
-
+// One dialog for every way to a new letter; ⋮ Paste a letter opens it on its paste tab.
 const sourceOpen = ref(false)
+const sourcePaste = ref(false)
+const openSource = (paste = false) => {
+  sourcePaste.value = paste
+  sourceOpen.value = true
+}
+const detailsOpen = ref(false)
 
+// The paragraph list: reorder, remove, and "Start writing" focuses the new first paragraph.
+const paragraphsEl = useTemplateRef<HTMLElement>('paragraphs')
 const moveParagraph = (from: number, to: number) => {
   const paragraphs = letter.value!.paragraphs
   paragraphs.splice(to, 0, ...paragraphs.splice(from, 1))
 }
+// One tap removes a whole paragraph, so Undo puts it back where it was.
+const removeParagraph = (i: number) => {
+  const paragraphs = letter.value!.paragraphs
+  const [removed] = paragraphs.splice(i, 1)
+  if (!removed?.trim()) return
+  notify.undoable('Paragraph removed', () => paragraphs.splice(i, 0, removed), {
+    icon: 'i-lucide-undo-2'
+  })
+}
+const addParagraph = async () => {
+  letter.value!.paragraphs.push('')
+  await nextTick()
+  const all = paragraphsEl.value?.querySelectorAll('textarea')
+  all?.[all.length - 1]?.focus()
+}
 
-const saveStatus = computed(() =>
-  dirty.value ? (editor.pristine.value ? 'Not saved yet' : 'Unsaved changes') : 'Saved'
-)
+// While a new letter waits, the card shows it, with the owner's own a tab away when it has text.
+const SOURCE_BADGE = { builtin: 'Built-in AI', own: 'Your own AI', text: 'Pasted' } as const
+const reviewTab = ref<'new' | 'mine'>('new')
+watch(candidate, () => (reviewTab.value = 'new'))
+const REVIEW_TABS = [
+  { label: 'New letter', value: 'new' },
+  { label: 'Current letter', value: 'mine' }
+]
+// A whole (possibly charged) AI letter goes in one tap, so Undo brings it back.
+const discardNew = () => {
+  const undo = editor.discardCandidate()
+  if (!undo) return
+  notify.undoable('New letter discarded', undo, {
+    icon: 'i-lucide-undo-2'
+  })
+}
 
-// The PDF to preview: the one just generated, else the listing's newest unsent cover letter.
+// The PDF to preview and apply with: the one just generated, else the listing's newest unsent
+// cover letter. It's current when created after the last save and nothing is edited since.
 const {
   confirmOpen: deletePdfOpen,
   target: pdfToDelete,
@@ -83,19 +113,11 @@ const pdfCurrent = computed(
     !dirty.value &&
     Date.parse(pdf.value.createdAt) >= Date.parse(editor.draft.value.updatedAt)
 )
-// Plain-text copy for application forms without a PDF upload; follows unsaved edits.
-const view = ref<'edit' | 'preview'>('edit')
-const VIEW_ITEMS = [
-  { label: 'Edit', value: 'edit', icon: 'i-lucide-pen-line' },
-  { label: 'Preview', value: 'preview', icon: 'i-lucide-eye' }
-]
-const includeHeader = ref(true)
-const hasBody = computed(() => !!letter.value?.paragraphs.some((p) => p.trim()))
-const letterText = computed(() =>
-  letter.value && hasBody.value ? coverLetterToText(letter.value, includeHeader.value) : ''
-)
-const { copied: textCopied, copy } = useCopyAsText('cover letter')
-const copyText = () => copy(letterText.value)
+const saveStatus = computed(() => {
+  if (dirty.value) return editor.pristine.value ? 'Not saved yet' : 'Unsaved changes'
+  if (!pdf.value) return 'Saved · no PDF yet'
+  return pdfCurrent.value ? 'Saved · PDF is up to date' : 'Saved · PDF is older than this letter'
+})
 
 const pdfOpen = ref(false)
 const generatePdf = async () => {
@@ -103,32 +125,111 @@ const generatePdf = async () => {
   pdfOpen.value = true
   await refreshListing()
 }
+// One PDF button whose label follows the state, like the tailored CV's.
+const pdfLabel = computed(() =>
+  editor.generatingPdf.value
+    ? 'Creating PDF…'
+    : dirty.value || !editor.draft.value
+      ? 'Save and create PDF'
+      : pdfCurrent.value
+        ? 'Open PDF'
+        : 'Create PDF'
+)
+const pdfAction = () => (pdfCurrent.value ? (pdfOpen.value = true) : generatePdf())
 
-// Leaving with unsaved work asks first.
-const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value && !editor.pristine.value)
+// Applying from the PDF preview: the Apply dialog preselects this letter's newest unsent PDF, and
+// gets the newest unsent CV too, then returns to the listing, refreshed so it shows Applied.
+const canApply = computed(() => listing.value?.status === 'SAVED')
+const cvPdf = computed(() => listing.value && latestUnsentDocument(listing.value.documents, 'CV'))
+const applyOpen = ref(false)
+const openApply = () => {
+  pdfOpen.value = false
+  applyOpen.value = true
+}
+const onApplied = async () => {
+  await refreshListing()
+  await navigateTo(`/listings/${id}`)
+}
+
+// Plain-text copies for application forms without a PDF upload; they follow unsaved edits.
+const { copy } = useCopyAsText('cover letter')
+const copyText = async (includeHeader: boolean) => {
+  if (letter.value && (await copy(coverLetterToText(letter.value, includeHeader))))
+    notify.success(includeHeader ? 'Letter copied with header' : 'Letter text copied', {
+      icon: 'i-lucide-copy'
+    })
+}
+const moreItems = computed<DropdownMenuItem[]>(() => [
+  {
+    label: 'Paste a letter…',
+    icon: 'i-lucide-clipboard-paste',
+    disabled: busy.value,
+    onSelect: () => openSource(true)
+  },
+  {
+    label: 'Copy letter text',
+    icon: 'i-lucide-copy',
+    disabled: !hasBody.value,
+    onSelect: () => copyText(false)
+  },
+  {
+    label: 'Copy with header',
+    icon: 'i-lucide-copy-plus',
+    disabled: !hasBody.value,
+    onSelect: () => copyText(true)
+  }
+])
+
+// Leaving with unsaved work or a new letter not used yet asks first.
+const { open: leaveOpen, leave } = useLeaveConfirm(
+  () => (dirty.value && !editor.pristine.value) || reviewing.value
+)
+const leaveDescription = computed(() =>
+  reviewing.value
+    ? `The new letter${dirty.value && !editor.pristine.value ? ' and your unsaved changes' : ''} will be discarded.`
+    : 'Your cover letter has unsaved changes. They will be lost.'
+)
 </script>
 
 <template>
   <div class="flex justify-center">
-    <div class="w-full max-w-3xl space-y-4 pb-4 sm:space-y-6">
+    <!-- Two columns from 2xl, so the cap lifts there (the layout caps this route at 80rem). -->
+    <div class="w-full max-w-3xl space-y-4 pb-4 sm:space-y-6 2xl:max-w-none">
       <div class="space-y-2">
-        <UButton
-          :to="`/listings/${id}`"
-          icon="i-lucide-arrow-left"
-          variant="ghost"
-          color="neutral"
-          class="self-start"
-          >Back to listing</UButton
-        >
-        <div class="min-w-0">
-          <h1 class="text-xl font-semibold text-highlighted">Cover letter</h1>
-          <p
-            v-if="listing"
-            class="break-words text-sm text-muted"
-            data-testid="cover-letter-listing"
-          >
-            {{ listing.title }} · {{ listing.company.name }}
-          </p>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h1 class="text-xl font-semibold text-highlighted">Cover letter</h1>
+            <p
+              v-if="listing"
+              class="break-words text-sm text-muted"
+              data-testid="cover-letter-listing"
+            >
+              {{ listing.title }} · {{ listing.company.name }}
+            </p>
+          </div>
+          <div v-if="letter" class="flex w-full items-center gap-2 sm:w-auto">
+            <!-- Quiet while a new letter waits, so the review stays the next step. -->
+            <UButton
+              icon="i-lucide-sparkles"
+              :color="reviewing ? 'neutral' : 'primary'"
+              :variant="reviewing ? 'outline' : 'solid'"
+              class="flex-1 justify-center sm:flex-none"
+              :loading="editor.generating.value"
+              :disabled="busy"
+              data-testid="cover-letter-source"
+              @click="openSource()"
+              >Write with AI</UButton
+            >
+            <UDropdownMenu :items="moreItems" :content="{ align: 'end' }">
+              <UButton
+                icon="i-lucide-ellipsis-vertical"
+                color="neutral"
+                variant="ghost"
+                aria-label="More letter actions"
+                data-testid="cover-letter-more"
+              />
+            </UDropdownMenu>
+          </div>
         </div>
       </div>
 
@@ -151,109 +252,74 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value && !editor.
       </UAlert>
 
       <div v-else-if="!letter" class="space-y-4" data-testid="cover-letter-loading">
-        <USkeleton class="h-20 w-full" />
-        <USkeleton class="h-64 w-full" />
+        <USkeleton class="h-12 w-full" />
+        <USkeleton class="h-80 w-full" />
       </div>
 
-      <template v-else>
-        <UAlert
-          v-if="editor.noSavedCv.value"
-          color="info"
-          variant="subtle"
-          icon="i-lucide-info"
-          title="No tailored CV saved for this listing"
-          description="The AI will write the letter without your CV as evidence, so it may be more generic. You can still write it by hand."
-          :actions="[
-            {
-              label: 'Tailor a CV first',
-              to: `/listings/${id}/cv`,
-              color: 'neutral',
-              variant: 'outline'
-            }
-          ]"
-          data-testid="cover-letter-no-cv"
-        />
+      <fieldset v-else :disabled="busy" class="min-w-0 space-y-4 sm:space-y-6">
+        <!-- From 2xl the details sit beside the letter. They come first in the DOM (and on narrow
+             screens) because they're short; grid placement puts the letter on the left. -->
+        <div class="grid gap-4 sm:gap-6 2xl:grid-cols-[minmax(0,1fr)_24rem] 2xl:items-start">
+          <ListingsCoverLetterDetails
+            v-model:letter="letter"
+            v-model:open="detailsOpen"
+            :disabled="busy"
+            :resetting="editor.resettingHeader.value"
+            class="2xl:col-start-2 2xl:row-start-1"
+            @reset-header="editor.resetHeader()"
+          >
+            <CvPdfLatestRow
+              v-if="pdf"
+              :pdf="pdf"
+              :current="pdfCurrent"
+              older-than="letter"
+              testid-prefix="cover-letter"
+              class="mt-3 border-t border-default pt-3"
+              @preview="pdfOpen = true"
+              @delete="askDeletePdf(pdf)"
+            />
+          </ListingsCoverLetterDetails>
 
-        <AppCard>
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p class="text-sm text-muted">
-              Write the body yourself, or get one from AI or your own earlier letter, then save.
-            </p>
-            <UButton
-              icon="i-lucide-pen-line"
-              class="justify-center"
-              :disabled="busy"
-              :loading="editor.generating.value || editor.previewing.value"
-              data-testid="cover-letter-source"
-              @click="sourceOpen = true"
-              >Write the body</UButton
-            >
-          </div>
-        </AppCard>
-
-        <UAlert
-          v-if="editor.candidateLoaded.value"
-          color="info"
-          variant="subtle"
-          icon="i-lucide-file-check"
-          title="Letter loaded. Not saved yet."
-          description="Review it, then save. Discard brings back what you had."
-          :actions="[
-            {
-              label: 'Discard',
-              color: 'neutral',
-              variant: 'outline',
-              onClick: editor.discard
-            }
-          ]"
-          data-testid="cover-letter-loaded"
-        />
-
-        <fieldset :disabled="busy" class="min-w-0 space-y-4 sm:space-y-6">
-          <AppCard title="Letter" data-testid="cover-letter-body">
+          <AppCard
+            v-if="candidate"
+            title="Review new letter"
+            class="2xl:col-start-1 2xl:row-start-1"
+            data-testid="cover-letter-review"
+          >
             <template #actions>
-              <UTabs
-                v-model="view"
-                :items="VIEW_ITEMS"
-                :content="false"
-                size="sm"
-                data-testid="cover-letter-view"
-              />
+              <UBadge color="info" variant="subtle" data-testid="cover-letter-review-source">{{
+                SOURCE_BADGE[candidate.source]
+              }}</UBadge>
             </template>
-            <div v-if="view === 'preview'" class="space-y-3" data-testid="cover-letter-text">
-              <div
-                v-if="!hasBody"
-                class="flex flex-col items-center gap-2 py-4 text-center text-sm text-muted"
-                data-testid="cover-letter-text-empty"
-              >
-                <UIcon name="i-lucide-text" class="size-6" />
-                Write the body to see the text here.
-              </div>
-              <template v-else>
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <USwitch
-                    v-model="includeHeader"
-                    label="Include header (name, contact, recipient, subject)"
-                    size="sm"
-                  />
-                  <UButton
-                    :icon="textCopied ? 'i-lucide-check' : 'i-lucide-clipboard-copy'"
-                    color="neutral"
-                    variant="subtle"
-                    size="sm"
-                    data-testid="cover-letter-copy-text"
-                    @click="copyText"
-                    >{{ textCopied ? 'Copied' : 'Copy text' }}</UButton
-                  >
-                </div>
-                <pre
-                  class="max-h-[32rem] overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-elevated p-3 font-sans text-sm"
-                  data-testid="cover-letter-text-preview"
-                  >{{ letterText }}</pre>
-                <p v-if="dirty" class="text-xs text-muted">Includes unsaved changes.</p>
-              </template>
+            <div class="space-y-4">
+              <UTabs
+                v-if="hasBody"
+                v-model="reviewTab"
+                :items="REVIEW_TABS"
+                :content="false"
+                data-testid="cover-letter-review-tabs"
+              />
+              <ListingsCoverLetterText
+                :letter="reviewTab === 'mine' && hasBody ? letter : candidate.letter"
+                :name="letter.fullName"
+              />
             </div>
-            <div v-else class="space-y-4">
+          </AppCard>
+
+          <AppCard
+            v-else
+            title="Letter"
+            class="2xl:col-start-1 2xl:row-start-1"
+            data-testid="cover-letter-body"
+          >
+            <div class="space-y-4">
+              <UFormField label="Subject">
+                <UInput
+                  v-model="letter.subject"
+                  class="w-full"
+                  data-testid="cover-letter-subject"
+                />
+              </UFormField>
               <UFormField label="Greeting" help="Leave empty for Norwegian letters.">
                 <UInput
                   v-model="letter.greeting"
@@ -262,15 +328,35 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value && !editor.
                   data-testid="cover-letter-greeting"
                 />
               </UFormField>
-              <fieldset class="space-y-3">
+              <fieldset ref="paragraphs" class="space-y-3">
                 <legend class="mb-2 text-sm font-medium">Paragraphs</legend>
                 <div
                   v-if="!letter.paragraphs.length"
-                  class="flex flex-col items-center gap-2 py-4 text-center text-sm text-muted"
+                  class="flex flex-col items-center gap-3 py-4 text-center"
                   data-testid="cover-letter-no-paragraphs"
                 >
-                  <UIcon name="i-lucide-text" class="size-6" />
-                  No paragraphs yet. Add one, or use Write the body.
+                  <UIcon name="i-lucide-mail" class="size-8 text-muted" />
+                  <p class="max-w-sm text-sm text-muted">
+                    No letter text yet. Write it yourself, paste one you have, or use Write with AI.
+                  </p>
+                  <div class="flex flex-wrap justify-center gap-2">
+                    <UButton
+                      icon="i-lucide-pen-line"
+                      color="neutral"
+                      variant="subtle"
+                      data-testid="cover-letter-start"
+                      @click="addParagraph"
+                      >Start writing</UButton
+                    >
+                    <UButton
+                      icon="i-lucide-clipboard-paste"
+                      color="neutral"
+                      variant="subtle"
+                      data-testid="cover-letter-start-paste"
+                      @click="openSource(true)"
+                      >Paste a letter</UButton
+                    >
+                  </div>
                 </div>
                 <div
                   v-for="(_, i) in letter.paragraphs"
@@ -304,21 +390,22 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value && !editor.
                       @click="moveParagraph(i, i + 1)"
                     />
                     <UButton
-                      icon="i-lucide-x"
+                      icon="i-lucide-trash-2"
                       color="neutral"
                       variant="ghost"
                       :aria-label="`Remove paragraph ${i + 1}`"
-                      @click="letter.paragraphs.splice(i, 1)"
+                      @click="removeParagraph(i)"
                     />
                   </div>
                 </div>
                 <UButton
+                  v-if="letter.paragraphs.length"
                   icon="i-lucide-plus"
                   color="neutral"
                   variant="subtle"
                   size="sm"
                   data-testid="cover-letter-add-paragraph"
-                  @click="letter.paragraphs.push('')"
+                  @click="addParagraph"
                   >Add paragraph</UButton
                 >
               </fieldset>
@@ -330,175 +417,102 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value && !editor.
                   data-testid="cover-letter-closing"
                 />
               </UFormField>
+              <p class="flex flex-wrap items-center gap-x-2 text-sm text-muted">
+                <span data-testid="cover-letter-signed"
+                  >Signed {{ letter.fullName.trim() || '—' }}</span
+                >
+                <UButton
+                  variant="link"
+                  color="primary"
+                  size="sm"
+                  class="p-0"
+                  data-testid="cover-letter-signed-edit"
+                  @click="detailsOpen = true"
+                  >{{ letter.fullName.trim() ? 'Edit details' : 'Add your name' }}</UButton
+                >
+              </p>
             </div>
           </AppCard>
+        </div>
 
-          <AppCard title="Notes for the AI">
-            <UFormField
-              label="Notes"
-              help="Only used when generating. Never printed in the letter."
-            >
-              <UTextarea
-                v-model="letter.brief"
-                :rows="3"
-                :maxrows="10"
-                :maxlength="2000"
-                autoresize
-                class="w-full"
-                placeholder="What to stress for this job, a person you spoke to, things to leave out…"
-                data-testid="cover-letter-brief"
-              />
-              <template #hint>{{ letter.brief.length }}/2000</template>
-            </UFormField>
-          </AppCard>
+        <UAlert
+          v-if="editor.pdfError.value"
+          color="error"
+          :description="editor.pdfError.value"
+          data-testid="cover-letter-pdf-error"
+        />
 
-          <AppCard>
-            <UCollapsible v-model:open="headerOpen">
-              <UButton
-                color="neutral"
-                variant="ghost"
-                block
-                class="justify-between"
-                :trailing-icon="headerOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-                data-testid="cover-letter-header-toggle"
-              >
-                <span class="font-semibold text-highlighted">Header details</span>
-              </UButton>
-              <template #content>
-                <div class="space-y-4 pt-4" data-testid="cover-letter-header">
-                  <div class="grid gap-3 sm:grid-cols-2">
-                    <UFormField label="Full name">
-                      <UInput v-model="letter.fullName" class="w-full" autocomplete="name" />
-                    </UFormField>
-                    <UFormField label="Language">
-                      <USelect
-                        v-model="letter.language"
-                        :items="[...LANGUAGE_OPTIONS]"
-                        class="w-full"
-                      />
-                    </UFormField>
-                    <UFormField label="Email">
-                      <UInput
-                        v-model="letter.email"
-                        type="email"
-                        class="w-full"
-                        autocomplete="email"
-                      />
-                    </UFormField>
-                    <UFormField label="Phone">
-                      <UInput v-model="letter.phone" type="tel" class="w-full" autocomplete="tel" />
-                    </UFormField>
-                    <UFormField label="Address" :help="ADDRESS_HELP" class="sm:col-span-2">
-                      <UTextarea
-                        v-model="letter.address"
-                        :rows="2"
-                        autoresize
-                        placeholder="Storgata 1&#10;0155 Oslo"
-                        class="w-full"
-                      />
-                    </UFormField>
-                    <UFormField label="Date">
-                      <UInput v-model="letter.date" type="date" class="w-full" />
-                    </UFormField>
-                    <UFormField label="Organization">
-                      <UInput v-model="letter.organization" class="w-full" />
-                    </UFormField>
-                    <UFormField label="Recipient" class="sm:col-span-2">
-                      <UInput v-model="letter.recipientName" class="w-full" />
-                    </UFormField>
-                    <UFormField
-                      label="Recipient address"
-                      :help="ADDRESS_HELP"
-                      class="sm:col-span-2"
-                    >
-                      <UTextarea
-                        v-model="letter.recipientAddress"
-                        :rows="2"
-                        autoresize
-                        placeholder="Kongens gate 2&#10;7011 Trondheim"
-                        class="w-full"
-                      />
-                    </UFormField>
-                    <UFormField label="Subject" class="sm:col-span-2">
-                      <UInput v-model="letter.subject" class="w-full" />
-                    </UFormField>
-                  </div>
-                  <UButton
-                    icon="i-lucide-rotate-ccw"
-                    color="neutral"
-                    variant="subtle"
-                    size="sm"
-                    :loading="editor.resettingHeader.value"
-                    data-testid="cover-letter-reset-header"
-                    @click="editor.resetHeader()"
-                    >Reset header from profile</UButton
-                  >
-                </div>
-              </template>
-            </UCollapsible>
-          </AppCard>
-
-          <CvPdfLatestRow
-            v-if="pdf"
-            :pdf="pdf"
-            :current="pdfCurrent"
-            older-than="letter"
-            testid-prefix="cover-letter"
-            class="rounded-md border border-default p-3"
-            @preview="pdfOpen = true"
-            @delete="askDeletePdf(pdf)"
-          />
-
-          <AppSaveBar
-            :status="saveStatus"
-            status-testid="cover-letter-save-status"
-            :changed="dirty"
-            :warn="dirty && !editor.pristine.value"
-            data-testid="cover-letter-save-bar"
+        <ListingsCoverLetterReviewBar
+          v-if="candidate"
+          @use="editor.acceptCandidate()"
+          @discard="discardNew"
+        />
+        <!-- Hidden on an untouched empty letter, where it would cover the empty state's buttons
+             and offer nothing to do. -->
+        <AppSaveBar
+          v-else-if="hasBody || !editor.pristine.value"
+          :status="saveStatus"
+          status-testid="cover-letter-save-status"
+          :changed="dirty"
+          :warn="dirty && !editor.pristine.value"
+          data-testid="cover-letter-save-bar"
+        >
+          <UButton
+            icon="i-lucide-save"
+            color="neutral"
+            variant="outline"
+            :loading="
+              editor.saving.value && !editor.generatingPdf.value && !editor.generating.value
+            "
+            :disabled="!dirty"
+            class="w-full justify-center sm:w-auto"
+            data-testid="cover-letter-save"
+            @click="editor.save()"
+            >Save draft</UButton
           >
-            <UButton
-              icon="i-lucide-save"
-              color="neutral"
-              variant="subtle"
-              :loading="editor.saving.value && !editor.generatingPdf.value"
-              :disabled="!dirty"
-              class="w-full justify-center sm:w-auto"
-              data-testid="cover-letter-save"
-              @click="editor.save()"
-              >Save letter</UButton
-            >
-            <UButton
-              icon="i-lucide-file-down"
-              :loading="editor.generatingPdf.value"
-              :disabled="pdfCurrent || !letter.paragraphs.some((p) => p.trim())"
-              :title="
-                pdfCurrent
-                  ? 'The latest PDF matches the saved letter'
-                  : 'Each click creates a new PDF'
-              "
-              class="w-full justify-center sm:w-auto"
-              data-testid="cover-letter-generate-pdf"
-              @click="generatePdf"
-              >{{ dirty ? 'Save and generate PDF' : 'Generate PDF' }}</UButton
-            >
-          </AppSaveBar>
-        </fieldset>
-      </template>
+          <UButton
+            :icon="pdfCurrent ? 'i-lucide-eye' : 'i-lucide-file-down'"
+            :loading="editor.generatingPdf.value"
+            :disabled="!hasBody"
+            :title="hasBody ? undefined : 'Add some letter text first'"
+            class="w-full justify-center sm:w-auto"
+            data-testid="cover-letter-generate-pdf"
+            @click="pdfAction"
+            >{{ pdfLabel }}</UButton
+          >
+        </AppSaveBar>
+      </fieldset>
     </div>
 
-    <ListingsCoverLetterModal v-model:open="sourceOpen" :editor="editor" />
+    <ListingsCoverLetterModal
+      v-if="letter"
+      v-model:open="sourceOpen"
+      :editor="editor"
+      :listing-id="id"
+      :paste="sourcePaste"
+    />
 
     <LazyListingsTailoredCvPdfModal
       v-if="pdf"
       v-model:open="pdfOpen"
       :url="`/api/documents/${pdf.id}`"
       :file-name="pdf.fileName"
+      :applicable="canApply"
+      @apply="openApply"
+    />
+
+    <LazyListingsApplyModal
+      v-if="listing && canApply"
+      v-model:open="applyOpen"
+      :listing="listing"
+      :cv-document-id="cvPdf?.id"
+      @changed="onApplied"
     />
 
     <AppConfirmModal
       v-model:open="leaveOpen"
       title="Leave without saving?"
-      description="Your cover letter has unsaved changes. They will be lost."
+      :description="leaveDescription"
       confirm-label="Leave"
       @confirm="leave"
     />

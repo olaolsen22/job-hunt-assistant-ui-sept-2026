@@ -2,6 +2,9 @@ import type { ResultOf } from 'gql.tada'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { CoverLetter } from '~/utils/coverLetter'
 
+// Where a new letter waiting for review came from.
+export type CoverLetterSource = 'builtin' | 'own' | 'text'
+
 const CONTENT_FIELDS = graphql(`
   fragment CoverLetterContentFields on CoverLetterContent {
     language
@@ -25,6 +28,7 @@ const DRAFT_FIELDS = graphql(
     fragment CoverLetterDraftFields on CoverLetterDraft {
       id
       brief
+      relocationLeadWeeks
       updatedAt
       content {
         ...CoverLetterContentFields
@@ -180,15 +184,14 @@ export const useCoverLetterDraftQuery = (listingId: number) =>
 
 const snapshot = (letter: CoverLetter) => JSON.stringify(letter)
 
-// The editor's state. Every way of getting a body (AI, an external chat, a pasted letter) returns a
-// whole unsaved letter that replaces the editor; one snapshot from before it lets Discard undo that.
-// Nothing reaches the API's draft until save().
+// The editor's state. Every way of getting a new letter (AI, an external chat, a pasted letter)
+// returns a whole letter that waits as `candidate` beside the owner's own, which stays as it is
+// until they use it. Nothing reaches the API's draft until save().
 export const useCoverLetterDraft = (listingId: number) => {
   const query = useCoverLetterDraftQuery(listingId)
   const llm = useLlmModels()
   const { attempt, safetyCode, safetyMessage, needsConfirm, confirmRetry } = useAiRequest()
   const notify = useAppToast()
-  const { success: toastSuccess } = useAppToast()
   const draft = query.data
   // A saved CV is the letter's evidence. The API still writes without one, just more generically.
   const { data: savedCv, status: savedCvStatus } = useTailoredCvDraftQuery(listingId)
@@ -198,14 +201,15 @@ export const useCoverLetterDraft = (listingId: number) => {
   const saved = ref<string | null>(null)
   // The letter as first built, to tell an untouched prefill from the owner's edits.
   const seed = ref('')
-  // The editor before a candidate replaced it, while that candidate is unsaved.
-  const beforeCandidate = ref<string>()
   const initError = ref('')
 
   const dirty = computed(() => !!letter.value && snapshot(letter.value) !== saved.value)
   const pristine = computed(
     () => !draft.value && !!letter.value && snapshot(letter.value) === seed.value
   )
+
+  const fromDraft = (d: CoverLetterDraft) =>
+    coverLetterFromContent(d.content, d.brief, d.relocationLeadWeeks)
 
   const fetchFromProfile = async () => {
     const { coverLetterDraftFromProfile } = await gql(FROM_PROFILE, { listingId })
@@ -217,7 +221,7 @@ export const useCoverLetterDraft = (listingId: number) => {
     if (letter.value || query.status.value !== 'success') return
     initError.value = ''
     if (draft.value) {
-      letter.value = coverLetterFromContent(draft.value.content, draft.value.brief)
+      letter.value = fromDraft(draft.value)
       saved.value = seed.value = snapshot(letter.value)
       return
     }
@@ -234,7 +238,7 @@ export const useCoverLetterDraft = (listingId: number) => {
     }
   }
 
-  // Refills the sender, recipient, date and subject from the profile; the body and notes stay.
+  // Refills the sender, recipient and date from the profile; the text, language and notes stay.
   const resettingHeader = ref(false)
   const resetHeader = async () => {
     if (!letter.value) return
@@ -251,19 +255,36 @@ export const useCoverLetterDraft = (listingId: number) => {
     }
   }
 
-  const load = (content: CoverLetterContent) => {
-    if (!letter.value) return
-    // Kept across several loads, so Discard always returns to the owner's own letter.
-    beforeCandidate.value ??= snapshot(letter.value)
-    letter.value = coverLetterFromContent(content, letter.value.brief)
+  // A new letter waits for review. Another one replaces it: only the latest run is reviewed.
+  const candidate = ref<{ letter: CoverLetter; source: CoverLetterSource }>()
+  const reviewing = computed(() => !!candidate.value)
+  // Counts new letters, so an Undo after a later one never brings back the older one.
+  let loads = 0
+  const load = (content: CoverLetterContent, source: CoverLetterSource) => {
+    loads++
+    candidate.value = { letter: coverLetterFromContent(content), source }
   }
-  const discard = () => {
-    if (beforeCandidate.value) letter.value = JSON.parse(beforeCandidate.value)
-    beforeCandidate.value = undefined
+  // Only its text replaces the editor's; the details, language and notes stay.
+  const acceptCandidate = () => {
+    if (!letter.value || !candidate.value) return
+    letter.value = withCoverLetterBody(letter.value, candidate.value.letter)
+    candidate.value = undefined
+  }
+  // Returns a way to bring the discarded letter back (the page's Undo), or nothing to discard.
+  // It does nothing once another letter has come in since, used or not.
+  const discardCandidate = () => {
+    const discarded = candidate.value
+    if (!discarded) return
+    const at = loads
+    candidate.value = undefined
+    return () => {
+      if (at === loads && !candidate.value) candidate.value = discarded
+    }
   }
 
   const { run, loading: saving } = useMutation()
-  const save = async () => {
+  // The save itself, also used before generating, which may run while a new letter waits.
+  const persist = async () => {
     if (!letter.value) return false
     let result: CoverLetterDraft | null = null
     const ok = await run(async () => {
@@ -277,24 +298,33 @@ export const useCoverLetterDraft = (listingId: number) => {
     const savedDraft: CoverLetterDraft = result
     draft.value = savedDraft
     // Back from the API in its normalized form (blank fields and paragraphs dropped).
-    letter.value = coverLetterFromContent(savedDraft.content, savedDraft.brief)
+    letter.value = fromDraft(savedDraft)
     saved.value = seed.value = snapshot(letter.value)
-    beforeCandidate.value = undefined
-    toastSuccess('Cover letter saved')
+    return true
+  }
+  // Saving waits while a new letter is under review, like the tailored CV's AI changes.
+  const save = async () => {
+    if (reviewing.value || !(await persist())) return false
+    notify.success('Cover letter saved')
     return true
   }
 
-  // The API writes from the saved draft (brief included), so unsaved edits are saved first; the
-  // letter it returns is then loaded unsaved. Returns an error to show, or null once loaded.
+  // The API reads the notes, the weeks and the language from the saved draft, so unsaved edits are
+  // saved first. It never reads the saved paragraphs: the letter it writes is new, and waits for
+  // review. Returns an error to show, or null once it waits.
   const generating = ref(false)
   const generate = async (): Promise<string | null> => {
     if (!letter.value) return null
     generating.value = true
     try {
-      if ((dirty.value || !draft.value) && !(await save())) return 'Save the letter first.'
+      // The save already showed its own error; this one says what didn't happen.
+      if ((dirty.value || !draft.value) && !(await persist()))
+        return 'The letter couldn’t be saved, so no new letter was written.'
       const input = { listingId }
+      // A retry repeats the same request only while what the API reads from the draft is the same.
+      const { brief, relocationLeadWeeks, language } = letter.value
       const { result, errors } = await attempt(
-        input,
+        { listingId, brief, relocationLeadWeeks, language },
         async (requestId) =>
           (await gql(GENERATE_LETTER, { input: { ...input, requestId } })).generateCoverLetter
       )
@@ -304,7 +334,7 @@ export const useCoverLetterDraft = (listingId: number) => {
         const message = result?.error ?? ERROR_MESSAGES.generic
         return result?.errorCode ? `${message} (${result.errorCode})` : message
       }
-      load(result.content)
+      load(result.content, 'builtin')
       return null
     } catch (e) {
       return genericError(e)
@@ -313,18 +343,27 @@ export const useCoverLetterDraft = (listingId: number) => {
     }
   }
 
-  // The prompt query takes no notes, so the owner's current notes (even unsaved) are appended here.
+  // The current notes and weeks (even unsaved) are appended unless the prompt already holds them.
   const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
     async () => (await gql(PROMPT, { listingId })).coverLetterExternalPrompt.instructions,
     (prompt) => {
       const notes = letter.value?.brief.trim()
-      if (!notes || prompt.includes(notes)) return prompt
-      return `${prompt}\n\nNotes from the applicant (follow these):\n${notes}`
+      const weeks = letter.value?.relocationLeadWeeks
+      const extra = [
+        notes && !prompt.includes(notes)
+          ? `Notes from the applicant (follow these):\n${notes}`
+          : '',
+        weeks != null && !prompt.includes(`${weeks} week`)
+          ? `The applicant needs ${weeks} ${weeks === 1 ? 'week' : 'weeks'} to relocate before starting.`
+          : ''
+      ].filter(Boolean)
+      return extra.length ? `${prompt}\n\n${extra.join('\n\n')}` : prompt
     }
   )
 
   // An external chat's JSON reply or the owner's own letter, checked and split by the API.
-  // Returns the API's error to show next to the pasted text, or null once loaded.
+  // A pasted letter goes straight into an empty letter (it's the owner's own text, nothing to
+  // compare); everything else waits for review. Returns the API's error to show, or null.
   const previewing = ref(false)
   const preview = async (kind: 'json' | 'text', value: string): Promise<string | null> => {
     previewing.value = true
@@ -336,7 +375,18 @@ export const useCoverLetterDraft = (listingId: number) => {
           : (await gql(PREVIEW_TEXT, { input: { listingId, text: value.trim() } }))
               .previewCoverLetterText
       if (!payload.candidate) return payload.errors?.[0]?.message ?? ERROR_MESSAGES.generic
-      load(payload.candidate)
+      if (kind === 'text' && letter.value && !hasCoverLetterBody(letter.value)) {
+        // Nothing to compare, but a subject, greeting or closing already there stays unless the
+        // pasted letter has its own.
+        const pasted = coverLetterFromContent(payload.candidate)
+        for (const key of ['subject', 'greeting', 'closing'] as const)
+          pasted[key] = pasted[key].trim() ? pasted[key] : letter.value[key]
+        letter.value = withCoverLetterBody(letter.value, pasted)
+        const n = letter.value.paragraphs.length
+        notify.info(`Split into ${n} ${n === 1 ? 'paragraph' : 'paragraphs'}`, {
+          description: 'Check the breaks, then save.'
+        })
+      } else load(payload.candidate, kind === 'json' ? 'own' : 'text')
       return null
     } catch (e) {
       return genericError(e)
@@ -346,8 +396,10 @@ export const useCoverLetterDraft = (listingId: number) => {
   }
 
   // Every call adds another PDF, so a failure is never retried automatically. The API prints the
-  // saved draft, so unsaved edits are saved first; a failed save stops it.
+  // saved draft, so unsaved edits are saved first; a failed save stops it. The error shows above
+  // the bar until the next try.
   const generatingPdf = ref(false)
+  const pdfError = ref('')
   const generated = ref<{
     id: number
     fileName: string
@@ -355,28 +407,29 @@ export const useCoverLetterDraft = (listingId: number) => {
     sentAt: string | null
   }>()
   const generatePdf = async () => {
-    if (generatingPdf.value || !letter.value) return false
+    if (generatingPdf.value || reviewing.value || !letter.value) return false
     generatingPdf.value = true
+    pdfError.value = ''
     generated.value = undefined
     try {
-      if ((dirty.value || !draft.value) && !(await save())) return false
+      if ((dirty.value || !draft.value) && !(await persist())) return false
       const { generateCoverLetterDocument } = await gql(GENERATE_DOCUMENT, { listingId })
       const error = generateCoverLetterDocument.errors?.[0]
       if (error) {
-        notify.error(error.message)
         // The draft is gone: count the letter as unsaved, so the next try saves it again.
         if (error.__typename === 'CoverLetterDraftNotFoundError') {
           draft.value = null
           saved.value = null
           // Not an untouched prefill either: the leave guard must still protect it.
           seed.value = ''
-        }
+          pdfError.value = 'The saved letter was missing. Creating the PDF saves it again.'
+        } else pdfError.value = error.message
         return false
       }
       generated.value = generateCoverLetterDocument.document ?? undefined
       return !!generated.value
     } catch {
-      notify.error(ERROR_MESSAGES.generic)
+      pdfError.value = ERROR_MESSAGES.generic
       return false
     } finally {
       generatingPdf.value = false
@@ -394,8 +447,10 @@ export const useCoverLetterDraft = (listingId: number) => {
     initError,
     resetHeader,
     resettingHeader,
-    candidateLoaded: computed(() => !!beforeCandidate.value),
-    discard,
+    candidate,
+    reviewing,
+    acceptCandidate,
+    discardCandidate,
     saving,
     save,
     generating,
@@ -413,6 +468,7 @@ export const useCoverLetterDraft = (listingId: number) => {
     previewing,
     preview,
     generatingPdf,
+    pdfError,
     generated,
     generatePdf
   }

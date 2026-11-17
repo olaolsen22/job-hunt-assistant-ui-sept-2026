@@ -29,10 +29,15 @@ const pdfStale = computed(
     Date.parse(pdf.value.createdAt) < Date.parse(draft.value.updatedAt)
 )
 
-// The button shows `copied`, so a working copy needs no toast.
-const { copied, copy: copyText } = useCopyAsText('cover letter')
-const copy = () => {
-  if (draft.value) copyText(coverLetterToText(coverLetterFromContent(draft.value.content)))
+// Confirms with a toast, like the editor's ⋮ copy.
+const notify = useAppToast()
+const { copy: copyText } = useCopyAsText('cover letter')
+const copy = async () => {
+  if (
+    draft.value &&
+    (await copyText(coverLetterToText(coverLetterFromContent(draft.value.content))))
+  )
+    notify.success('Letter copied as text', { icon: 'i-lucide-copy' })
 }
 
 const pdfOpen = ref(false)
@@ -41,7 +46,7 @@ const pdfOpen = ref(false)
 <template>
   <AppCard title="Cover letter" data-testid="cover-letter-card">
     <template v-if="draft" #actions>
-      <UBadge color="success" variant="subtle" icon="i-lucide-check">Saved</UBadge>
+      <UBadge color="success" variant="subtle" icon="i-lucide-check">Letter saved</UBadge>
     </template>
 
     <UAlert
@@ -71,12 +76,12 @@ const pdfOpen = ref(false)
             >Edit letter</UButton
           >
           <UButton
-            :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+            icon="i-lucide-copy"
             color="neutral"
             variant="ghost"
             data-testid="cover-letter-card-copy"
             @click="copy"
-            >{{ copied ? 'Copied' : 'Copy as text' }}</UButton
+            >Copy as text</UButton
           >
         </div>
       </section>
