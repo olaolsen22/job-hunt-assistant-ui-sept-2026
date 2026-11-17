@@ -173,6 +173,61 @@ const editSummary = async (text: string) => {
 }
 
 const ops = (name: string) => calls.filter((c) => c.query.includes(`mutation ${name}`))
+const within = (root: HTMLElement, id: string) =>
+  root.querySelector<HTMLElement>(`[data-testid="${id}"]`)
+const reviewStatus = () => el('tailored-cv-review-status')?.textContent?.trim()
+// The style and layout radios live in the settings panel.
+const openSettings = async () => {
+  await click('tailored-cv-settings-open')
+  await vi.waitFor(() => expect(el('tailored-cv-template')).not.toBeNull())
+}
+// The tailored CV lists skills read-only; their groups are only visible in the Edit skills modal.
+const groupsInModal = async () => {
+  await click('tailored-cv-skills-edit')
+  await vi.waitFor(() => expect(el('tailored-cv-skills-modal')).not.toBeNull())
+  const groups = [
+    ...document.body.querySelectorAll<HTMLInputElement>(
+      '[data-testid="tailored-cv-skills-modal"] input[data-testid="tailored-cv-skill-group"], [data-testid="tailored-cv-skills-modal"] [data-testid="tailored-cv-skill-group"] input'
+    )
+  ].map((input) => input.value)
+  await click('form-modal-cancel')
+  await vi.waitFor(() => expect(el('tailored-cv-skills-modal')).toBeNull())
+  return groups
+}
+const cardSkills = () =>
+  [...el('tailored-cv-skills')!.querySelectorAll('[data-testid="tailored-cv-skill"]')].map((s) =>
+    s.textContent?.trim()
+  )
+// Runs the whole-CV built-in analysis on the mounted page and waits until it is done.
+const runWholeCvNow = async () => {
+  releaseAnalysis()
+  await vi.waitFor(() => expect(el('tailored-cv-optimize')).not.toBeNull())
+  await click('tailored-cv-optimize')
+  await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
+  await click('tailored-cv-ai-run')
+  await vi.waitFor(() => expect(el('tailored-cv-review-bar')).not.toBeNull())
+  await vi.waitFor(() => expect(el('tailored-cv-progress')).toBeNull())
+  await flushPromises()
+}
+// Pastes a reply in the own-AI tab of the whole-CV dialog.
+const pasteOwnAiReply = async () => {
+  await vi.waitFor(() => expect(el('tailored-cv-optimize')).not.toBeNull())
+  await click('tailored-cv-optimize')
+  const external = [...document.body.querySelectorAll<HTMLElement>('button[role="tab"]')].find(
+    (b) => b.textContent?.includes('Your own AI')
+  )!
+  external.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  await flushPromises()
+  await vi.waitFor(() =>
+    expect((el('tailored-cv-copy-prompt') as HTMLButtonElement).disabled).toBe(false)
+  )
+  await click('tailored-cv-copy-prompt')
+  const json = el('tailored-cv-json') as HTMLTextAreaElement
+  json.value = '{"content":{}}'
+  json.dispatchEvent(new Event('input'))
+  await flushPromises()
+  await click('tailored-cv-preview')
+}
 
 // Opens a menu from the keyboard (Reka opens it on pointerdown, not click) and finds an item.
 const menuItem = async (trigger: HTMLElement, label: string) => {
@@ -224,6 +279,15 @@ afterEach(() => {
 })
 
 describe('Tailored CV page', () => {
+  it('puts Back to the listing in the navbar', async () => {
+    await mountPage()
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/5/cv',
+      to: '/listings/5',
+      label: 'Listing'
+    })
+  })
+
   it('opens prefilled from the profile without running AI', async () => {
     await mountPage()
     await vi.waitFor(() => expect(el('tailored-cv-summary-edit')).not.toBeNull())
@@ -252,11 +316,20 @@ describe('Tailored CV page', () => {
     await vi.waitFor(() => expect(el('tailored-cv-progress')).toBeNull())
     await flushPromises()
 
-    expect(summaryValue()).toBe('Tailored summary')
-    // The summary step's headline lands with it.
-    expect(document.body.textContent).toContain('Tailored headline')
+    // Even a new, unedited CV keeps the profile content: each change waits as a suggestion.
+    expect(summaryValue()).toBe('')
+    expect(el('tailored-cv-summary')!.textContent).toContain('Tailored summary')
+    expect(el('tailored-cv-summary')!.textContent).toContain('AI change')
+    // The summary step's headline is offered with it, on the contact card.
+    expect(el('tailored-cv-contact')!.textContent).toContain('Tailored headline')
+    expect(el('tailored-cv-contact')!.textContent).toContain('Engineer')
     expect(el('tailored-cv-skills-error')!.textContent).toContain('Model timed out')
     expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
+    // The review bar replaces Save draft and the PDF action until every change is reviewed.
+    // Headline, summary, and the experience and project bullets the reply leaves out.
+    expect(reviewStatus()).toBe('4 AI changes to review')
+    expect(el('tailored-cv-save')).toBeNull()
+    expect(el('tailored-cv-generate')).toBeNull()
   })
 
   it('runs the whole CV without a per-run model and links to Settings', async () => {
@@ -309,7 +382,7 @@ describe('Tailored CV page', () => {
       await runWholeCv()
 
       expect(el('tailored-cv-skills-error')!.textContent).toContain('No skills to match (no-input)')
-      expect(summaryValue()).toBe('Tailored summary')
+      expect(el('tailored-cv-summary')!.textContent).toContain('Tailored summary')
     })
 
     it('stops at a reached daily limit, keeps earlier results and links to Settings', async () => {
@@ -369,16 +442,21 @@ describe('Tailored CV page', () => {
     expect(ops('AnalyzeTailoredCvSection').map((c) => c.variables.input!.section)).toEqual([
       'SUMMARY'
     ])
-    expect(summaryValue()).toBe('Mine')
+    // The suggestion stands in for the summary text, current and suggested side by side.
+    const summary = el('tailored-cv-summary')!
+    expect(summaryValue()).toBe('')
+    expect(summary.textContent).toContain('Mine')
+    expect(summary.textContent).toContain('Tailored summary')
+    expect(within(summary, 'tailored-cv-dismiss')!.textContent?.trim()).toBe('Keep current')
+    expect(within(summary, 'tailored-cv-accept')!.textContent?.trim()).toBe('Accept')
     // The summary step also suggests a headline.
-    expect(el('tailored-cv-suggestions')!.textContent).toContain('2 suggestions to review')
-    expect(el('tailored-cv-pending')!.textContent).toContain('2 suggestions to review')
-    expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(false)
+    expect(reviewStatus()).toBe('2 AI changes to review')
+    expect(el('tailored-cv-generate')).toBeNull()
     await click('tailored-cv-accept')
     await click('tailored-cv-accept')
     expect(summaryValue()).toBe('Tailored summary')
-    expect(document.body.textContent).toContain('Tailored headline')
-    expect(el('tailored-cv-suggestions')).toBeNull()
+    expect(el('tailored-cv-contact')!.textContent).toContain('Tailored headline')
+    expect(el('tailored-cv-review-bar')).toBeNull()
     expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
   })
 
@@ -404,10 +482,9 @@ describe('Tailored CV page', () => {
     await mountPage()
     const projects = () => el('tailored-cv-projects')!
     await vi.waitFor(() => expect(el('tailored-cv-projects')).not.toBeNull())
-    await chooseMenuItem(
-      projects().querySelector<HTMLElement>('[data-testid="tailored-cv-entry-actions"]')!,
-      'Tailor with AI'
-    )
+    // Wider than a phone: Tailor is a visible button beside Edit.
+    within(projects(), 'tailored-cv-entry-analyze')!.click()
+    await flushPromises()
     await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
     await click('tailored-cv-ai-run')
 
@@ -417,7 +494,11 @@ describe('Tailored CV page', () => {
     expect(ops('AnalyzeTailoredCvSection').map((c) => c.variables.input)).toMatchObject([
       { section: 'PROJECT', sourceEntryId: 20 }
     ])
-    expect(projects().textContent).toContain('Technologies: Nuxt')
+    const chips = [
+      ...projects().querySelectorAll<HTMLElement>('[data-testid="tailored-cv-diff-chip"]')
+    ]
+    expect(chips.map((c) => c.dataset.kind)).toEqual(['added'])
+    expect(chips[0]!.textContent).toMatch(/Nuxt\s*· Added/)
     projects().querySelector<HTMLElement>('[data-testid="tailored-cv-accept"]')!.click()
     await flushPromises()
     expect(
@@ -425,7 +506,7 @@ describe('Tailored CV page', () => {
     ).toContain('Nuxt')
   })
 
-  it('accepts every pending suggestion at once', async () => {
+  it('accepts every pending suggestion at once from the review bar', async () => {
     savedDraft = savedSummary()
     releaseAnalysis()
     await mountPage()
@@ -433,15 +514,13 @@ describe('Tailored CV page', () => {
     await click('tailored-cv-summary-analyze')
     await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
     await click('tailored-cv-ai-run')
-    await vi.waitFor(() => expect(el('tailored-cv-suggestions')).not.toBeNull())
+    await vi.waitFor(() => expect(el('tailored-cv-review-bar')).not.toBeNull())
 
-    const acceptAll = [...el('tailored-cv-suggestions')!.querySelectorAll('button')].find((b) =>
-      b.textContent?.includes('Accept all')
-    )!
-    acceptAll.click()
-    await flushPromises()
+    expect(el('tailored-cv-review-accept')!.textContent?.trim()).toBe('Accept remaining (2)')
+    await click('tailored-cv-review-accept')
     expect(summaryValue()).toBe('Tailored summary')
-    expect(el('tailored-cv-suggestions')).toBeNull()
+    expect(el('tailored-cv-contact')!.textContent).toContain('Tailored headline')
+    expect(el('tailored-cv-review-bar')).toBeNull()
   })
 
   it('reopens on the AI used last, with both choices still offered', async () => {
@@ -466,7 +545,7 @@ describe('Tailored CV page', () => {
     savedDraft = savedSummary()
     await mountPage()
     await vi.waitFor(() => expect(summaryValue()).toBe('Mine'))
-    expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved')
+    expect(el('tailored-cv-save-status')!.textContent).toBe('Saved · no PDF yet')
 
     await editSummary('Edited summary')
     await click('tailored-cv-save')
@@ -480,18 +559,24 @@ describe('Tailored CV page', () => {
         languages: expect.any(Array)
       }
     })
-    await vi.waitFor(() => expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved'))
+    await vi.waitFor(() =>
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Saved · no PDF yet')
+    )
   })
 
   it('saves the chosen PDF layout with the draft', async () => {
     savedDraft = savedSummary()
     await mountPage()
-    await vi.waitFor(() => expect(el('tailored-cv-section-order')).not.toBeNull())
+    await vi.waitFor(() => expect(el('tailored-cv-settings-open')).not.toBeNull())
+    await openSettings()
     expect(checkedRadio('tailored-cv-section-order')).toBe('Standard')
 
     radio('tailored-cv-section-order', 'Developer').click()
     await flushPromises()
-    expect(el('tailored-cv-save-status')!.textContent).not.toBe('Draft saved')
+    expect(el('tailored-cv-settings-summary')!.textContent?.trim()).toBe(
+      'English · Detailed · Bullets · Developer layout'
+    )
+    expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
     await click('tailored-cv-save')
     await vi.waitFor(() => expect(ops('SaveTailoredCvDraft')).toHaveLength(1))
 
@@ -505,7 +590,11 @@ describe('Tailored CV page', () => {
     savedDraft.content.template = 'CONCISE'
     savedDraft.content.contentStyle = 'PARAGRAPH'
     await mountPage()
-    await vi.waitFor(() => expect(el('tailored-cv-template')).not.toBeNull())
+    await vi.waitFor(() => expect(el('tailored-cv-settings-summary')).not.toBeNull())
+    expect(el('tailored-cv-settings-summary')!.textContent?.trim()).toBe(
+      'English · Concise · Paragraphs · Standard layout'
+    )
+    await openSettings()
     expect(checkedRadio('tailored-cv-template')).toBe('Concise')
     // Concise prints paragraphs too, so the choice shows and stays editable.
     expect(checkedRadio('tailored-cv-content-style')).toBe('Paragraphs')
@@ -514,9 +603,12 @@ describe('Tailored CV page', () => {
 
     radio('tailored-cv-template', 'Detailed').click()
     await flushPromises()
-    // The format is kept, and the entries wait for a new run.
+    // The style applies at once; the format is kept, and the entries wait for a new run.
     expect(checkedRadio('tailored-cv-content-style')).toBe('Paragraphs')
-    expect(el('tailored-cv-template-changed')).not.toBeNull()
+    expect(el('tailored-cv-settings-summary')!.textContent?.trim()).toBe(
+      'English · Detailed · Paragraphs · Standard layout'
+    )
+    expect(el('tailored-cv-template-changed')!.textContent).toContain('Tailor CV with AI')
     expect(ops('AnalyzeTailoredCvSection')).toHaveLength(0)
   })
 
@@ -552,7 +644,7 @@ describe('Tailored CV page', () => {
 
     await vi.waitFor(() => expect(document.body.textContent).toContain('Unknown bullet id 999.'))
     expect(summaryValue()).toBe('Mine')
-    expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved')
+    expect(el('tailored-cv-save-status')!.textContent).toBe('Saved · no PDF yet')
     vi.unstubAllGlobals()
   })
 
@@ -576,22 +668,7 @@ describe('Tailored CV page', () => {
     }
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn(async () => {}) } })
     await mountPage()
-    await vi.waitFor(() => expect(el('tailored-cv-optimize')).not.toBeNull())
-    await click('tailored-cv-optimize')
-    const external = [...document.body.querySelectorAll<HTMLElement>('button[role="tab"]')].find(
-      (b) => b.textContent?.includes('Your own AI')
-    )!
-    external.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-    await flushPromises()
-    await vi.waitFor(() =>
-      expect((el('tailored-cv-copy-prompt') as HTMLButtonElement).disabled).toBe(false)
-    )
-    await click('tailored-cv-copy-prompt')
-    const json = el('tailored-cv-json') as HTMLTextAreaElement
-    json.value = '{"content":{}}'
-    json.dispatchEvent(new Event('input'))
-    await flushPromises()
-    await click('tailored-cv-preview')
+    await pasteOwnAiReply()
 
     const entries = () => [
       ...el('tailored-cv-experience')!.querySelectorAll<HTMLElement>(
@@ -605,7 +682,14 @@ describe('Tailored CV page', () => {
     )
     expect(el('tailored-cv-experience')!.textContent).not.toContain('All experience')
     expect(entries()[0]!.textContent).toContain('Reworded at Co 10')
-    expect(entries()[2]!.textContent).toContain('Not in the AI draft')
+    // The left-out company is dimmed, with Keep in CV and Remove.
+    expect(entries()[2]!.textContent).toContain('The AI suggests leaving this out')
+    expect(within(entries()[2]!, 'tailored-cv-dismiss')!.textContent?.trim()).toBe('Keep in CV')
+    expect(within(entries()[2]!, 'tailored-cv-accept')!.textContent?.trim()).toBe('Remove')
+    const dimmed = [...entries()[2]!.querySelectorAll('.opacity-50')].map((d) => d.textContent)
+    expect(dimmed.join(' ')).toContain('Co 12')
+    expect(dimmed.join(' ')).toContain('Existing bullet')
+    expect(reviewStatus()).toBe('3 AI changes to review')
 
     // Accepting the first company changes only it; removing the third drops only that one.
     entries()[0]!.querySelector<HTMLElement>('[data-testid="tailored-cv-accept"]')!.click()
@@ -615,6 +699,47 @@ describe('Tailored CV page', () => {
     expect(entries()).toHaveLength(2)
     expect(entries()[0]!.querySelector('[data-testid="tailored-cv-suggestion"]')).toBeNull()
     expect(entries()[1]!.querySelector('[data-testid="tailored-cv-suggestion"]')).not.toBeNull()
+    vi.unstubAllGlobals()
+  })
+
+  it('splits a reordered own-AI reply per company, with the new order as its own small change', async () => {
+    const cv = tailoredCvFromProfile(cvProfile())
+    const job = cv.experiences[0]!
+    cv.experiences = [10, 11].map((id) => ({
+      ...structuredClone(job),
+      sourceEntryId: id,
+      employer: `Co ${id}`
+    }))
+    savedDraft = { id: 1, updatedAt: '2026-10-12T10:00:00Z', content: toTailoredCvInput(cv) }
+    const reply = structuredClone(cv)
+    reply.experiences.reverse()
+    reply.experiences[0]!.bullets[0]!.text = 'Reworded at Co 11'
+    previewReply = {
+      candidate: { schemaVersion: 1, content: toTailoredCvInput(reply) },
+      errors: null
+    }
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn(async () => {}) } })
+    await mountPage()
+    await pasteOwnAiReply()
+
+    const experience = () => el('tailored-cv-experience')!
+    await vi.waitFor(() => expect(reviewStatus()).toBe('2 AI changes to review'))
+    expect(experience().textContent).not.toContain('All experience')
+    // The reworded company is reviewed on its own entry; the order is a numbered list of names.
+    const entries = [...experience().querySelectorAll('[data-testid="tailored-cv-entry"]')]
+    expect(entries[1]!.textContent).toContain('Reworded at Co 11')
+    expect(experience().textContent).toContain('New order')
+    expect(experience().textContent).toContain(`1. ${job.title} at Co 11`)
+
+    // Accept the company, then the order: Co 11 comes first and keeps its new bullet.
+    within(entries[1] as HTMLElement, 'tailored-cv-accept')!.click()
+    await flushPromises()
+    within(experience(), 'tailored-cv-accept')!.click()
+    await flushPromises()
+    const after = [...experience().querySelectorAll('[data-testid="tailored-cv-entry"]')]
+    expect(after[0]!.textContent).toContain('Co 11')
+    expect(after[0]!.textContent).toContain('Reworded at Co 11')
+    expect(el('tailored-cv-save-bar')).not.toBeNull()
     vi.unstubAllGlobals()
   })
 
@@ -694,34 +819,55 @@ describe('Tailored CV page', () => {
     expect(el('tailored-cv-load-error')).toBeNull()
   })
 
-  it('rebuilds the CV in another language after confirming, and saves that language', async () => {
+  it('rebuilds an edited CV in another language only after Rebuild and a confirm, and saves that language', async () => {
     savedDraft = savedSummary()
-    const wrapper = await mountPage()
+    await mountPage()
     await vi.waitFor(() => expect(summaryValue()).toBe('Mine'))
-    const language = wrapper
-      .findAllComponents(USelect)
-      .find((select) => select.element.closest?.('[data-testid="tailored-cv-language-field"]'))!
-    expect(language.props('modelValue')).toBe('ENGLISH')
     const fromProfile = () =>
       calls.filter((c) => c.query.includes('query TailoredCvDraftFromProfile'))
     // The page's own prefill, for the Add menus.
     await vi.waitFor(() => expect(fromProfile()).toHaveLength(1))
+    await openSettings()
+    expect(checkedRadio('tailored-cv-language')).toBe('English')
 
-    // Cancelling keeps the CV and the select as they were.
-    language.vm.$emit('update:modelValue', 'NORWEGIAN')
+    // Picking a language only warns; the CV stays in English.
+    radio('tailored-cv-language', 'Norwegian').click()
     await flushPromises()
-    expect(document.body.textContent).toContain('Regenerate in Norwegian?')
+    const warning = el('tailored-cv-language-warning')!
+    expect(warning.textContent).toContain('rebuilds this CV from your Norwegian profile')
+    expect(fromProfile()).toHaveLength(1)
+    expect(summaryValue()).toBe('Mine')
+    expect(el('tailored-cv-settings-summary')!.textContent).toContain('English')
+
+    // A saved draft has something to lose, so Rebuild asks; Cancel keeps it as it was.
+    const rebuildButton = () =>
+      [...el('tailored-cv-language-warning')!.querySelectorAll('button')].find(
+        (b) => b.textContent?.trim() === 'Rebuild in Norwegian'
+      )!
+    rebuildButton().click()
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Rebuild in Norwegian?'))
+    expect(el('confirm-modal-confirm')!.textContent?.trim()).toBe('Rebuild in Norwegian')
     buttonNamed('Cancel').click()
     await flushPromises()
     expect(fromProfile()).toHaveLength(1)
-    expect(language.props('modelValue')).toBe('ENGLISH')
+    expect(summaryValue()).toBe('Mine')
 
-    language.vm.$emit('update:modelValue', 'NORWEGIAN')
+    // Rebuild closed the panel so the confirm modal isn't stuck underneath it; reopen to try again.
+    expect(el('tailored-cv-language-warning')).toBeNull()
+    await openSettings()
+    radio('tailored-cv-language', 'Norwegian').click()
     await flushPromises()
-    buttonNamed('Regenerate').click()
-    await vi.waitFor(() => expect(language.props('modelValue')).toBe('NORWEGIAN'))
+    rebuildButton().click()
+    await vi.waitFor(() => expect(el('confirm-modal-confirm')).not.toBeNull())
+    await click('confirm-modal-confirm')
+    await vi.waitFor(() =>
+      expect(el('tailored-cv-settings-summary')!.textContent).toContain('Norwegian')
+    )
     expect(fromProfile().at(-1)!.variables).toEqual({ listingId: 5, language: 'NORWEGIAN' })
     expect(summaryValue()).not.toBe('Mine')
+    await openSettings()
+    expect(checkedRadio('tailored-cv-language')).toBe('Norwegian')
+    expect(el('tailored-cv-language-warning')).toBeNull()
     expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
 
     await click('tailored-cv-save')
@@ -729,6 +875,30 @@ describe('Tailored CV page', () => {
     expect(ops('SaveTailoredCvDraft')[0]!.variables.input.content).toMatchObject({
       language: 'NORWEGIAN'
     })
+  })
+
+  it('rebuilds an untouched new CV in another language without asking', async () => {
+    await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-settings-summary')).not.toBeNull())
+    expect(el('tailored-cv-settings-summary')!.textContent?.trim()).toBe(
+      'English · Detailed · Bullets · Standard layout'
+    )
+    await openSettings()
+    radio('tailored-cv-language', 'Norwegian').click()
+    await flushPromises()
+    ;[...el('tailored-cv-language-warning')!.querySelectorAll('button')]
+      .find((b) => b.textContent?.trim() === 'Rebuild in Norwegian')!
+      .click()
+    await vi.waitFor(() =>
+      expect(el('tailored-cv-settings-summary')!.textContent?.trim()).toBe(
+        'Norwegian · Detailed · Bullets · Standard layout'
+      )
+    )
+    expect(document.body.textContent).not.toContain('Rebuild in Norwegian?')
+    expect(
+      calls.filter((c) => c.query.includes('query TailoredCvDraftFromProfile')).at(-1)!.variables
+    ).toEqual({ listingId: 5, language: 'NORWEGIAN' })
+    expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
   })
 
   describe('skill groups', () => {
@@ -741,12 +911,6 @@ describe('Tailored CV page', () => {
         { name: 'Nuxt', level: null, sourceSkillId: null, categoryId: null, group: 'Frameworks' }
       ]
     }
-    const groupInputs = () =>
-      [
-        ...document.body.querySelectorAll<HTMLInputElement>(
-          '[data-testid="tailored-cv-skill-group"] input, input[data-testid="tailored-cv-skill-group"]'
-        )
-      ].map((input) => input.value)
 
     it('fills in suggested groups for review, keeping skills the AI left out, and saves them', async () => {
       developerDraft()
@@ -755,12 +919,16 @@ describe('Tailored CV page', () => {
         errors: null
       }
       await mountPage()
-      await vi.waitFor(() => expect(groupInputs()).toEqual(['', 'Frameworks']))
+      await vi.waitFor(() => expect(el('tailored-cv-suggest-groups')).not.toBeNull())
+      expect(await groupsInModal()).toEqual(['', 'Frameworks'])
 
       await click('tailored-cv-suggest-groups')
       await vi.waitFor(() => expect(el('skill-groups-run')).not.toBeNull())
       await click('skill-groups-run')
-      await vi.waitFor(() => expect(groupInputs()).toEqual(['Frontend', 'Frameworks']))
+      await vi.waitFor(() =>
+        expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+      )
+      expect(await groupsInModal()).toEqual(['Frontend', 'Frameworks'])
       expect(ops('SuggestTailoredCvSkillGroups')[0]!.variables).toMatchObject({
         skillNames: ['Vue', 'Nuxt'],
         language: 'ENGLISH'
@@ -793,7 +961,10 @@ describe('Tailored CV page', () => {
       await vi.waitFor(() =>
         expect(el('skill-groups-error')!.textContent).toContain('Model timed out')
       )
-      expect(groupInputs()).toEqual(['', 'Frameworks'])
+      await click('ai-modal-cancel')
+      await flushPromises()
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Saved · no PDF yet')
+      expect(await groupsInModal()).toEqual(['', 'Frameworks'])
     })
 
     it('fills in groups from a pasted own-AI reply in a code fence, ignoring unknown names', async () => {
@@ -812,7 +983,10 @@ describe('Tailored CV page', () => {
         '```json\n{"groups":[{"name":"Vue","group":"Frontend"},{"name":"Go","group":"Backend"}]}\n```'
       )
       await click('skill-groups-apply')
-      await vi.waitFor(() => expect(groupInputs()).toEqual(['Frontend', 'Frameworks']))
+      await vi.waitFor(() =>
+        expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+      )
+      expect(await groupsInModal()).toEqual(['Frontend', 'Frameworks'])
       expect(ops('SuggestTailoredCvSkillGroups')).toHaveLength(0)
     })
 
@@ -827,7 +1001,10 @@ describe('Tailored CV page', () => {
       await type(el('skill-groups-json') as HTMLTextAreaElement, 'Sorry, I cannot help.')
       await click('skill-groups-apply')
       await vi.waitFor(() => expect(document.body.textContent).toContain('"groups" list'))
-      expect(groupInputs()).toEqual(['', 'Frameworks'])
+      await click('ai-modal-cancel')
+      await flushPromises()
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Saved · no PDF yet')
+      expect(await groupsInModal()).toEqual(['', 'Frameworks'])
     })
   })
 
@@ -843,7 +1020,7 @@ describe('Tailored CV page', () => {
       expect(document.body.textContent).not.toContain('Reset to your profile?')
     )
     expect(summaryValue()).toBe('Mine')
-    expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved')
+    expect(el('tailored-cv-save-status')!.textContent).toBe('Saved · no PDF yet')
   })
 
   it('removes an entry with Undo, and brings it back from the profile later', async () => {
@@ -924,7 +1101,7 @@ describe('Tailored CV page', () => {
       .click()
     await vi.waitFor(() => expect(el('tailored-cv-entry-modal')).not.toBeNull())
     await click('form-modal-save')
-    expect(el('tailored-cv-save-status')!.textContent).toBe('Draft saved')
+    expect(el('tailored-cv-save-status')!.textContent).toBe('Saved · no PDF yet')
   })
 
   it('edits the headline and languages in their modals', async () => {
@@ -974,6 +1151,385 @@ describe('Tailored CV page', () => {
     })
   })
 
+  it('brings back profile links, languages and cleared contact fields', async () => {
+    const profileCv = { ...tailoredCvFromProfile(cvProfile()), email: 'owner@example.com' }
+    fromProfileReply = toTailoredCvInput(profileCv)
+    savedDraft = {
+      ...savedSummary(),
+      content: toTailoredCvInput({ ...profileCv, email: '', links: [], languages: [] })
+    }
+    await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-contact-edit')).not.toBeNull())
+
+    await click('tailored-cv-contact-edit')
+    await vi.waitFor(() => expect(el('cv-from-profile-email')).not.toBeNull())
+    expect(el('cv-from-profile-email')!.textContent).toContain(
+      'Use from profile: owner@example.com'
+    )
+    // Fields the profile has nothing for, or the draft already fills, offer nothing.
+    expect(el('cv-from-profile-phone')).toBeNull()
+    expect(el('cv-from-profile-fullName')).toBeNull()
+    await click('cv-from-profile-email')
+    expect(el('cv-from-profile-email')).toBeNull()
+
+    await chooseMenuItem(el('cv-links-from-profile')!, 'GitHub')
+    expect(
+      await menuItem(el('cv-links-from-profile')!, 'Everything from your profile is already here')
+    ).toBeDefined()
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    await click('form-modal-save')
+    await vi.waitFor(() =>
+      expect(el('tailored-cv-contact')!.textContent).toContain('owner@example.com')
+    )
+    expect(el('tailored-cv-contact')!.textContent).toContain('GitHub')
+
+    await click('tailored-cv-languages-edit')
+    await vi.waitFor(() => expect(el('cv-languages-from-profile')).not.toBeNull())
+    expect(document.body.textContent).toContain('Use Add from profile to bring them back.')
+    await chooseMenuItem(el('cv-languages-from-profile')!, 'Norwegian')
+    await click('form-modal-save')
+    await vi.waitFor(() =>
+      expect(el('tailored-cv-language-line')!.textContent).toContain('Norwegian · Spoken: Native')
+    )
+  })
+
+  describe('review', () => {
+    beforeEach(() => {
+      // happy-dom has no layout; the review bar scrolls each change into view.
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+        configurable: true,
+        value: vi.fn()
+      })
+    })
+    const suggestionEls = () => [
+      ...document.body.querySelectorAll<HTMLElement>('[data-testid="tailored-cv-suggestion"]')
+    ]
+
+    it('steps through the changes in page order with Previous and Next, wrapping around', async () => {
+      await mountPage()
+      await runWholeCvNow()
+      expect(suggestionEls()).toHaveLength(4)
+      expect(reviewStatus()).toBe('4 AI changes to review')
+      expect(el('tailored-cv-review-next')!.getAttribute('aria-label')).toBe('Next AI change')
+      expect(el('tailored-cv-review-previous')!.getAttribute('aria-label')).toBe(
+        'Previous AI change'
+      )
+
+      await click('tailored-cv-review-next')
+      expect(reviewStatus()).toBe('AI change 1 of 4')
+      await click('tailored-cv-review-next')
+      expect(reviewStatus()).toBe('AI change 2 of 4')
+      // The second change (the summary) is scrolled to and focused.
+      expect(suggestionEls()[1]!.scrollIntoView).toHaveBeenCalled()
+      expect(suggestionEls()[1]!.contains(document.activeElement)).toBe(true)
+      expect(el('tailored-cv-summary')!.contains(document.activeElement)).toBe(true)
+
+      await click('tailored-cv-review-previous')
+      expect(reviewStatus()).toBe('AI change 1 of 4')
+      await click('tailored-cv-review-previous')
+      expect(reviewStatus()).toBe('AI change 4 of 4')
+      await click('tailored-cv-review-next')
+      expect(reviewStatus()).toBe('AI change 1 of 4')
+    })
+
+    it('blocks saving while changes are pending, and Accept remaining restores the save bar', async () => {
+      await mountPage()
+      await runWholeCvNow()
+      expect(el('tailored-cv-save-bar')).toBeNull()
+      expect(el('tailored-cv-save')).toBeNull()
+      expect(el('tailored-cv-generate')).toBeNull()
+      // Still reachable while reviewing, to run the AI again.
+      expect((el('tailored-cv-optimize') as HTMLButtonElement).disabled).toBe(false)
+
+      // Keep the current (empty) summary, then accept the other three.
+      within(el('tailored-cv-summary')!, 'tailored-cv-dismiss')!.click()
+      await flushPromises()
+      expect(reviewStatus()).toBe('3 AI changes to review')
+      expect(el('tailored-cv-review-accept')!.textContent?.trim()).toBe('Accept remaining (3)')
+      await click('tailored-cv-review-accept')
+
+      expect(el('tailored-cv-review-bar')).toBeNull()
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+      expect((el('tailored-cv-save') as HTMLButtonElement).disabled).toBe(false)
+      expect(el('tailored-cv-generate')!.textContent?.trim()).toBe('Save and create PDF')
+      expect(summaryValue()).toBe('')
+      expect(el('tailored-cv-contact')!.textContent).toContain('Tailored headline')
+      expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
+    })
+
+    it('discards every remaining change, leaving the content as it was, with Undo', async () => {
+      await mountPage()
+      await vi.waitFor(() => expect(el('tailored-cv-contact')).not.toBeNull())
+      const before = el('tailored-cv-experience')!.textContent
+      await runWholeCvNow()
+
+      await click('tailored-cv-review-discard')
+      expect(el('tailored-cv-review-bar')).toBeNull()
+      expect(suggestionEls()).toHaveLength(0)
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Not saved yet')
+      expect(el('tailored-cv-experience')!.textContent).toBe(before)
+      expect(el('tailored-cv-contact')!.textContent).not.toContain('Tailored headline')
+
+      const toast = useToast().toasts.value.at(-1)!
+      expect(toast.title).toBe('4 AI changes discarded')
+      toast.actions![0]!.onClick!(new MouseEvent('click'))
+      await flushPromises()
+      expect(reviewStatus()).toBe('4 AI changes to review')
+    })
+
+    it('shows reworded and dropped bullets, removed skills and the summary compare', async () => {
+      const cv = tailoredCvFromProfile(cvProfile())
+      cv.summary = 'Mine'
+      cv.experiences[0]!.bullets = [
+        { text: 'Existing bullet', sourceBulletId: 100 },
+        { text: 'Dropped bullet', sourceBulletId: 101 }
+      ]
+      const skill = cv.skills[0]!
+      cv.skills = [
+        skill,
+        { ...skill, name: 'Figma', sourceSkillId: null },
+        { ...skill, name: 'Node.js', sourceSkillId: null }
+      ]
+      savedDraft = { id: 1, updatedAt: '2026-10-12T10:00:00Z', content: toTailoredCvInput(cv) }
+      const reply = structuredClone(cv)
+      reply.summary = 'External summary'
+      reply.experiences[0]!.bullets = [{ text: 'Existing bullet, reworded', sourceBulletId: 100 }]
+      reply.skills = [skill]
+      previewReply = {
+        candidate: { schemaVersion: 1, content: toTailoredCvInput(reply) },
+        errors: null
+      }
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: vi.fn(async () => {}) } })
+      await mountPage()
+      await pasteOwnAiReply()
+      await vi.waitFor(() => expect(reviewStatus()).toBe('3 AI changes to review'))
+
+      // The entry's title shows once and its bullets become the diff.
+      const experience = el('tailored-cv-experience')!
+      expect(experience.textContent!.split('Developer').length - 1).toBe(1)
+      expect(experience.querySelector('ul.list-disc')).toBeNull()
+      const bullets = [
+        ...experience.querySelectorAll<HTMLElement>('[data-testid="tailored-cv-diff-bullet"]')
+      ]
+      expect(bullets.map((b) => b.dataset.kind)).toEqual(['reworded', 'removed'])
+      expect(bullets[0]!.textContent).toContain('Existing bullet, reworded')
+      expect(bullets[0]!.textContent).toContain('Reworded')
+      expect(bullets[0]!.querySelector('.line-through')!.textContent).toBe('Existing bullet')
+      expect(bullets[1]!.textContent).toContain('Removed')
+      expect(bullets[1]!.querySelector('.line-through')!.textContent).toContain('Dropped bullet')
+
+      // Kept skills are unmarked; the left-out ones are struck through and labelled.
+      const chips = [
+        ...el('tailored-cv-skills')!.querySelectorAll<HTMLElement>(
+          '[data-testid="tailored-cv-diff-chip"]'
+        )
+      ]
+      expect(chips.map((c) => [c.dataset.kind, c.textContent?.replace(/\s+/g, '')])).toEqual([
+        ['kept', 'Vue'],
+        ['removed', 'Figma·Removed'],
+        ['removed', 'Node.js·Removed']
+      ])
+      expect(chips[0]!.querySelector('.line-through')).toBeNull()
+      expect(chips[1]!.querySelector('.line-through')!.textContent).toBe('Figma')
+      expect(chips[2]!.querySelector('.line-through')!.textContent).toBe('Node.js')
+      // The read-only skill list gives way to the diff.
+      expect(cardSkills()).toEqual([])
+
+      const summary = el('tailored-cv-summary')!
+      expect(summaryValue()).toBe('')
+      expect(summary.textContent).toContain('Mine')
+      expect(summary.textContent).toContain('External summary')
+      expect(within(summary, 'tailored-cv-dismiss')!.textContent?.trim()).toBe('Keep current')
+      vi.unstubAllGlobals()
+    })
+
+    it('asks before leaving with pending changes, naming them, and Cancel keeps them', async () => {
+      savedDraft = savedSummary()
+      releaseAnalysis()
+      const wrapper = await mountSuspended(defineComponent({ render: () => h(RouterView) }), {
+        route: '/listings/5/cv',
+        attachTo: document.body
+      })
+      mounted.push(wrapper)
+      await vi.waitFor(() => expect(el('tailored-cv-summary-analyze')).not.toBeNull())
+      await click('tailored-cv-summary-analyze')
+      await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
+      await click('tailored-cv-ai-run')
+      await vi.waitFor(() => expect(reviewStatus()).toBe('2 AI changes to review'))
+
+      const router = useRouter()
+      await router.push('/listings')
+      await flushPromises()
+      expect(router.currentRoute.value.path).toBe('/listings/5/cv')
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain(
+          '2 AI changes not yet reviewed will be discarded.'
+        )
+      )
+      buttonNamed('Cancel').click()
+      await flushPromises()
+      expect(router.currentRoute.value.path).toBe('/listings/5/cv')
+      expect(reviewStatus()).toBe('2 AI changes to review')
+    })
+  })
+
+  describe('skills modal', () => {
+    const twoSkills = () => {
+      savedDraft = savedSummary()
+      savedDraft.content.skills = [
+        { name: 'Vue', level: 4, sourceSkillId: 1, categoryId: null, group: null },
+        { name: 'TypeScript', level: null, sourceSkillId: null, categoryId: null, group: null }
+      ]
+    }
+    const modalButton = (label: string) =>
+      el('tailored-cv-skills-modal')!.querySelector<HTMLElement>(`button[aria-label="${label}"]`)!
+
+    it('reorders on a copy and puts it into the CV on Apply', async () => {
+      twoSkills()
+      await mountPage()
+      await vi.waitFor(() => expect(cardSkills()).toEqual(['Vue', 'TypeScript']))
+      await click('tailored-cv-skills-edit')
+      await vi.waitFor(() => expect(el('tailored-cv-skills-modal')).not.toBeNull())
+
+      modalButton('Move TypeScript earlier').click()
+      await flushPromises()
+      // Nothing reaches the card before Apply.
+      expect(cardSkills()).toEqual(['Vue', 'TypeScript'])
+      await click('form-modal-save')
+      await vi.waitFor(() => expect(cardSkills()).toEqual(['TypeScript', 'Vue']))
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+
+      await click('tailored-cv-save')
+      await vi.waitFor(() => expect(ops('SaveTailoredCvDraft')).toHaveLength(1))
+      expect(ops('SaveTailoredCvDraft')[0]!.variables.input.content).toMatchObject({
+        skills: [{ name: 'TypeScript' }, { name: 'Vue' }]
+      })
+    })
+
+    it('discards the copy on Cancel', async () => {
+      twoSkills()
+      await mountPage()
+      await vi.waitFor(() => expect(cardSkills()).toEqual(['Vue', 'TypeScript']))
+      await click('tailored-cv-skills-edit')
+      await vi.waitFor(() => expect(el('tailored-cv-skills-modal')).not.toBeNull())
+
+      modalButton('Remove Vue').click()
+      await flushPromises()
+      await click('form-modal-cancel')
+      // The modal asks before dropping a changed copy.
+      await vi.waitFor(() => expect(document.body.textContent).toContain('Discard changes?'))
+      buttonNamed('Discard').click()
+      await vi.waitFor(() => expect(el('tailored-cv-skills-modal')).toBeNull())
+      expect(cardSkills()).toEqual(['Vue', 'TypeScript'])
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Saved · no PDF yet')
+
+      // Reopening starts from the CV again, not from the discarded copy.
+      await click('tailored-cv-skills-edit')
+      await vi.waitFor(() => expect(el('tailored-cv-skills-modal')).not.toBeNull())
+      expect(modalButton('Remove Vue')).not.toBeNull()
+    })
+  })
+
+  describe('entry actions', () => {
+    it('shows Edit and Tailor beside an entry on wide screens, with Remove in its menu', async () => {
+      await mountPage()
+      const experience = () => el('tailored-cv-experience')!
+      await vi.waitFor(() => expect(within(experience(), 'tailored-cv-entry')).not.toBeNull())
+      expect(within(experience(), 'tailored-cv-entry-edit')!.textContent?.trim()).toBe('Edit')
+      expect(within(experience(), 'tailored-cv-entry-analyze')!.textContent?.trim()).toBe('Tailor')
+      expect(el('tailored-cv-summary-analyze')!.textContent?.trim()).toBe('Tailor')
+
+      within(experience(), 'tailored-cv-entry-actions')!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+      )
+      await flushPromises()
+      expect(
+        [...document.body.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent?.trim())
+      ).toEqual(['Remove from this CV'])
+    })
+
+    it('puts Edit, Tailor and Remove in the entry menu on phones', async () => {
+      const happyDOM = (window as unknown as { happyDOM: { setViewport: (v: object) => void } })
+        .happyDOM
+      happyDOM.setViewport({ width: 375, height: 800 })
+      try {
+        await mountPage()
+        const experience = () => el('tailored-cv-experience')!
+        await vi.waitFor(() => expect(within(experience(), 'tailored-cv-entry')).not.toBeNull())
+        expect(within(experience(), 'tailored-cv-entry-edit')).toBeNull()
+        expect(within(experience(), 'tailored-cv-entry-analyze')).toBeNull()
+
+        await chooseMenuItem(within(experience(), 'tailored-cv-entry-actions')!, 'Tailor with AI')
+        await vi.waitFor(() => expect(el('tailored-cv-ai-run')).not.toBeNull())
+        expect(
+          [...document.body.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent?.trim())
+        ).toEqual([])
+      } finally {
+        happyDOM.setViewport({ width: 1024, height: 768 })
+      }
+    })
+  })
+
+  it('splits the cards into two columns on wide screens, with the settings atop the side one', async () => {
+    const happyDOM = (window as unknown as { happyDOM: { setViewport: (v: object) => void } })
+      .happyDOM
+    const titles = (column: Element) =>
+      [...column.querySelectorAll('[data-testid^="tailored-cv-"]')]
+        .map((card) => card.getAttribute('data-testid'))
+        .filter((id) =>
+          [
+            'tailored-cv-settings',
+            'tailored-cv-contact',
+            'tailored-cv-summary',
+            'tailored-cv-experience',
+            'tailored-cv-skills',
+            'tailored-cv-education',
+            'tailored-cv-certifications',
+            'tailored-cv-projects',
+            'tailored-cv-languages'
+          ].includes(id!)
+        )
+    // The default width keeps one column, with the settings first.
+    await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-contact')).not.toBeNull())
+    expect(el('cv-editor-columns')).toBeNull()
+
+    happyDOM.setViewport({ width: 1920, height: 1080 })
+    try {
+      await vi.waitFor(() => expect(el('cv-editor-columns')).not.toBeNull())
+      expect(titles(el('cv-editor-main')!)).toEqual([
+        'tailored-cv-contact',
+        'tailored-cv-summary',
+        'tailored-cv-experience',
+        'tailored-cv-projects'
+      ])
+      expect(titles(el('cv-editor-aside')!)).toEqual([
+        'tailored-cv-settings',
+        'tailored-cv-skills',
+        'tailored-cv-education',
+        'tailored-cv-certifications',
+        'tailored-cv-languages'
+      ])
+      // The bar acts on both columns, so it sits below them.
+      expect(el('cv-editor-columns')!.contains(el('tailored-cv-save-bar'))).toBe(false)
+    } finally {
+      happyDOM.setViewport({ width: 1024, height: 768 })
+    }
+  })
+
+  it('copies the CV as text from the header menu and confirms with a toast', async () => {
+    const writeText = vi.fn(async () => {})
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    await mountPage()
+    await vi.waitFor(() => expect(el('tailored-cv-more')).not.toBeNull())
+    await chooseMenuItem(el('tailored-cv-more')!, 'Copy as text')
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    expect(writeText.mock.calls[0]![0]).toContain('Existing owner')
+    expect(useToast().toasts.value.at(-1)!.title).toBe('CV copied as text')
+    vi.unstubAllGlobals()
+  })
+
   describe('Generate PDF', () => {
     const generate = () => ops('GenerateCvDocument')
     const edit = () => editSummary('Edited summary')
@@ -995,6 +1551,9 @@ describe('Tailored CV page', () => {
       await mountPage()
       await vi.waitFor(() => expect(el('tailored-cv-generate')).not.toBeNull())
       expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(false)
+      expect(el('tailored-cv-generate')!.textContent?.trim()).toBe('Save and create PDF')
+      // Nothing to save yet on a new CV beyond the candidate itself: Save draft is still offered.
+      expect((el('tailored-cv-save') as HTMLButtonElement).disabled).toBe(false)
       const listingFetches = () => calls.filter((c) => c.query.includes('query ListingById')).length
       const before = listingFetches()
 
@@ -1005,25 +1564,59 @@ describe('Tailored CV page', () => {
       expect(el('cv-pdf-download')!.getAttribute('href')).toBe('/api/documents/70')
       await vi.waitFor(() => expect(listingFetches()).toBe(before + 1))
 
-      // The PDF now matches the draft: the next step is applying, not another PDF.
-      expect(el('tailored-cv-generate')).toBeNull()
-      expect(el('tailored-cv-preview-pdf')).not.toBeNull()
-      expect(el('tailored-cv-apply')).not.toBeNull()
+      // The PDF now matches the draft: the action opens it instead of making another.
+      await vi.waitFor(() =>
+        expect(el('tailored-cv-generate')!.textContent?.trim()).toBe('Open PDF')
+      )
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Saved · PDF is up to date')
+      expect((el('tailored-cv-save') as HTMLButtonElement).disabled).toBe(true)
       expect(el('tailored-cv-latest-pdf')!.textContent).toContain('cv.pdf')
+      // The bar has no apply action; applying starts from the PDF preview.
+      expect(el('tailored-cv-apply')).toBeNull()
     })
 
-    it('shows a current PDF after a reload, and offers Generate again once edited', async () => {
+    it('shows a current PDF after a reload, opens it without generating, and offers Save and create once edited', async () => {
       currentPdf()
       await mountPage()
-      await vi.waitFor(() => expect(el('tailored-cv-apply')).not.toBeNull())
-      expect(el('tailored-cv-generate')).toBeNull()
+      await vi.waitFor(() =>
+        expect(el('tailored-cv-generate')?.textContent?.trim()).toBe('Open PDF')
+      )
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Saved · PDF is up to date')
+      expect((el('tailored-cv-save') as HTMLButtonElement).disabled).toBe(true)
       expect(el('tailored-cv-latest-pdf')!.textContent).toContain('tailored.pdf')
-      expect(el('tailored-cv-latest-pdf')!.textContent).not.toContain('older than the draft')
+      expect(el('tailored-cv-latest-pdf')!.textContent).not.toContain('Older than the draft')
+
+      await click('tailored-cv-generate')
+      await vi.waitFor(() => expect(el('cv-pdf-download')).not.toBeNull())
+      expect(el('cv-pdf-download')!.getAttribute('href')).toBe('/api/documents/60')
+      expect(generate()).toHaveLength(0)
+      expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await vi.waitFor(() => expect(el('cv-pdf-download')).toBeNull())
 
       await edit()
-      expect(el('tailored-cv-apply')).toBeNull()
-      expect((el('tailored-cv-generate') as HTMLButtonElement).disabled).toBe(false)
-      expect(el('tailored-cv-latest-pdf')!.textContent).toContain('older than the draft')
+      expect(el('tailored-cv-generate')!.textContent?.trim()).toBe('Save and create PDF')
+      expect(el('tailored-cv-save-status')!.textContent).toBe('Unsaved changes')
+      expect((el('tailored-cv-save') as HTMLButtonElement).disabled).toBe(false)
+      expect(el('tailored-cv-latest-pdf')!.textContent).toContain('Older than the draft')
+    })
+
+    it('offers Create PDF when the latest PDF is older than the saved draft, without saving again', async () => {
+      savedDraft = savedSummary()
+      listing.documents = [
+        { id: 60, kind: 'CV', fileName: 'old.pdf', createdAt: '2026-10-12T09:00:00Z', sentAt: null }
+      ]
+      await mountPage()
+      await vi.waitFor(() =>
+        expect(el('tailored-cv-generate')?.textContent?.trim()).toBe('Create PDF')
+      )
+      expect(el('tailored-cv-save-status')!.textContent).toBe(
+        'Saved · PDF is older than this draft'
+      )
+      await click('tailored-cv-generate')
+      await vi.waitFor(() => expect(el('cv-pdf-download')).not.toBeNull())
+      expect(generate()).toHaveLength(1)
+      expect(ops('SaveTailoredCvDraft')).toHaveLength(0)
     })
 
     it('deletes an unsent PDF after confirmation and refreshes the listing', async () => {
@@ -1059,12 +1652,14 @@ describe('Tailored CV page', () => {
       expect(el('tailored-cv-delete-pdf')).toBeNull()
     })
 
-    it('applies with the PDF selected, from the bar or the preview', async () => {
+    it('applies with the PDF selected from the preview', async () => {
       currentPdf()
       await mountPage()
-      await vi.waitFor(() => expect(el('tailored-cv-preview-pdf')).not.toBeNull())
-      await click('tailored-cv-preview-pdf')
+      await vi.waitFor(() => expect(el('tailored-cv-latest-pdf-preview')).not.toBeNull())
+      expect(el('tailored-cv-apply')).toBeNull()
+      await click('tailored-cv-latest-pdf-preview')
       await vi.waitFor(() => expect(el('cv-pdf-apply')).not.toBeNull())
+      expect(el('cv-pdf-apply')!.textContent?.trim()).toBe('Mark as applied with this PDF')
       await click('cv-pdf-apply')
 
       await vi.waitFor(() => expect(el('confirm-modal-confirm')).not.toBeNull())
@@ -1077,9 +1672,8 @@ describe('Tailored CV page', () => {
       currentPdf()
       listing.status = 'APPLIED'
       await mountPage()
-      await vi.waitFor(() => expect(el('tailored-cv-preview-pdf')).not.toBeNull())
-      expect(el('tailored-cv-apply')).toBeNull()
-      await click('tailored-cv-preview-pdf')
+      await vi.waitFor(() => expect(el('tailored-cv-latest-pdf-preview')).not.toBeNull())
+      await click('tailored-cv-latest-pdf-preview')
       await vi.waitFor(() => expect(el('cv-pdf-download')).not.toBeNull())
       expect(el('cv-pdf-apply')).toBeNull()
     })
@@ -1094,7 +1688,9 @@ describe('Tailored CV page', () => {
       })
       await click('tailored-cv-generate')
       await vi.waitFor(() => expect(el('tailored-cv-generate-error')).not.toBeNull())
-      expect(el('tailored-cv-generate-error')!.textContent).toContain('Generate PDF saves it again')
+      expect(el('tailored-cv-generate-error')!.textContent).toContain(
+        'Creating the PDF saves it again'
+      )
       expect(el('tailored-cv-save-status')!.textContent).toBe('Not saved yet')
 
       generateReply = () => ({

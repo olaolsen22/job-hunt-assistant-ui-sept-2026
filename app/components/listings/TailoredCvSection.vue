@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { TailoredCvSectionKey } from '~/utils/tailoredCv'
+import type { CvSuggestionView } from '~/utils/tailoredCvDiff'
 
 // A card of the tailored CV editor: its own AI action and error, so one failed AI call
 // stays in its section, and its pending suggestions above the content. `editable` adds an Edit
 // button for the page's modal; `addItems` adds an Add menu for bringing removed profile items back.
-defineProps<{
+const props = defineProps<{
   title: string
   testid: string
   error?: string
@@ -15,13 +16,7 @@ defineProps<{
   analyzing?: boolean
   disabled?: boolean
   emptyMessage?: string
-  suggestions?: {
-    key: TailoredCvSectionKey
-    current: string
-    suggested: string
-    // An entry the AI reply left out: Accept removes it.
-    removal?: boolean
-  }[]
+  suggestions?: CvSuggestionView[]
   // Names what a suggestion replaces when the card holds more than one thing.
   suggestionLabel?: string
   addItems?: DropdownMenuItem[]
@@ -35,6 +30,8 @@ const emit = defineEmits<{
   accept: [key: TailoredCvSectionKey]
   dismiss: [key: TailoredCvSectionKey]
 }>()
+// A suggestion that replaces the content (the tailored CV page) stands in for it, so it never shows twice.
+const replaced = computed(() => props.suggestions?.some((s) => s.replaces && !s.removal))
 </script>
 
 <template>
@@ -75,7 +72,7 @@ const emit = defineEmits<{
           :aria-label="`Tailor with AI: ${title}`"
           :data-testid="`${testid}-analyze`"
           @click="emit('analyze')"
-          >Tailor with AI</UButton
+          >Tailor</UButton
         >
       </div>
     </template>
@@ -104,22 +101,24 @@ const emit = defineEmits<{
       <ListingsTailoredCvSuggestion
         v-for="s in suggestions"
         :key="s.key"
-        :label="suggestionLabel"
+        :label="s.label ?? suggestionLabel"
         :current="s.current"
         :suggested="s.suggested"
         :removal="s.removal"
+        :review="s.review"
+        :diff="s.diff"
         @accept="emit('accept', s.key)"
         @dismiss="emit('dismiss', s.key)"
       />
       <div
-        v-if="emptyMessage"
+        v-if="emptyMessage && !replaced"
         class="flex flex-col items-center gap-2 py-4 text-center text-sm text-muted"
         :data-testid="`${testid}-empty`"
       >
         <UIcon name="i-lucide-inbox" class="size-6" />
         {{ emptyMessage }}
       </div>
-      <slot />
+      <slot v-if="!replaced" />
     </div>
   </AppCard>
 </template>

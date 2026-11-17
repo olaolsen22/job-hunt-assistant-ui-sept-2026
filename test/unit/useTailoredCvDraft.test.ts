@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import { useTailoredCvDraft } from '~/composables/useTailoredCvDraft'
@@ -128,7 +128,7 @@ beforeEach(() => {
 })
 
 describe('useTailoredCvDraft', () => {
-  it('analyzes experience, education, projects, then skills and summary, filling a new candidate without saving', async () => {
+  it('analyzes experience, education, projects, then skills and summary, offering each result as a suggestion on a new CV', async () => {
     const profile = cvProfile()
     profile.educations = [
       {
@@ -144,6 +144,7 @@ describe('useTailoredCvDraft', () => {
     ]
     const state = await setup(profile)
     expect(state.init()).toBe(true)
+    const before = JSON.stringify(state.cv.value)
     await state.analyzeAll()
 
     expect(operations()).toEqual([
@@ -153,11 +154,85 @@ describe('useTailoredCvDraft', () => {
       'AnalyzeTailoredCvSection:SKILLS',
       'AnalyzeTailoredCvSection:SUMMARY'
     ])
+    // Even an untouched first CV keeps the profile content: every change waits for review.
+    expect(JSON.stringify(state.cv.value)).toBe(before)
+    expect(state.pristine.value).toBe(true)
+    expect(state.reviewing.value).toBe(true)
+    expect(state.suggestions.value.map((s) => s.key)).toEqual([
+      'experience:10',
+      'education:30',
+      'project:20',
+      'skills',
+      'summary'
+    ])
+    expect(state.suggestions.value.find((s) => s.key === 'summary')!.value).toBe('Tailored summary')
+
+    state.accept('summary')
+    state.accept('education:30')
     expect(state.cv.value!.summary).toBe('Tailored summary')
-    expect(state.cv.value!.experiences[0]!.bullets).toEqual([])
     expect(state.cv.value!.educations[0]).toMatchObject({ school: 'NTNU', bullets: [] })
+    expect(state.cv.value!.experiences[0]!.bullets).toHaveLength(1)
+    expect(state.pristine.value).toBe(false)
+  })
+
+  it('sends no save and no PDF request while suggestions are pending', async () => {
+    const state = await setup()
+    state.init()
+    await state.analyzeSection('summary')
+    expect(state.reviewing.value).toBe(true)
+    calls = []
+
+    expect(await state.save()).toBe(false)
+    expect(await state.generate()).toBe(false)
+    expect(operations()).toEqual([])
+
+    state.dismiss('summary')
+    expect(state.reviewing.value).toBe(false)
+    expect(await state.save()).toBe(true)
+    expect(operations()).toEqual(['SaveTailoredCvDraft:'])
+  })
+
+  it('drops a pending suggestion when its entry is removed from the CV', async () => {
+    const state = await setup()
+    state.init()
+    await state.analyzeSection('experience:10')
+    expect(state.suggestions.value.map((s) => s.key)).toEqual(['experience:10'])
+
+    state.cv.value!.experiences = state.cv.value!.experiences.filter((e) => e.sourceEntryId !== 10)
+    await nextTick()
     expect(state.suggestions.value).toEqual([])
-    expect(state.dirty.value).toBe(true)
+    expect(state.reviewing.value).toBe(false)
+  })
+
+  it('offers no suggestion when only an entry paragraph changes while the CV prints bullets', async () => {
+    savedDraft = {
+      id: 1,
+      updatedAt: '2026-10-12T10:00:00Z',
+      content: toTailoredCvInput(tailoredCvFromProfile(cvProfile()))
+    }
+    analyze = (input) => {
+      const reply = succeeded(input)
+      return {
+        ...reply,
+        result: {
+          ...reply.result,
+          selectedBulletIds: [100],
+          bullets: [{ text: 'Existing bullet', sourceBulletId: 100 }],
+          technologies: ['Vue'],
+          paragraph: 'A paragraph nobody sees'
+        }
+      }
+    }
+    const state = await setup()
+    state.init()
+    expect(state.cv.value!.contentStyle).toBe('BULLETS')
+    await state.analyzeSection('experience:10')
+    expect(state.suggestions.value).toEqual([])
+
+    // In paragraphs mode the same reply is a change to review.
+    state.cv.value!.contentStyle = 'PARAGRAPH'
+    await state.analyzeSection('experience:10')
+    expect(state.suggestions.value.map((s) => s.key)).toEqual(['experience:10'])
   })
 
   it('shows a failed section inline and still analyzes the rest', async () => {
@@ -174,7 +249,8 @@ describe('useTailoredCvDraft', () => {
 
     expect(state.sectionErrors.value.skills).toBe('Model timed out')
     expect(state.cv.value!.skills).toHaveLength(1)
-    expect(state.cv.value!.summary).toBe('Tailored summary')
+    expect(state.suggestions.value.map((s) => s.key)).not.toContain('skills')
+    expect(state.suggestions.value.find((s) => s.key === 'summary')!.value).toBe('Tailored summary')
   })
 
   it('skips entries removed from this CV, so they are neither analyzed nor offered back', async () => {
@@ -247,7 +323,7 @@ describe('useTailoredCvDraft', () => {
     expect(state.dirty.value).toBe(true)
   })
 
-  it("fills project technologies from analysis, and a null list keeps the entry's", async () => {
+  it("offers project technologies from analysis, and a null list keeps the entry's", async () => {
     analyze = (input) => {
       const reply = succeeded(input)
       if (input.section !== 'PROJECT') return reply
@@ -266,6 +342,8 @@ describe('useTailoredCvDraft', () => {
     expect(state.matchesProfile.value).toBe(true)
     expect(state.cv.value!.experiences[0]!.technologies).toEqual(['Vue'])
     await state.analyzeAll()
+    state.accept('project:20')
+    state.accept('experience:10')
 
     expect(state.cv.value!.projects[0]).toMatchObject({
       bullets: [{ text: 'Project bullet', sourceBulletId: 200 }],

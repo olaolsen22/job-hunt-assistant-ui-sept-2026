@@ -8,7 +8,8 @@ import { PHONE_FULLSCREEN_MODAL } from '~/constants/ui'
 // A browser without a built-in PDF viewer (phones, or one set to download PDFs) would still save a
 // framed PDF on its own, so it gets a notice instead of the frame. `applicable` offers Apply with
 // this CV (Saved listings). `url` is the PDF's same-origin path: a stored document or a rendered
-// CV template version.
+// CV template version. `fileName` is only the in-app label: saved files take the server's name from
+// Content-Disposition (it falls back to `fileName` when the header has none).
 const {
   url,
   fileName,
@@ -48,6 +49,25 @@ const revoke = () => {
   file.value = undefined
 }
 
+// The server's name for the file: RFC 5987 `filename*=UTF-8''…` first, then plain `filename=`.
+const serverName = (header: string | null) => {
+  if (!header) return
+  const encoded = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(header)?.[1]
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded.trim().replace(/^"|"$/g, ''))
+    } catch {
+      // A malformed escape: try the plain name instead.
+    }
+  }
+  return /filename\s*=\s*"?([^";]+)"?/.exec(header)?.[1]?.trim() || undefined
+}
+const fetchPdf = async () => {
+  const response = await $fetch.raw<Blob>(url, { responseType: 'blob' })
+  const name = serverName(response.headers.get('content-disposition')) ?? fileName
+  return new File([response._data!], name, { type: 'application/pdf' })
+}
+
 // Every open fetches the file again; a reply for an earlier open is dropped.
 let request = 0
 watch(
@@ -63,9 +83,9 @@ watch(
       setTimeout(() => (gaveUp.value = true), GIVE_UP_MS)
     ]
     try {
-      const data = await $fetch<Blob>(url, { responseType: 'blob' })
+      const pdf = await fetchPdf()
       if (current !== request || !open.value) return
-      file.value = new File([data], fileName, { type: 'application/pdf' })
+      file.value = pdf
       blobUrl.value = URL.createObjectURL(file.value)
     } catch {
       if (current !== request) return
@@ -88,11 +108,7 @@ const onLoad = () => {
 const notify = useAppToast()
 const save = async () => {
   try {
-    const pdf =
-      file.value ??
-      new File([await $fetch<Blob>(url, { responseType: 'blob' })], fileName, {
-        type: 'application/pdf'
-      })
+    const pdf = file.value ?? (await fetchPdf())
     await navigator.share({ files: [pdf] })
   } catch (error) {
     // Closing the share sheet without choosing anything.
@@ -160,7 +176,8 @@ const promoteOpen = computed(() => (slow.value || gaveUp.value) && !applicable)
         <!-- Phones: Download and Open PDF share a row, Record spans below it within thumb reach;
              the header's X replaces Close. -->
         <div class="grid grid-cols-2 gap-2 sm:flex">
-          <!-- external: a plain <a>, since NuxtLink would route to /api/... instead of downloading. -->
+          <!-- external: a plain <a>, since NuxtLink would route to /api/... instead of downloading.
+               A bare `download` lets the browser use the server's Content-Disposition name. -->
           <UButton
             v-if="shareToSave"
             icon="i-lucide-download"
@@ -175,7 +192,7 @@ const promoteOpen = computed(() => (slow.value || gaveUp.value) && !applicable)
             v-else
             :to="url"
             external
-            :download="fileName"
+            download
             icon="i-lucide-download"
             color="neutral"
             variant="outline"
@@ -204,7 +221,7 @@ const promoteOpen = computed(() => (slow.value || gaveUp.value) && !applicable)
             class="col-span-2 justify-center"
             data-testid="cv-pdf-apply"
             @click="emit('apply')"
-            >Record with this CV</UButton
+            >Mark as applied with this PDF</UButton
           >
         </div>
       </div>

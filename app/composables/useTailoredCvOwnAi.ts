@@ -1,7 +1,6 @@
 import type { Ref } from 'vue'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { Language } from '~/constants/listing'
-import type { TailoredCvSuggestion } from '~/composables/useTailoredCvDraft'
 import type { TailoredCv, TailoredCvSectionKey } from '~/utils/tailoredCv'
 
 const PROMPT = graphql(`
@@ -38,21 +37,17 @@ const PREVIEW = graphql(
 )
 
 // The tailored CV's "use your own AI": the prompt for the current template and language, and the
-// reply taken in as suggestions (or directly into a new candidate).
+// reply taken in as suggestions.
 export const useTailoredCvOwnAi = ({
   listingId,
   cv,
-  suggestions,
   writtenTemplate,
-  offer,
-  fillsDirectly
+  offer
 }: {
   listingId: number
   cv: Ref<TailoredCv | undefined>
-  suggestions: Ref<TailoredCvSuggestion[]>
   writtenTemplate: Ref<TailoredCv['template'] | undefined>
-  offer: (key: TailoredCvSectionKey, value: unknown, direct: boolean) => void
-  fillsDirectly: () => boolean
+  offer: (key: TailoredCvSectionKey, value: unknown, kind?: 'add' | 'order') => void
 }) => {
   // The template and language the shown prompt was written for; the pasted reply is previewed with
   // the same ones.
@@ -110,15 +105,11 @@ export const useTailoredCvOwnAi = ({
       if (scope) {
         const value = getCvSection(next, scope)
         if (value === undefined) return 'The reply has nothing for this section.'
-        offer(scope, value, fillsDirectly())
+        offer(scope, value)
       } else {
         writtenTemplate.value = promptTemplate.value ?? cv.value.template
-        if (fillsDirectly()) {
-          cv.value = next
-          suggestions.value = []
-        } else {
-          for (const { key, value } of changedCvSections(cv.value, next)) offer(key, value, false)
-        }
+        for (const { key, value, kind } of changedCvSections(cv.value, next, true))
+          offer(key, value, kind)
       }
       return null
     } catch (e) {

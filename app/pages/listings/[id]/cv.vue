@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { CvEditorAi, TailoredCvSectionKey } from '~/utils/tailoredCv'
+import type { CvSuggestionView } from '~/utils/tailoredCvDiff'
+import type { TailoredCvSuggestion } from '~/composables/useTailoredCvDraft'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import { LANGUAGE_OPTIONS, type Language } from '~/constants/listing'
 
@@ -8,6 +10,7 @@ definePageMeta({ title: 'Tailored CV' })
 
 const route = useRoute()
 const id = Number(route.params.id)
+useBackLink({ to: `/listings/${id}`, label: 'Listing' })
 
 // The listing and draft requests start together; only the listing is waited for.
 const listingQuery = useListing(id)
@@ -18,9 +21,20 @@ const {
   error: listingError,
   refresh: refreshListing
 } = await listingQuery
-const { cv, dirty, suggestions, sectionErrors, sectionDetails, analyzing, analyzingKey, progress } =
-  state
-const { copied, copy } = useCopyTailoredCv()
+const {
+  cv,
+  dirty,
+  suggestions,
+  reviewing,
+  sectionErrors,
+  sectionDetails,
+  analyzing,
+  analyzingKey,
+  progress
+} = state
+const { copy } = useCopyTailoredCv()
+
+useListingTitle(listing, 'Tailored CV')
 const { refresh: refreshUsage } = useLlmUsage(false)
 
 // Builds the candidate once it's ready: the saved draft, or the profile as is. AI only runs when the
@@ -96,20 +110,25 @@ const generatePdf = async () => {
   pdfOpen.value = true
   await refreshDocuments()
 }
-const generateLabel = computed(() =>
+// One PDF button whose label follows the state: it saves and creates, creates, or opens the
+// current one without making another.
+const pdfLabel = computed(() =>
   state.generatePhase.value === 'saving'
-    ? 'Saving and generating…'
+    ? 'Saving and creating…'
     : state.generating.value
-      ? 'Generating PDF…'
+      ? 'Creating PDF…'
       : dirty.value || !state.draft.value
-        ? 'Save and generate PDF'
-        : 'Generate PDF'
+        ? 'Save and create PDF'
+        : pdfCurrent.value
+          ? 'Open PDF'
+          : 'Create PDF'
 )
+const pdfAction = () => (pdfCurrent.value ? (pdfOpen.value = true) : generatePdf())
 
-// Describes the draft only; the PDF state is a suffix once it matches.
 const saveStatus = computed(() => {
   if (dirty.value) return state.pristine.value ? 'Not saved yet' : 'Unsaved changes'
-  return pdfCurrent.value ? 'Draft saved · PDF is up to date' : 'Draft saved'
+  if (!pdf.value) return 'Saved · no PDF yet'
+  return pdfCurrent.value ? 'Saved · PDF is up to date' : 'Saved · PDF is older than this draft'
 })
 
 const resetOpen = ref(false)
@@ -119,8 +138,11 @@ const {
   error: replaceError
 } = useResetTailoredCvDraft(id)
 // Both the reset and a language switch rebuild the editor from the profile, saving nothing.
+// Counts rebuilds, so an Undo of discarded AI changes never brings back ones written for the old CV.
+let rebuilds = 0
 const rebuild = async (success: { title: string; description?: string }, language?: Language) => {
   const error = await state.reset(language)
+  if (!error) rebuilds++
   resetOpen.value = languageOpen.value = false
   if (error) notify.error(error)
   else notify.success(success.title, { ...success, icon: 'i-lucide-rotate-ccw' })
@@ -137,8 +159,8 @@ const requestReset = () => {
   else resetOpen.value = true
 }
 
-// The select keeps showing the current language until the rebuild succeeds, so a cancelled or
-// failed switch has nothing to undo.
+// The settings panel keeps its pick until the rebuild succeeds, so a cancelled or failed switch has
+// nothing to undo.
 const languageOpen = ref(false)
 const pendingLanguage = ref<Language>('ENGLISH')
 const languageName = (value: Language) =>
@@ -158,8 +180,13 @@ const requestLanguage = (language: Language) => {
   if (nothingToLose()) switchLanguage()
   else languageOpen.value = true
 }
-// A menu keeps the header narrow on phones; the disabled item says why instead of a tooltip.
+// Occasional actions; the disabled reset item says why instead of a tooltip.
+const copyText = async () => {
+  if (cv.value && (await copy(cv.value)))
+    notify.success('CV copied as text', { icon: 'i-lucide-copy' })
+}
 const moreItems = computed<DropdownMenuItem[]>(() => [
+  { label: 'Copy as text', icon: 'i-lucide-copy', onSelect: copyText },
   {
     label: state.matchesProfile.value ? 'Matches your profile' : 'Reset to profile…',
     icon: 'i-lucide-rotate-ccw',
@@ -180,22 +207,28 @@ const onApplied = async () => {
   await navigateTo(`/listings/${id}`)
 }
 
-// Pending AI suggestions in page order.
 const pendingLabel = computed(() => {
   const n = suggestions.value.length
-  return `${n} ${n === 1 ? 'suggestion' : 'suggestions'}`
+  return `${n} AI ${n === 1 ? 'change' : 'changes'}`
 })
 const acceptAll = () => suggestions.value.map((s) => s.key).forEach(state.accept)
-const dismissAll = () => suggestions.value.map((s) => s.key).forEach(state.dismiss)
-// Next goes to the first suggestion below the middle of the screen, wrapping to the top, so it
-// keeps its place as suggestions are accepted or dismissed.
-const showNextSuggestion = () => {
-  const items = [
-    ...document.querySelectorAll<HTMLElement>('[data-testid="tailored-cv-suggestion"]')
-  ]
-  const middle = window.innerHeight / 2
-  const next = items.find((item) => item.getBoundingClientRect().top > middle) ?? items[0]
-  next?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+// A whole (possibly charged) AI run goes in one tap, so Undo brings it back.
+// Undo keeps whatever is pending by then (a run finished since wins for its keys) and does nothing
+// once the CV was rebuilt.
+const dismissAll = () => {
+  const before = [...suggestions.value]
+  const label = pendingLabel.value
+  const at = rebuilds
+  suggestions.value = []
+  notify.undoable(
+    `${label} discarded`,
+    () => {
+      if (at !== rebuilds) return
+      const now = suggestions.value
+      suggestions.value = [...before.filter((b) => !now.some((s) => s.key === b.key)), ...now]
+    },
+    { icon: 'i-lucide-undo-2' }
+  )
 }
 
 // One AI choice modal for the whole CV (no scope) or a section. While a possibly charged run
@@ -219,16 +252,59 @@ const runBuiltIn = async () => {
   if (state.safetyCode.value) aiOpen.value = true
 }
 
-// Entry keys hold the profile entry id, so an entry without one matches no suggestion.
-const suggestionsFor = (key: string) =>
-  suggestions.value
-    .filter((s) => s.key === key)
-    .map((s) => ({
-      ...s,
-      current: cvSectionText(s.key, cv.value && getCvSection(cv.value, s.key), entryStyle.value),
+// A suggestion stands in for its card's content (as a diff where one helps), except the headline,
+// which shares the Contact card, and whole lists, whose entries stay visible.
+const WHOLE_LISTS = new Set(['experiences', 'educations', 'certifications', 'projects'])
+const ENTRY_LIST_OF: Record<string, string> = {
+  experience: 'experiences',
+  education: 'educations',
+  project: 'projects'
+}
+// One pending suggestion as a card shows it. An added entry has no entry of its own yet, so it shows
+// as a diff of new bullets on its list's card, like a new order (just the names, numbered).
+const view = (s: TailoredCvSuggestion): CvSuggestionView => {
+  const current = cv.value && getCvSection(cv.value, s.key)
+  const base = { key: s.key, removal: s.value == null, review: true }
+  if (s.kind === 'order') {
+    const entries = (current ?? []) as { sourceEntryId?: number | null }[]
+    const names = (list: unknown[]) => list.map((e, i) => `${i + 1}. ${cvEntryName(e)}`).join('\n')
+    const byId = (id: number) => entries.find((e) => e.sourceEntryId === id)
+    return {
+      ...base,
+      label: 'New order',
+      current: names(entries),
+      // An added entry not accepted yet isn't in the list, so the order skips it.
+      suggested: names((s.value as number[]).map(byId).filter(Boolean)),
+      replaces: false
+    }
+  }
+  if (s.kind === 'add') {
+    const empty = { ...(s.value as object), bullets: [], technologies: [], paragraph: null }
+    return {
+      ...base,
+      label: `New entry: ${cvEntryName(s.value)}`,
+      current: '',
       suggested: cvSectionText(s.key, s.value, entryStyle.value),
-      removal: s.value == null
-    }))
+      replaces: false,
+      diff: suggestionDiff(s.key, empty, s.value, entryStyle.value)
+    }
+  }
+  return {
+    ...base,
+    current: cvSectionText(s.key, current, entryStyle.value),
+    suggested: cvSectionText(s.key, s.value, entryStyle.value),
+    replaces: s.key !== 'headline' && !WHOLE_LISTS.has(s.key),
+    diff: suggestionDiff(s.key, current, s.value, entryStyle.value)
+  }
+}
+// Entry keys hold the profile entry id, so an entry without one matches no suggestion. A list's card
+// also takes its added entries.
+const suggestionsFor = (key: string): CvSuggestionView[] =>
+  suggestions.value
+    .filter(
+      (s) => s.key === key || (s.kind === 'add' && ENTRY_LIST_OF[s.key.split(':')[0]!] === key)
+    )
+    .map(view)
 // What the shared editor's cards and entries get from this page: suggestions and AI runs.
 const review = (key: TailoredCvSectionKey) => ({
   suggestions: suggestionsFor(key),
@@ -254,26 +330,25 @@ const templateChanged = computed(
     !!cv.value && !!state.writtenTemplate.value && cv.value.template !== state.writtenTemplate.value
 )
 
-// Leaving with unsaved work asks first. Analysis counts too: between its section requests no AI
-// call is in flight for the layout's guard to see.
-const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzing.value)
+// Leaving with unsaved work or unreviewed AI changes asks first. Analysis counts too: between its
+// section requests no AI call is in flight for the layout's guard to see.
+const { open: leaveOpen, leave } = useLeaveConfirm(
+  () => dirty.value || analyzing.value || reviewing.value
+)
+const leaveDescription = computed(() =>
+  reviewing.value
+    ? `${pendingLabel.value} not yet reviewed${dirty.value ? ' and your unsaved changes' : ''} will be discarded.`
+    : 'Your tailored CV has unsaved changes. They will be lost.'
+)
 </script>
-
 <template>
   <div>
     <div class="flex justify-center" :inert="analyzing" :aria-busy="analyzing">
-      <!-- Bottom padding keeps the last card clear of the sticky save bar. -->
-      <div class="w-full max-w-3xl space-y-4 pb-4 sm:space-y-6">
+      <!-- Bottom padding keeps the last card clear of the sticky bar. -->
+      <!-- Two columns from 2xl (see CvContentEditor's `columns`), so the cap lifts there. -->
+      <div class="w-full max-w-3xl space-y-4 pb-4 sm:space-y-6 2xl:max-w-none">
         <div class="space-y-2">
-          <UButton
-            :to="`/listings/${id}`"
-            icon="i-lucide-arrow-left"
-            variant="ghost"
-            color="neutral"
-            class="self-start"
-            >Back to listing</UButton
-          >
-          <div class="flex items-start justify-between gap-3">
+          <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0">
               <h1 class="text-xl font-semibold text-highlighted">Tailored CV</h1>
               <p
@@ -283,34 +358,31 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
               >
                 {{ listing.title }} · {{ listing.company.name }}
               </p>
-              <div v-if="cv" class="mt-2 flex flex-col gap-x-3 gap-y-1 sm:flex-row sm:items-center">
-                <UFormField
-                  label="CV language"
-                  orientation="horizontal"
-                  class="gap-2"
-                  data-testid="tailored-cv-language-field"
-                >
-                  <USelect
-                    :model-value="cv.language"
-                    :items="[...LANGUAGE_OPTIONS]"
-                    :disabled="busy || state.resetting.value"
-                    class="w-40"
-                    @update:model-value="requestLanguage($event as Language)"
-                  />
-                </UFormField>
-                <p class="text-xs text-muted">Section headings in the PDF stay in English.</p>
-              </div>
             </div>
-            <UDropdownMenu v-if="cv" :items="moreItems" :content="{ align: 'end' }">
+            <div v-if="cv" class="flex w-full items-center gap-2 sm:w-auto">
+              <!-- Quiet while changes wait, so the review stays the next step. -->
               <UButton
-                icon="i-lucide-ellipsis-vertical"
-                color="neutral"
-                variant="ghost"
-                :loading="state.resetting.value"
-                aria-label="More CV actions"
-                data-testid="tailored-cv-more"
-              />
-            </UDropdownMenu>
+                icon="i-lucide-sparkles"
+                :color="reviewing ? 'neutral' : 'primary'"
+                :variant="reviewing ? 'outline' : 'solid'"
+                class="flex-1 justify-center sm:flex-none"
+                :loading="analyzing"
+                :disabled="busy"
+                data-testid="tailored-cv-optimize"
+                @click="openAi()"
+                >Tailor CV with AI</UButton
+              >
+              <UDropdownMenu :items="moreItems" :content="{ align: 'end' }">
+                <UButton
+                  icon="i-lucide-ellipsis-vertical"
+                  color="neutral"
+                  variant="ghost"
+                  :loading="state.resetting.value"
+                  aria-label="More CV actions"
+                  data-testid="tailored-cv-more"
+                />
+              </UDropdownMenu>
+            </div>
           </div>
         </div>
 
@@ -352,97 +424,60 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
         </UAlert>
 
         <div v-else-if="!cv" class="space-y-4" data-testid="tailored-cv-loading">
-          <USkeleton class="h-28 w-full" />
+          <USkeleton class="h-16 w-full" />
           <USkeleton class="h-40 w-full" />
           <USkeleton class="h-64 w-full" />
         </div>
 
         <template v-else>
-          <AppCard>
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p class="text-sm text-muted">
-                Prefilled from your profile. Tailor the whole CV to this listing with AI, or one
-                section or entry at a time. Edits here change this CV only, not your profile.
-              </p>
-              <UButton
-                icon="i-lucide-sparkles"
-                class="shrink-0 justify-center"
-                :loading="analyzing"
-                :disabled="busy"
-                data-testid="tailored-cv-optimize"
-                @click="openAi()"
-                >Tailor CV with AI</UButton
-              >
-            </div>
-            <UAlert
-              v-if="templateChanged && !analyzing"
-              color="warning"
-              variant="subtle"
-              icon="i-lucide-sparkles"
-              title="CV style changed. Tailor the CV again to rewrite entries in this style."
-              :actions="[
-                {
-                  label: 'Tailor CV with AI',
-                  color: 'neutral',
-                  variant: 'outline',
-                  onClick: () => openAi()
-                }
-              ]"
-              class="mt-3"
-              data-testid="tailored-cv-template-changed"
-            />
-            <div class="mt-3 grid gap-3 border-t border-default pt-3 md:grid-cols-2">
-              <CvStyleFields v-model:cv="cv" :disabled="analyzing" />
-            </div>
-          </AppCard>
-
           <!-- A native disabled fieldset turns off every field and button inside while whole-CV
              analysis runs, so edits can't race it while the page stays readable. -->
           <fieldset :disabled="analyzing" class="min-w-0 space-y-4 sm:space-y-6">
-            <UAlert
-              v-if="suggestions.length"
-              color="primary"
-              variant="subtle"
-              icon="i-lucide-sparkles"
-              :title="`${pendingLabel} to review`"
-              :actions="[
-                { label: 'Accept all', color: 'neutral', variant: 'outline', onClick: acceptAll },
-                { label: 'Dismiss all', color: 'neutral', variant: 'ghost', onClick: dismissAll },
-                {
-                  label: 'Next',
-                  icon: 'i-lucide-arrow-down',
-                  color: 'neutral',
-                  variant: 'ghost',
-                  onClick: showNextSuggestion
-                }
-              ]"
-              data-testid="tailored-cv-suggestions"
-            />
-
             <CvContentEditor
               v-model:cv="cv"
               :source="state.source.value"
               :disabled="busy"
               :ai="editorAi"
-            />
-
-            <AppCard title="PDF" data-testid="tailored-cv-pdf">
-              <CvPdfLayoutField
-                v-model:cv="cv"
-                :disabled="analyzing"
-                help="Only changes the PDF, not the text you edit."
-              />
-              <CvPdfLatestRow
-                v-if="pdf"
-                :pdf="pdf"
-                :current="pdfCurrent"
-                older-than="draft"
-                testid-prefix="tailored-cv"
-                class="mt-3 border-t border-default pt-3"
-                @preview="pdfOpen = true"
-                @delete="askDeletePdf(pdf)"
-              />
-            </AppCard>
+              skills-modal
+              columns
+            >
+              <template #aside-start>
+                <ListingsTailoredCvSettings
+                  v-model:cv="cv"
+                  :disabled="busy"
+                  :resetting="state.resetting.value"
+                  @rebuild="requestLanguage"
+                >
+                  <UAlert
+                    v-if="templateChanged && !analyzing"
+                    color="warning"
+                    variant="subtle"
+                    icon="i-lucide-sparkles"
+                    title="CV style changed. Tailor the CV again to rewrite entries in this style."
+                    :actions="[
+                      {
+                        label: 'Tailor CV with AI',
+                        color: 'neutral',
+                        variant: 'outline',
+                        onClick: () => openAi()
+                      }
+                    ]"
+                    class="mt-3"
+                    data-testid="tailored-cv-template-changed"
+                  />
+                  <CvPdfLatestRow
+                    v-if="pdf"
+                    :pdf="pdf"
+                    :current="pdfCurrent"
+                    older-than="draft"
+                    testid-prefix="tailored-cv"
+                    class="mt-3 border-t border-default pt-3"
+                    @preview="pdfOpen = true"
+                    @delete="askDeletePdf(pdf)"
+                  />
+                </ListingsTailoredCvSettings>
+              </template>
+            </CvContentEditor>
 
             <div v-if="refreshFailed || state.generateError.value" class="space-y-2">
               <UAlert
@@ -464,7 +499,7 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
                 color="error"
                 :description="
                   state.generateError.value.kind === 'draft'
-                    ? 'The saved draft was missing. Generate PDF saves it again.'
+                    ? 'The saved draft was missing. Creating the PDF saves it again.'
                     : state.generateError.value.kind === 'listing'
                       ? 'This listing is no longer available.'
                       : state.generateError.value.message
@@ -492,77 +527,42 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
               </UAlert>
             </div>
 
-            <!-- Generate saves first; once the PDF matches the draft, the next step is applying with it. -->
+            <!-- While AI changes wait, the bar steps through them and saving waits. -->
+            <ListingsTailoredCvReviewBar
+              v-if="reviewing"
+              :count="suggestions.length"
+              @accept-all="acceptAll"
+              @discard-all="dismissAll"
+            />
+            <!-- The same two buttons in every state; only their labels and enabled state change. -->
             <AppSaveBar
+              v-else
               :status="saveStatus"
               status-testid="tailored-cv-save-status"
               :changed="dirty"
               :warn="dirty && !state.pristine.value"
               data-testid="tailored-cv-save-bar"
             >
-              <!-- Also a way back to the suggestions from wherever the owner has scrolled. -->
-              <template v-if="suggestions.length" #status>
-                <UButton
-                  icon="i-lucide-sparkles"
-                  variant="subtle"
-                  size="xs"
-                  data-testid="tailored-cv-pending"
-                  @click="showNextSuggestion"
-                  >{{ pendingLabel }} to review</UButton
-                >
-              </template>
               <UButton
-                :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+                icon="i-lucide-save"
                 color="neutral"
-                variant="subtle"
-                class="w-full justify-center sm:order-first sm:w-auto"
-                :class="!dirty && !(pdfCurrent && pdf) ? 'col-span-2 sm:col-auto' : ''"
-                data-testid="tailored-cv-copy"
-                @click="copy(cv)"
-                >{{ copied ? 'Copied' : 'Copy as text' }}</UButton
+                variant="outline"
+                :loading="state.saving.value && !state.generating.value"
+                :disabled="!dirty || busy || state.generating.value"
+                class="w-full justify-center sm:w-auto"
+                data-testid="tailored-cv-save"
+                @click="state.save()"
+                >Save draft</UButton
               >
-              <template v-if="pdfCurrent && pdf">
-                <UButton
-                  icon="i-lucide-eye"
-                  :color="canApply ? 'neutral' : 'primary'"
-                  :variant="canApply ? 'subtle' : 'solid'"
-                  class="w-full justify-center sm:w-auto"
-                  data-testid="tailored-cv-preview-pdf"
-                  @click="pdfOpen = true"
-                  >Preview PDF</UButton
-                >
-                <UButton
-                  v-if="canApply"
-                  icon="i-lucide-check"
-                  class="col-span-2 w-full justify-center sm:col-auto sm:w-auto"
-                  data-testid="tailored-cv-apply"
-                  @click="openApply"
-                  >Record with this CV</UButton
-                >
-              </template>
-              <template v-else>
-                <UButton
-                  v-if="dirty"
-                  icon="i-lucide-save"
-                  color="neutral"
-                  variant="subtle"
-                  :loading="state.saving.value && !state.generating.value"
-                  :disabled="busy || state.generating.value"
-                  class="w-full justify-center sm:w-auto"
-                  data-testid="tailored-cv-save"
-                  @click="state.save()"
-                  >Save draft</UButton
-                >
-                <UButton
-                  icon="i-lucide-file-down"
-                  :loading="state.generating.value"
-                  :disabled="busy || state.saving.value"
-                  class="col-span-2 w-full justify-center sm:col-auto sm:w-auto"
-                  data-testid="tailored-cv-generate"
-                  @click="generatePdf"
-                  >{{ generateLabel }}</UButton
-                >
-              </template>
+              <UButton
+                :icon="pdfCurrent ? 'i-lucide-eye' : 'i-lucide-file-down'"
+                :loading="state.generating.value"
+                :disabled="busy || (state.saving.value && !state.generating.value)"
+                class="w-full justify-center sm:w-auto"
+                data-testid="tailored-cv-generate"
+                @click="pdfAction"
+                >{{ pdfLabel }}</UButton
+              >
             </AppSaveBar>
           </fieldset>
         </template>
@@ -603,9 +603,9 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
 
       <AppConfirmModal
         v-model:open="languageOpen"
-        :title="`Regenerate in ${languageName(pendingLanguage)}?`"
+        :title="`Rebuild in ${languageName(pendingLanguage)}?`"
         :description="`Your edits${suggestions.length ? ` and ${pendingLabel} not yet reviewed` : ''} are replaced with your profile in ${languageName(pendingLanguage)}. The saved draft and PDFs stay as they are until you save.`"
-        confirm-label="Regenerate"
+        :confirm-label="`Rebuild in ${languageName(pendingLanguage)}`"
         :loading="state.resetting.value"
         @confirm="switchLanguage"
       />
@@ -613,7 +613,7 @@ const { open: leaveOpen, leave } = useLeaveConfirm(() => dirty.value || analyzin
       <AppConfirmModal
         v-model:open="leaveOpen"
         title="Leave without saving?"
-        description="Your tailored CV has unsaved changes. They will be lost."
+        :description="leaveDescription"
         confirm-label="Leave"
         @confirm="leave"
       />

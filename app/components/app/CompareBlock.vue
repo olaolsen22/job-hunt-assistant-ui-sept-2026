@@ -10,19 +10,23 @@ withDefaults(
     currentLabel?: string
     suggestedLabel?: string
     compare?: boolean
+    // Side by side by the nearest `@container`'s width instead of the viewport's, for blocks that
+    // may sit in a narrow column (the tailored CV's side column).
+    contained?: boolean
   }>(),
   {
     current: null,
     suggested: null,
     currentLabel: 'Current',
     suggestedLabel: 'Suggested',
-    compare: true
+    compare: true,
+    contained: false
   }
 )
 </script>
 
 <template>
-  <div v-if="compare" class="grid gap-3 sm:grid-cols-2">
+  <div v-if="compare" class="grid gap-3" :class="contained ? '@lg:grid-cols-2' : 'sm:grid-cols-2'">
     <div class="min-w-0 space-y-1">
       <p class="text-xs text-muted">{{ currentLabel }}</p>
       <p

@@ -117,7 +117,7 @@ const openApply = () => {
             class="w-full justify-center sm:w-auto"
             data-testid="tailored-cv-card-apply"
             @click="applyOpen = true"
-            >Record with this CV</UButton
+            >Mark as applied with this PDF</UButton
           >
           <UButton
             icon="i-lucide-eye"

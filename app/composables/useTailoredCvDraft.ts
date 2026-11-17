@@ -164,6 +164,8 @@ interface AnalysisStep {
 export interface TailoredCvSuggestion {
   key: TailoredCvSectionKey
   value: unknown
+  // An own-AI reply's entry the CV doesn't have, or its new entry order (see changedCvSections).
+  kind?: 'add' | 'order'
 }
 
 const snapshot = (cv: TailoredCv) => JSON.stringify(cv)
@@ -203,10 +205,6 @@ export const useTailoredCvDraft = (listingId: number) => {
   const writtenTemplate = ref<TailoredCv['template']>()
 
   const dirty = computed(() => !!cv.value && snapshot(cv.value) !== saved.value)
-  // First creation (nothing saved, nothing edited): AI output fills the candidate directly.
-  // Otherwise it waits as a suggestion, so the owner's work is never replaced silently.
-  const fillsDirectly = () => !draft.value && !!cv.value && snapshot(cv.value) === seed.value
-
   // No draft and no edits yet: the candidate is just the profile, so "unsaved" would blame the owner.
   const pristine = computed(() => !draft.value && !!cv.value && snapshot(cv.value) === seed.value)
   // Reset keeps the owner's layout choices, so they don't count as a difference.
@@ -255,17 +253,56 @@ export const useTailoredCvDraft = (listingId: number) => {
     }
   }
 
-  const offer = (key: TailoredCvSectionKey, value: unknown, direct: boolean) => {
+  // AI output always waits as a suggestion, even on a new CV, so nothing changes unseen.
+  // A change only in what the CV doesn't show (an entry's paragraph while it prints bullets) isn't
+  // offered: there would be nothing to review.
+  const shown = (key: TailoredCvSectionKey, value: unknown) =>
+    JSON.stringify(
+      key.includes(':') && value
+        ? cv.value?.contentStyle === 'PARAGRAPH'
+          ? { ...(value as object), bullets: null }
+          : { ...(value as object), paragraph: null }
+        : value
+    )
+  const offer = (
+    key: TailoredCvSectionKey,
+    value: unknown,
+    kind?: TailoredCvSuggestion['kind']
+  ) => {
     if (!cv.value) return
     suggestions.value = suggestions.value.filter((s) => s.key !== key)
-    if (direct) setCvSection(cv.value, key, value)
-    else if (JSON.stringify(getCvSection(cv.value, key)) !== JSON.stringify(value))
-      suggestions.value.push({ key, value })
+    if (kind === 'order' || shown(key, getCvSection(cv.value, key)) !== shown(key, value))
+      suggestions.value.push({ key, value, ...(kind && { kind }) })
   }
+  // Saving waits until every suggestion is accepted or kept, so a draft never holds half a review.
+  const reviewing = computed(() => suggestions.value.length > 0)
+  // An entry removed from the CV (its menu, or Undo of an add) takes its pending suggestion with it,
+  // or the review could never finish and Accept would bring the entry back.
+  watch(
+    () =>
+      cv.value &&
+      [cv.value.experiences, cv.value.educations, cv.value.projects]
+        .map((list) => list.map((e) => e.sourceEntryId).join())
+        .join('|'),
+    () => {
+      const current = cv.value
+      if (!current) return
+      // An added entry isn't in the CV until it's accepted.
+      const kept = suggestions.value.filter(
+        (s) =>
+          s.kind === 'add' || !s.key.includes(':') || getCvSection(current, s.key) !== undefined
+      )
+      if (kept.length !== suggestions.value.length) suggestions.value = kept
+    }
+  )
 
   const accept = (key: TailoredCvSectionKey) => {
     const suggestion = suggestions.value.find((s) => s.key === key)
-    if (suggestion && cv.value) setCvSection(cv.value, key, suggestion.value)
+    if (suggestion && cv.value) {
+      if (suggestion.kind === 'order')
+        orderCvEntries(cv.value, key as CvAnalyzedList, suggestion.value as number[])
+      else setCvSection(cv.value, key, suggestion.value)
+    }
     dismiss(key)
   }
 
@@ -310,10 +347,7 @@ export const useTailoredCvDraft = (listingId: number) => {
   // A failed or skipped section keeps its content and shows why; the caller moves on to the next
   // one. 'stop' means every later section would fail the same way, so the caller stops: the
   // saved model is gone (the list is already refetched) or the API's AI safeguards refused.
-  const runStep = async (
-    step: AnalysisStep,
-    direct: boolean
-  ): Promise<'ok' | 'failed' | 'stop'> => {
+  const runStep = async (step: AnalysisStep): Promise<'ok' | 'failed' | 'stop'> => {
     sectionErrors.value = { ...sectionErrors.value, [step.key]: undefined }
     sectionDetails.value = { ...sectionDetails.value, [step.key]: undefined }
     try {
@@ -349,9 +383,9 @@ export const useTailoredCvDraft = (listingId: number) => {
           : message
         return 'failed'
       }
-      offer(value.key, value.value, direct)
+      offer(value.key, value.value)
       // The summary step may suggest a headline too; null keeps the current one.
-      if (result?.headline) offer('headline', result.headline, direct)
+      if (result?.headline) offer('headline', result.headline)
       return 'ok'
     } catch (e) {
       sectionErrors.value[step.key] = ERROR_MESSAGES.generic
@@ -363,7 +397,6 @@ export const useTailoredCvDraft = (listingId: number) => {
   // The same sequence analyzeAllTailoredCv runs, but one request per section, so progress is real
   // and each result lands as soon as it's back.
   const analyzeAll = async () => {
-    const direct = fillsDirectly()
     const all = steps()
     const template = cv.value?.template
     let wrote = false
@@ -371,7 +404,7 @@ export const useTailoredCvDraft = (listingId: number) => {
     try {
       for (const [i, step] of all.entries()) {
         progress.value = { label: step.label, step: i + 1, total: all.length }
-        const outcome = await runStep(step, direct)
+        const outcome = await runStep(step)
         wrote ||= outcome === 'ok'
         if (outcome === 'stop') break
       }
@@ -391,7 +424,7 @@ export const useTailoredCvDraft = (listingId: number) => {
     if (!step) return
     analyzingKey.value = key
     try {
-      await runStep(step, fillsDirectly())
+      await runStep(step)
     } finally {
       analyzingKey.value = undefined
     }
@@ -400,7 +433,7 @@ export const useTailoredCvDraft = (listingId: number) => {
   const { success: toastSuccess } = useAppToast()
   const { run, loading: saving } = useMutation()
   const save = async () => {
-    if (!cv.value) return false
+    if (!cv.value || reviewing.value) return false
     const content = toTailoredCvInput(cv.value)
     let result: TailoredCvDraft | null = null
     const ok = await run(async () => {
@@ -420,12 +453,10 @@ export const useTailoredCvDraft = (listingId: number) => {
   const ownAi = useTailoredCvOwnAi({
     listingId,
     cv,
-    suggestions,
     writtenTemplate,
-    offer,
-    fillsDirectly
+    offer
   })
-  const pdf = useTailoredCvPdf({ listingId, cv, draft, saved, dirty, save })
+  const pdf = useTailoredCvPdf({ listingId, cv, draft, saved, dirty, reviewing, save })
 
   return {
     query,
@@ -444,6 +475,7 @@ export const useTailoredCvDraft = (listingId: number) => {
     sectionDetails,
     accept,
     dismiss,
+    reviewing,
     analyzing,
     analyzingKey,
     progress,

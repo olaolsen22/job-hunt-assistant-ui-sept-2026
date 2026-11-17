@@ -15,14 +15,20 @@ defineEmits<{ preview: []; delete: [] }>()
     class="flex flex-wrap items-center justify-between gap-2"
     :data-testid="`${testidPrefix}-latest-pdf`"
   >
-    <p class="flex min-w-0 items-center gap-2 text-sm">
-      <UIcon name="i-lucide-file-text" class="size-4 shrink-0 text-muted" />
-      <span class="truncate">{{ pdf.fileName }}</span>
-      <span class="shrink-0 text-muted"
-        >{{ formatDateTime(pdf.createdAt)
-        }}{{ current ? '' : ` · older than the ${olderThan}` }}</span
-      >
-    </p>
+    <!-- Name and date on their own lines, so a narrow column (phones, the 2xl aside) keeps the
+         name readable; whether the PDF is current is a badge, since it decides the next step. -->
+    <div class="min-w-0 flex-1 text-sm">
+      <p class="flex min-w-0 items-center gap-2">
+        <UIcon name="i-lucide-file-text" class="size-4 shrink-0 text-muted" />
+        <span class="truncate" :title="pdf.fileName">{{ pdf.fileName }}</span>
+      </p>
+      <p class="flex flex-wrap items-center gap-2 pl-6 text-xs text-muted">
+        {{ formatDateTime(pdf.createdAt) }}
+        <UBadge v-if="!current" color="warning" variant="subtle" size="sm"
+          >Older than the {{ olderThan }}</UBadge
+        >
+      </p>
+    </div>
     <div class="flex items-center gap-1">
       <UButton
         icon="i-lucide-eye"

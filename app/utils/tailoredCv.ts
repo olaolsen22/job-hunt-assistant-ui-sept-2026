@@ -268,6 +268,29 @@ export const addFromProfile = <K extends CvProfileList>(
   items.splice(at === -1 ? items.length : at, 0, added)
 }
 
+// The same link written with or without protocol, `www.` or a trailing slash counts as present.
+const linkKey = (url: string) =>
+  url
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '')
+
+// The profile's links and languages this CV (or a modal's draft of them) doesn't have, as copies.
+export const missingLinks = (links: TailoredCv['links'], source: TailoredCv) => {
+  const present = new Set(links.map((l) => linkKey(l.url)))
+  return source.links
+    .filter((l) => l.url.trim() && !present.has(linkKey(l.url)))
+    .map((l) => ({ ...l }))
+}
+export const missingLanguages = (languages: TailoredCv['languages'], source: TailoredCv) => {
+  const present = new Set(languages.map((l) => l.name.trim().toLowerCase()))
+  return source.languages
+    .filter((l) => l.name.trim() && !present.has(l.name.trim().toLowerCase()))
+    .map((l) => ({ ...l }))
+}
+
 const ANALYZED_ENTRIES = {
   EXPERIENCE: 'experience',
   EDUCATION: 'education',
@@ -343,32 +366,70 @@ export const mergeExternalCandidate = (cv: TailoredCv, external: TailoredCv): Ta
 
 // An entry list's changes one entry at a time, so each experience (company) is reviewed on its own
 // card: a changed entry suggests its new value, a left-out one suggests null (remove it). Null when
-// the reply added entries or changed their order, which can't be paired, so the list goes as one.
+// entries can't be paired (no profile id), so the list goes as one. Without `split`, also null when
+// the reply added entries or changed their order (the CV template editor reviews those as one list);
+// with it (the tailored CV), an added entry is its own suggestion and a new order is one more, holding
+// only the ids, so neither swallows the per-entry changes.
 const ENTRY_PREFIXES = {
   experiences: 'experience',
   educations: 'education',
   projects: 'project'
 } as const
-type EntryList = keyof typeof ENTRY_PREFIXES
-const entryChanges = (list: EntryList, cv: TailoredCv, next: TailoredCv) => {
+export type CvAnalyzedList = keyof typeof ENTRY_PREFIXES
+export type CvSectionChange = {
+  key: TailoredCvSectionKey
+  value: unknown
+  // 'add': an entry the CV doesn't have; 'order': `value` is the list's entry ids in the new order.
+  kind?: 'add' | 'order'
+}
+const entryChanges = (
+  list: CvAnalyzedList,
+  cv: TailoredCv,
+  next: TailoredCv,
+  split: boolean
+): CvSectionChange[] | null => {
   const before = cv[list] as { sourceEntryId?: number | null }[]
   const after = next[list] as { sourceEntryId?: number | null }[]
   const ids = before.map((e) => e.sourceEntryId)
   const nextIds = after.map((e) => e.sourceEntryId)
   if ([...ids, ...nextIds].some((id) => id == null)) return null
-  if (nextIds.some((id) => !ids.includes(id))) return null
-  if (ids.filter((id) => nextIds.includes(id)).some((id, i) => id !== nextIds[i])) return null
-  return before.flatMap((entry) => {
+  const added = after.filter((e) => !ids.includes(e.sourceEntryId))
+  const shared = nextIds.filter((id) => ids.includes(id))
+  const reordered = ids.filter((id) => nextIds.includes(id)).some((id, i) => id !== shared[i])
+  if (!split && (added.length || reordered)) return null
+  const keyOf = (id: number): TailoredCvSectionKey => `${ENTRY_PREFIXES[list]}:${id}`
+  const changes: CvSectionChange[] = before.flatMap((entry) => {
     const value = after.find((e) => e.sourceEntryId === entry.sourceEntryId) ?? null
     if (JSON.stringify(value) === JSON.stringify(entry)) return []
-    const key: TailoredCvSectionKey = `${ENTRY_PREFIXES[list]}:${entry.sourceEntryId!}`
-    return [{ key, value: value as unknown }]
+    return [{ key: keyOf(entry.sourceEntryId!), value: value as unknown }]
   })
+  for (const entry of added)
+    changes.push({ key: keyOf(entry.sourceEntryId!), value: entry, kind: 'add' })
+  // Only a change in where the shared entries sit; the ids include added ones, so accepting the
+  // order after an add puts it where the reply has it.
+  if (reordered) changes.push({ key: list, value: nextIds, kind: 'order' })
+  return changes
+}
+
+// Puts a list's entries in the order of `ids`; entries not named keep their order, after them.
+export const orderCvEntries = (cv: TailoredCv, list: CvAnalyzedList, ids: readonly number[]) => {
+  const rank = (e: { sourceEntryId?: number | null }) => {
+    const i = ids.indexOf(e.sourceEntryId ?? -1)
+    return i === -1 ? ids.length : i
+  }
+  ;(cv[list] as { sourceEntryId?: number | null }[]).sort((a, b) => rank(a) - rank(b))
+}
+
+// The name an entry goes by in review labels and order lists.
+export const cvEntryName = (entry: unknown) => {
+  const e = entry as { title?: string; employer?: string; school?: string; name?: string }
+  if ('employer' in e) return [e.title, e.employer].filter(Boolean).join(' at ')
+  return e.school ?? e.name ?? ''
 }
 
 // Where the external reply differs from the candidate, for review as suggestions: entry lists per
 // entry when they can be paired, everything else per whole section.
-export const changedCvSections = (cv: TailoredCv, next: TailoredCv) =>
+export const changedCvSections = (cv: TailoredCv, next: TailoredCv, split = false) =>
   (
     [
       'headline',
@@ -380,8 +441,9 @@ export const changedCvSections = (cv: TailoredCv, next: TailoredCv) =>
       'projects',
       'languages'
     ] as const
-  ).flatMap((key): { key: TailoredCvSectionKey; value: unknown }[] => {
+  ).flatMap((key): CvSectionChange[] => {
     if (JSON.stringify(cv[key]) === JSON.stringify(next[key])) return []
-    const entries = key in ENTRY_PREFIXES ? entryChanges(key as EntryList, cv, next) : null
+    const entries =
+      key in ENTRY_PREFIXES ? entryChanges(key as CvAnalyzedList, cv, next, split) : null
     return entries ?? [{ key, value: next[key] as unknown }]
   })

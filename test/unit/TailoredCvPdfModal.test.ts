@@ -5,10 +5,14 @@ import { setResponseHeader } from 'h3'
 import TailoredCvPdfModal from '~/components/listings/TailoredCvPdfModal.vue'
 
 // Served the way a download would be, to prove the preview still only displays it.
+// The server names the file itself; `fileName` is only the in-app label.
+const SERVER_DISPOSITION =
+  'attachment; filename="Ola_Acme_Dev_Cv.pdf"; filename*=UTF-8\'\'%C3%85se_Acme_Dev_Cv.pdf'
 let documentReply: () => unknown = () => '%PDF-1.4'
+let disposition: string | undefined = SERVER_DISPOSITION
 registerEndpoint('/api/documents/70', (event) => {
   setResponseHeader(event, 'content-type', 'application/pdf')
-  setResponseHeader(event, 'content-disposition', 'attachment; filename="cv.pdf"')
+  if (disposition) setResponseHeader(event, 'content-disposition', disposition)
   return documentReply()
 })
 
@@ -31,6 +35,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   documentReply = () => '%PDF-1.4'
+  disposition = SERVER_DISPOSITION
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
@@ -71,12 +76,13 @@ describe('TailoredCvPdfModal', () => {
     wrapper.unmount()
   })
 
-  it('offers Apply with this CV only when applicable', async () => {
+  it('offers Mark as applied with this PDF only when applicable', async () => {
     let wrapper = await mountOpen()
     expect(el('cv-pdf-apply')).toBeNull()
     wrapper.unmount()
 
     wrapper = await mountOpen(true)
+    expect(el('cv-pdf-apply')!.textContent?.trim()).toBe('Mark as applied with this PDF')
     el('cv-pdf-apply')!.click()
     expect(wrapper.emitted('apply')).toHaveLength(1)
     wrapper.unmount()
@@ -84,7 +90,8 @@ describe('TailoredCvPdfModal', () => {
 
   it('downloads only on request, and skips the frame in a browser without a PDF viewer', async () => {
     let wrapper = await mountOpen()
-    expect(el('cv-pdf-download')!.hasAttribute('download')).toBe(true)
+    // No value, so the browser saves under the server's Content-Disposition name.
+    expect(el('cv-pdf-download')!.getAttribute('download')).toBe('')
     expect(el('cv-pdf-download')!.getAttribute('href')).toBe('/api/documents/70')
     wrapper.unmount()
 
@@ -104,9 +111,27 @@ describe('TailoredCvPdfModal', () => {
     el('cv-pdf-download')!.click()
     await vi.waitFor(() => expect(share).toHaveBeenCalledOnce())
     const [pdf] = share.mock.calls[0]![0].files
-    expect(pdf.name).toBe('cv.pdf')
+    expect(pdf.name).toBe('Åse_Acme_Dev_Cv.pdf')
     expect(pdf.type).toBe('application/pdf')
     wrapper.unmount()
+  })
+
+  it('names a shared file from a plain filename, or falls back to fileName without one', async () => {
+    const share = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, standalone: true, share })
+    const sharedName = async () => {
+      share.mockClear()
+      const wrapper = await mountOpen()
+      el('cv-pdf-download')!.click()
+      await vi.waitFor(() => expect(share).toHaveBeenCalledOnce())
+      wrapper.unmount()
+      return share.mock.calls[0]![0].files[0].name
+    }
+
+    disposition = 'attachment; filename="Ola_Acme_Dev_Cv.pdf"'
+    expect(await sharedName()).toBe('Ola_Acme_Dev_Cv.pdf')
+    disposition = undefined
+    expect(await sharedName()).toBe('cv.pdf')
   })
 
   it('frames a local copy of the PDF, never the download URL', async () => {

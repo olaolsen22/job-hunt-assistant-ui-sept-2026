@@ -4,10 +4,14 @@ import type { TailoredCvAnalysis } from '~/composables/useTailoredCvDraft'
 import {
   addFromProfile,
   changedCvSections,
+  cvEntryName,
+  orderCvEntries,
   cloneCv,
   cvSectionFromAnalysis,
   getCvSection,
   missingFromProfile,
+  missingLanguages,
+  missingLinks,
   mergeExternalCandidate,
   setCvSection,
   tailoredCvFromContent,
@@ -84,6 +88,25 @@ describe('adding back from the profile', () => {
     cv.experiences[0]!.employer = 'Edited'
     expect(from.experiences[0]!.employer).toBe('Acme')
     expect(missingFromProfile(cv, from, 'experiences')).toEqual([])
+  })
+
+  it('offers profile links and languages this CV lacks, ignoring spelling differences', () => {
+    const from = source()
+    from.links = [
+      { label: 'LinkedIn', url: 'https://www.linkedin.com/in/owner/' },
+      { label: 'GitHub', url: 'https://github.com/owner' },
+      { label: 'Blank', url: ' ' }
+    ]
+    from.languages = [
+      { name: 'Norwegian', spoken: 'NATIVE', written: 'NATIVE' },
+      { name: 'English', spoken: 'GOOD', written: null }
+    ]
+    const links = [{ label: 'Code', url: 'github.com/Owner' }]
+    expect(missingLinks(links, from)).toEqual([from.links[0]])
+    expect(missingLinks(links, from)[0]).not.toBe(from.links[0])
+    expect(missingLanguages([{ name: ' norwegian ', spoken: null, written: null }], from)).toEqual([
+      from.languages[1]
+    ])
   })
 })
 
@@ -325,6 +348,35 @@ describe('tailored CV candidate', () => {
       expect(changedCvSections(cv, next)).toEqual([{ key: 'experience:2', value: null }])
       setCvSection(cv, 'experience:2', null)
       expect(cv.experiences.map((e) => e.sourceEntryId)).toEqual([1, 3])
+    })
+
+    it('with split, offers an added entry and a new order on their own, keeping per-company changes', () => {
+      const cv = threeJobs()
+      const next = cloneCv(cv)
+      next.experiences.reverse()
+      next.experiences[0]!.bullets[0]!.text = 'Reworded at Co 3'
+      next.experiences.push({ ...cloneCv(cv.experiences[0]!), sourceEntryId: 9, employer: 'Co 9' })
+      const changes = changedCvSections(cv, next, true)
+      expect(changes.map(({ key, kind }) => [key, kind])).toEqual([
+        ['experience:3', undefined],
+        ['experience:9', 'add'],
+        ['experiences', 'order']
+      ])
+      expect(changes[2]!.value).toEqual([3, 2, 1, 9])
+
+      // The order holds only ids, so it keeps a company accepted before it.
+      setCvSection(cv, 'experience:3', changes[0]!.value)
+      setCvSection(cv, 'experience:9', changes[1]!.value)
+      orderCvEntries(cv, 'experiences', changes[2]!.value as number[])
+      expect(cv.experiences.map((e) => e.sourceEntryId)).toEqual([3, 2, 1, 9])
+      expect(cv.experiences[0]!.bullets[0]!.text).toBe('Reworded at Co 3')
+    })
+
+    it('names entries for review labels', () => {
+      const cv = threeJobs()
+      expect(cvEntryName(cv.experiences[0])).toBe(`${cv.experiences[0]!.title} at Co 1`)
+      expect(cvEntryName({ school: 'NTNU' })).toBe('NTNU')
+      expect(cvEntryName({ name: 'Picker' })).toBe('Picker')
     })
 
     it('offers the whole list when the reply adds or reorders entries', () => {

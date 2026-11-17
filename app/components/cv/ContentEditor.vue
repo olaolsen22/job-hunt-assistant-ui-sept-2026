@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { createReusableTemplate, useMediaQuery } from '@vueuse/core'
 import type { DropdownMenuItem } from '@nuxt/ui'
-import { VueDraggable } from 'vue-draggable-plus'
 import { CV_APPLY_DESCRIPTION, projectKindLabel } from '~/constants/listing'
 import type {
   CvEditorAi,
@@ -17,7 +17,9 @@ const {
   source,
   disabled = false,
   ai = undefined,
-  flagLanguage = ''
+  flagLanguage = '',
+  skillsModal = false,
+  columns = false
 } = defineProps<{
   // The API's prefill in this CV's language: what the Add menus offer back.
   source: TailoredCv | null | undefined
@@ -25,6 +27,12 @@ const {
   ai?: CvEditorAi
   // The language that `flagged` text is still in, for its badges ("Still in English").
   flagLanguage?: string
+  // The tailored CV: the Skills card lists skills and an Edit modal reorders them, instead of
+  // inline rows with every control.
+  skillsModal?: boolean
+  // The tailored CV: two columns from 2xl, with the `aside-start` slot (settings) atop the side one.
+  // Without it the slot renders first, above the single column.
+  columns?: boolean
 }>()
 const cv = defineModel<TailoredCv>('cv', { required: true })
 // Content paths still in another language (a translated CV template). Each card shows a badge
@@ -40,26 +48,24 @@ const clearFlags = (key: string) => {
   if (flagCounts.value.has(key)) flagged.value = clearCvFlags(flagged.value, key)
 }
 
+// Each card is written once and placed by the layout below (one column, or two on wide screens).
+const [DefineContact, ContactCard] = createReusableTemplate()
+const [DefineSummary, SummaryCard] = createReusableTemplate()
+const [DefineExperience, ExperienceCard] = createReusableTemplate()
+const [DefineSkills, SkillsCard] = createReusableTemplate()
+const [DefineEducation, EducationCard] = createReusableTemplate()
+const [DefineCertifications, CertificationsCard] = createReusableTemplate()
+const [DefineProjects, ProjectsCard] = createReusableTemplate()
+const [DefineLanguages, LanguagesCard] = createReusableTemplate()
+// Opt-in for the tailored CV; the CV template editor keeps its single column.
+const wide = useMediaQuery('(min-width: 1536px)')
+const twoColumns = computed(() => columns && wide.value)
+
 const notify = useAppToast()
 const entryStyle = computed(() => cv.value.contentStyle)
 
-// The owner's categories (edited on the skills page); a deleted one shows as uncategorized.
-const { items: categoryItems, known: knownCategory } = useSkillCategories()
-const moveSkill = (from: number, to: number) => {
-  const skills = cv.value.skills
-  skills.splice(to, 0, ...skills.splice(from, 1))
-}
-
-// Developer layout: a group label replaces the category name and skills sharing it print on one
-// line, so the field suggests the labels already in use (case-insensitive, first spelling kept).
-const usedGroups = computed(() => {
-  const seen = new Map<string, string>()
-  for (const { group } of cv.value.skills) {
-    const label = group?.trim()
-    if (label && !seen.has(label.toLowerCase())) seen.set(label.toLowerCase(), label)
-  }
-  return [...seen.values()]
-})
+const skillsOpen = ref(false)
+const skillsOpened = useOpenedOnce(skillsOpen)
 const groupsOpen = ref(false)
 const groupsInput = computed(() => ({
   skillNames: cv.value.skills.map((s) => s.name),
@@ -181,306 +187,292 @@ const emptyMessage = (list: CvProfileList, none: string) => {
 </script>
 
 <template>
-  <ListingsTailoredCvSection
-    title="Contact and headline"
-    testid="tailored-cv-contact"
-    :warning="warning('contact')"
-    editable
-    v-bind="ai?.review('headline')"
-    suggestion-label="Headline"
-    :empty-message="hasContact ? undefined : 'No contact details yet.'"
-    @edit="contactOpen = true"
-  >
-    <div v-if="hasContact" class="space-y-1 break-words text-sm">
-      <p v-if="cv.fullName" class="font-medium text-highlighted">{{ cv.fullName }}</p>
-      <p v-if="cv.headline">{{ cv.headline }}</p>
-      <p v-for="line in contactLines" :key="line" class="text-muted">{{ line }}</p>
-      <p v-if="links.length" class="flex flex-wrap gap-x-3 gap-y-1">
-        <ULink
-          v-for="(link, i) in links"
-          :key="i"
-          :to="link.url"
-          target="_blank"
-          class="break-all"
-          >{{ link.label.trim() || link.url }}</ULink
-        >
-      </p>
-    </div>
-  </ListingsTailoredCvSection>
-
-  <ListingsTailoredCvSection
-    title="Summary"
-    testid="tailored-cv-summary"
-    :warning="warning('summary')"
-    editable
-    :analyzable="!!ai?.analyze"
-    v-bind="ai?.section('summary')"
-    :empty-message="cv.summary.trim() ? undefined : 'No summary yet.'"
-    @edit="editSummary"
-    @analyze="ai?.analyze?.('summary', 'the summary')"
-  >
-    <p
-      v-if="cv.summary.trim()"
-      class="whitespace-pre-wrap break-words text-sm"
-      data-testid="tailored-cv-summary-text"
+  <DefineContact>
+    <ListingsTailoredCvSection
+      title="Contact and headline"
+      testid="tailored-cv-contact"
+      :warning="warning('contact')"
+      editable
+      v-bind="ai?.review('headline')"
+      suggestion-label="Headline"
+      :empty-message="hasContact ? undefined : 'No contact details yet.'"
+      @edit="contactOpen = true"
     >
-      {{ cv.summary }}
-    </p>
-  </ListingsTailoredCvSection>
-
-  <ListingsTailoredCvSection
-    title="Experience"
-    testid="tailored-cv-experience"
-    :empty-message="emptyMessage('experiences', 'No experience in this CV.')"
-    v-bind="ai?.review('experiences')"
-    suggestion-label="All experience (entries added or reordered)"
-    :add-items="addItems('experiences')"
-    add-label="Add experience from your profile"
-  >
-    <ul class="divide-y divide-default">
-      <ListingsTailoredCvEntry
-        v-for="(e, i) in cv.experiences"
-        :key="e.sourceEntryId ?? `new-${i}`"
-        :warning="warning(`experiences[${i}]`)"
-        v-bind="ai?.section(`experience:${e.sourceEntryId!}`)"
-        :bullets="e.bullets"
-        :paragraph="e.paragraph"
-        :content-style="entryStyle"
-        :title="e.title"
-        :subtitle="e.employer"
-        :dates="dates(e.startMonth, e.endMonth, 'Present')"
-        :location="e.location"
-        :technologies="e.technologies"
-        :analyzable="!!ai?.analyze && e.sourceEntryId != null"
-        @edit="editEntry('experiences', i)"
-        @analyze="ai?.analyze?.(`experience:${e.sourceEntryId!}`, experienceName(e))"
-        @remove="removeItem('experiences', i, e.title)"
-      />
-    </ul>
-  </ListingsTailoredCvSection>
-
-  <ListingsTailoredCvSection
-    title="Skills"
-    testid="tailored-cv-skills"
-    :warning="warning('skills')"
-    :analyzable="!!ai?.analyze"
-    v-bind="ai?.section('skills')"
-    :empty-message="emptyMessage('skills', 'No skills in this CV.')"
-    :add-items="addItems('skills')"
-    add-label="Add a skill from your profile"
-    @analyze="ai?.analyze?.('skills', 'skills')"
-  >
-    <div class="space-y-2">
-      <VueDraggable
-        v-model="cv.skills"
-        tag="ul"
-        handle=".drag-handle"
-        ghost-class="opacity-50"
-        :animation="150"
-        :disabled="disabled"
-        class="space-y-1"
-        data-testid="tailored-cv-skill-list"
-      >
-        <!-- Keyed without the index, so moving a skill keeps its row (and the focused
-           button) instead of remounting it. Phones: name and remove first, then the
-           category and order controls on their own line. -->
-        <li
-          v-for="(skill, i) in cv.skills"
-          :key="skill.sourceSkillId ?? skill.name"
-          class="flex flex-wrap items-center gap-x-1 gap-y-1"
-          data-testid="tailored-cv-skill"
-        >
-          <!-- Mouse only: the arrow buttons cover touch and keyboard, so no tab stop. -->
-          <span
-            class="drag-handle hidden shrink-0 cursor-grab touch-none p-1.5 text-muted sm:inline-flex"
-            aria-hidden="true"
+      <div v-if="hasContact" class="space-y-1 break-words text-sm">
+        <p v-if="cv.fullName" class="font-medium text-highlighted">{{ cv.fullName }}</p>
+        <p v-if="cv.headline">{{ cv.headline }}</p>
+        <p v-for="line in contactLines" :key="line" class="text-muted">{{ line }}</p>
+        <p v-if="links.length" class="flex flex-wrap gap-x-3 gap-y-1">
+          <ULink
+            v-for="(link, i) in links"
+            :key="i"
+            :to="link.url"
+            target="_blank"
+            class="break-all"
+            >{{ link.label.trim() || link.url }}</ULink
           >
-            <UIcon name="i-lucide-grip-vertical" class="size-4" />
-          </span>
-          <span class="min-w-0 flex-1 break-words">{{ skill.name }}</span>
-          <UButton
-            icon="i-lucide-x"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            class="sm:order-last"
-            :aria-label="`Remove ${skill.name}`"
-            @click="removeItem('skills', i, skill.name)"
-          />
-          <div class="flex w-full items-center gap-1 sm:w-auto">
-            <!-- Categories and groups only group skills in the Developer layout. -->
-            <template v-if="cv.sectionOrder === 'DEVELOPER'">
-              <USelect
-                :model-value="knownCategory(skill.categoryId)"
-                :items="categoryItems"
-                size="sm"
-                :aria-label="`${skill.name} category`"
-                class="min-w-0 flex-1 sm:w-40 sm:flex-none"
-                @update:model-value="(choice) => (skill.categoryId = fromCategoryChoice(choice))"
-              />
-              <!-- A native datalist keeps the field free text while offering used labels. -->
-              <UInput
-                :model-value="skill.group ?? ''"
-                size="sm"
-                placeholder="Group"
-                list="tailored-cv-skill-groups"
-                autocomplete="off"
-                :aria-label="`${skill.name} group`"
-                class="min-w-0 flex-1 sm:w-36 sm:flex-none"
-                data-testid="tailored-cv-skill-group"
-                @update:model-value="(value) => ((skill.group = value), clearFlags('skills'))"
-              />
-            </template>
-            <UButton
-              icon="i-lucide-chevron-up"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              :disabled="i === 0"
-              :aria-label="`Move ${skill.name} earlier`"
-              @click="moveSkill(i, i - 1)"
-            />
-            <UButton
-              icon="i-lucide-chevron-down"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              :disabled="i === cv.skills.length - 1"
-              :aria-label="`Move ${skill.name} later`"
-              @click="moveSkill(i, i + 1)"
-            />
-          </div>
-        </li>
-      </VueDraggable>
-      <datalist id="tailored-cv-skill-groups">
-        <option v-for="label in usedGroups" :key="label" :value="label" />
-      </datalist>
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="text-xs text-muted">
-          {{
-            cv.sectionOrder === 'DEVELOPER'
-              ? 'A group replaces the category in the PDF, and skills with the same group share a line. Categories, groups and order apply to this CV only.'
-              : 'The order applies to this CV only. Categories and groups show with the Developer PDF layout.'
-          }}
         </p>
-        <UButton
-          v-if="cv.sectionOrder === 'DEVELOPER'"
-          icon="i-lucide-sparkles"
-          color="neutral"
-          variant="outline"
-          size="sm"
-          :disabled="disabled || !cv.skills.length"
-          data-testid="tailored-cv-suggest-groups"
-          @click="groupsOpen = true"
-          >Suggest groups</UButton
-        >
       </div>
+    </ListingsTailoredCvSection>
+  </DefineContact>
+
+  <DefineSummary>
+    <ListingsTailoredCvSection
+      title="Summary"
+      testid="tailored-cv-summary"
+      :warning="warning('summary')"
+      editable
+      :analyzable="!!ai?.analyze"
+      v-bind="ai?.section('summary')"
+      :empty-message="cv.summary.trim() ? undefined : 'No summary yet.'"
+      @edit="editSummary"
+      @analyze="ai?.analyze?.('summary', 'the summary')"
+    >
+      <p
+        v-if="cv.summary.trim()"
+        class="whitespace-pre-wrap break-words text-sm"
+        data-testid="tailored-cv-summary-text"
+      >
+        {{ cv.summary }}
+      </p>
+    </ListingsTailoredCvSection>
+  </DefineSummary>
+
+  <DefineExperience>
+    <ListingsTailoredCvSection
+      title="Experience"
+      testid="tailored-cv-experience"
+      :empty-message="emptyMessage('experiences', 'No experience in this CV.')"
+      v-bind="ai?.review('experiences')"
+      suggestion-label="All experience (entries added or reordered)"
+      :add-items="addItems('experiences')"
+      add-label="Add experience from your profile"
+    >
+      <ul class="divide-y divide-default">
+        <ListingsTailoredCvEntry
+          v-for="(e, i) in cv.experiences"
+          :key="e.sourceEntryId ?? `new-${i}`"
+          :warning="warning(`experiences[${i}]`)"
+          v-bind="ai?.section(`experience:${e.sourceEntryId!}`)"
+          :bullets="e.bullets"
+          :paragraph="e.paragraph"
+          :content-style="entryStyle"
+          :title="e.title"
+          :subtitle="e.employer"
+          :dates="dates(e.startMonth, e.endMonth, 'Present')"
+          :location="e.location"
+          :technologies="e.technologies"
+          :analyzable="!!ai?.analyze && e.sourceEntryId != null"
+          @edit="editEntry('experiences', i)"
+          @analyze="ai?.analyze?.(`experience:${e.sourceEntryId!}`, experienceName(e))"
+          @remove="removeItem('experiences', i, e.title)"
+        />
+      </ul>
+    </ListingsTailoredCvSection>
+  </DefineExperience>
+
+  <DefineSkills>
+    <ListingsTailoredCvSection
+      title="Skills"
+      testid="tailored-cv-skills"
+      :warning="warning('skills')"
+      :analyzable="!!ai?.analyze"
+      v-bind="ai?.section('skills')"
+      :empty-message="emptyMessage('skills', 'No skills in this CV.')"
+      :add-items="addItems('skills')"
+      add-label="Add a skill from your profile"
+      :editable="skillsModal"
+      @edit="skillsOpen = true"
+      @analyze="ai?.analyze?.('skills', 'skills')"
+    >
+      <div class="space-y-2">
+        <ul v-if="skillsModal" class="flex flex-wrap gap-1.5" data-testid="tailored-cv-skill-list">
+          <li v-for="skill in cv.skills" :key="skill.sourceSkillId ?? skill.name">
+            <UBadge color="neutral" variant="outline" data-testid="tailored-cv-skill">{{
+              skill.name
+            }}</UBadge>
+          </li>
+        </ul>
+        <CvSkillRows
+          v-else
+          v-model:skills="cv.skills"
+          :section-order="cv.sectionOrder"
+          :disabled="disabled"
+          @remove="(i, name) => removeItem('skills', i, name)"
+          @group="clearFlags('skills')"
+        />
+        <div
+          v-if="!skillsModal || cv.sectionOrder === 'DEVELOPER'"
+          class="flex flex-wrap items-center justify-between gap-2"
+        >
+          <p v-if="!skillsModal" class="text-xs text-muted">
+            {{
+              cv.sectionOrder === 'DEVELOPER'
+                ? 'A group replaces the category in the PDF, and skills with the same group share a line. Categories, groups and order apply to this CV only.'
+                : 'The order applies to this CV only. Categories and groups show with the Developer PDF layout.'
+            }}
+          </p>
+          <UButton
+            v-if="cv.sectionOrder === 'DEVELOPER'"
+            icon="i-lucide-sparkles"
+            color="neutral"
+            variant="outline"
+            size="sm"
+            class="ml-auto"
+            :disabled="disabled || !cv.skills.length"
+            data-testid="tailored-cv-suggest-groups"
+            @click="groupsOpen = true"
+            >Suggest groups</UButton
+          >
+        </div>
+      </div>
+    </ListingsTailoredCvSection>
+  </DefineSkills>
+
+  <DefineEducation>
+    <ListingsTailoredCvSection
+      title="Education"
+      testid="tailored-cv-education"
+      :empty-message="emptyMessage('educations', 'No education in this CV.')"
+      v-bind="ai?.review('educations')"
+      suggestion-label="All education (entries added or reordered)"
+      :add-items="addItems('educations')"
+      add-label="Add education from your profile"
+    >
+      <ul class="divide-y divide-default">
+        <ListingsTailoredCvEntry
+          v-for="(e, i) in cv.educations"
+          :key="e.sourceEntryId ?? `new-${i}`"
+          :warning="warning(`educations[${i}]`)"
+          v-bind="ai?.section(`education:${e.sourceEntryId!}`)"
+          :bullets="e.bullets"
+          :paragraph="e.paragraph"
+          :content-style="entryStyle"
+          :title="e.school"
+          :subtitle="[e.degree, e.field].filter(Boolean).join(', ')"
+          :dates="dates(e.startMonth, e.endMonth)"
+          :location="e.location"
+          :analyzable="!!ai?.analyze && e.sourceEntryId != null"
+          @edit="editEntry('educations', i)"
+          @analyze="ai?.analyze?.(`education:${e.sourceEntryId!}`, e.school)"
+          @remove="removeItem('educations', i, e.school)"
+        />
+      </ul>
+    </ListingsTailoredCvSection>
+  </DefineEducation>
+
+  <DefineCertifications>
+    <ListingsTailoredCvSection
+      title="Certifications"
+      testid="tailored-cv-certifications"
+      :empty-message="emptyMessage('certifications', 'No certifications in this CV.')"
+      v-bind="ai?.review('certifications')"
+      suggestion-label="All certifications"
+      :add-items="addItems('certifications')"
+      add-label="Add a certification from your profile"
+    >
+      <ul class="divide-y divide-default">
+        <ListingsTailoredCvEntry
+          v-for="(c, i) in cv.certifications"
+          :key="c.sourceEntryId ?? `new-${i}`"
+          :warning="warning(`certifications[${i}]`)"
+          :bullets="c.bullets"
+          :paragraph="c.paragraph"
+          :content-style="entryStyle"
+          :title="c.name"
+          :subtitle="c.issuer"
+          :dates="dates(c.issuedMonth, c.expiresMonth)"
+          @edit="editEntry('certifications', i)"
+          @remove="removeItem('certifications', i, c.name)"
+        />
+      </ul>
+    </ListingsTailoredCvSection>
+  </DefineCertifications>
+
+  <DefineProjects>
+    <ListingsTailoredCvSection
+      title="Projects"
+      testid="tailored-cv-projects"
+      :empty-message="emptyMessage('projects', 'No projects in this CV.')"
+      v-bind="ai?.review('projects')"
+      suggestion-label="All projects (entries added or reordered)"
+      :add-items="addItems('projects')"
+      add-label="Add a project from your profile"
+    >
+      <ul class="divide-y divide-default">
+        <ListingsTailoredCvEntry
+          v-for="(p, i) in cv.projects"
+          :key="p.sourceEntryId ?? `new-${i}`"
+          :warning="warning(`projects[${i}]`)"
+          v-bind="ai?.section(`project:${p.sourceEntryId!}`)"
+          :bullets="p.bullets"
+          :paragraph="p.paragraph"
+          :content-style="entryStyle"
+          :title="p.name"
+          :subtitle="p.url"
+          :dates="dates(p.startMonth, p.endMonth)"
+          :location="p.location"
+          :badge="projectKindLabel(p.kind)"
+          :technologies="p.technologies"
+          :analyzable="!!ai?.analyze && p.sourceEntryId != null"
+          @edit="editEntry('projects', i)"
+          @analyze="ai?.analyze?.(`project:${p.sourceEntryId!}`, p.name)"
+          @remove="removeItem('projects', i, p.name)"
+        />
+      </ul>
+    </ListingsTailoredCvSection>
+  </DefineProjects>
+
+  <DefineLanguages>
+    <ListingsTailoredCvSection
+      title="Languages"
+      testid="tailored-cv-languages"
+      :warning="warning('languages')"
+      editable
+      :empty-message="cv.languages.length ? undefined : 'No languages in this CV.'"
+      v-bind="ai?.review('languages')"
+      @edit="languagesOpen = true"
+    >
+      <ul v-if="cv.languages.length" class="space-y-1 break-words text-sm">
+        <li v-for="(l, i) in cv.languages" :key="i" data-testid="tailored-cv-language-line">
+          {{ languageLine(l) }}
+        </li>
+      </ul>
+    </ListingsTailoredCvSection>
+  </DefineLanguages>
+
+  <!-- Wide screens (columns, 2xl): long-text cards in the main column, short lists beside them.
+     The DOM follows what's on screen, so tab order and the review's Next walk it in reading order. -->
+  <div
+    v-if="twoColumns"
+    class="grid items-start gap-6 grid-cols-[minmax(0,1fr)_26rem] min-[120rem]:grid-cols-[minmax(0,1fr)_30rem]"
+    data-testid="cv-editor-columns"
+  >
+    <div class="min-w-0 space-y-6" data-testid="cv-editor-main">
+      <ContactCard />
+      <SummaryCard />
+      <ExperienceCard />
+      <ProjectsCard />
     </div>
-  </ListingsTailoredCvSection>
-
-  <ListingsTailoredCvSection
-    title="Education"
-    testid="tailored-cv-education"
-    :empty-message="emptyMessage('educations', 'No education in this CV.')"
-    v-bind="ai?.review('educations')"
-    suggestion-label="All education (entries added or reordered)"
-    :add-items="addItems('educations')"
-    add-label="Add education from your profile"
-  >
-    <ul class="divide-y divide-default">
-      <ListingsTailoredCvEntry
-        v-for="(e, i) in cv.educations"
-        :key="e.sourceEntryId ?? `new-${i}`"
-        :warning="warning(`educations[${i}]`)"
-        v-bind="ai?.section(`education:${e.sourceEntryId!}`)"
-        :bullets="e.bullets"
-        :paragraph="e.paragraph"
-        :content-style="entryStyle"
-        :title="e.school"
-        :subtitle="[e.degree, e.field].filter(Boolean).join(', ')"
-        :dates="dates(e.startMonth, e.endMonth)"
-        :location="e.location"
-        :analyzable="!!ai?.analyze && e.sourceEntryId != null"
-        @edit="editEntry('educations', i)"
-        @analyze="ai?.analyze?.(`education:${e.sourceEntryId!}`, e.school)"
-        @remove="removeItem('educations', i, e.school)"
-      />
-    </ul>
-  </ListingsTailoredCvSection>
-
-  <ListingsTailoredCvSection
-    title="Certifications"
-    testid="tailored-cv-certifications"
-    :empty-message="emptyMessage('certifications', 'No certifications in this CV.')"
-    v-bind="ai?.review('certifications')"
-    suggestion-label="All certifications"
-    :add-items="addItems('certifications')"
-    add-label="Add a certification from your profile"
-  >
-    <ul class="divide-y divide-default">
-      <ListingsTailoredCvEntry
-        v-for="(c, i) in cv.certifications"
-        :key="c.sourceEntryId ?? `new-${i}`"
-        :warning="warning(`certifications[${i}]`)"
-        :bullets="c.bullets"
-        :paragraph="c.paragraph"
-        :content-style="entryStyle"
-        :title="c.name"
-        :subtitle="c.issuer"
-        :dates="dates(c.issuedMonth, c.expiresMonth)"
-        @edit="editEntry('certifications', i)"
-        @remove="removeItem('certifications', i, c.name)"
-      />
-    </ul>
-  </ListingsTailoredCvSection>
-
-  <ListingsTailoredCvSection
-    title="Projects"
-    testid="tailored-cv-projects"
-    :empty-message="emptyMessage('projects', 'No projects in this CV.')"
-    v-bind="ai?.review('projects')"
-    suggestion-label="All projects (entries added or reordered)"
-    :add-items="addItems('projects')"
-    add-label="Add a project from your profile"
-  >
-    <ul class="divide-y divide-default">
-      <ListingsTailoredCvEntry
-        v-for="(p, i) in cv.projects"
-        :key="p.sourceEntryId ?? `new-${i}`"
-        :warning="warning(`projects[${i}]`)"
-        v-bind="ai?.section(`project:${p.sourceEntryId!}`)"
-        :bullets="p.bullets"
-        :paragraph="p.paragraph"
-        :content-style="entryStyle"
-        :title="p.name"
-        :subtitle="p.url"
-        :dates="dates(p.startMonth, p.endMonth)"
-        :location="p.location"
-        :badge="projectKindLabel(p.kind)"
-        :technologies="p.technologies"
-        :analyzable="!!ai?.analyze && p.sourceEntryId != null"
-        @edit="editEntry('projects', i)"
-        @analyze="ai?.analyze?.(`project:${p.sourceEntryId!}`, p.name)"
-        @remove="removeItem('projects', i, p.name)"
-      />
-    </ul>
-  </ListingsTailoredCvSection>
-
-  <ListingsTailoredCvSection
-    title="Languages"
-    testid="tailored-cv-languages"
-    :warning="warning('languages')"
-    editable
-    :empty-message="cv.languages.length ? undefined : 'No languages in this CV.'"
-    v-bind="ai?.review('languages')"
-    @edit="languagesOpen = true"
-  >
-    <ul v-if="cv.languages.length" class="space-y-1 break-words text-sm">
-      <li v-for="(l, i) in cv.languages" :key="i" data-testid="tailored-cv-language-line">
-        {{ languageLine(l) }}
-      </li>
-    </ul>
-  </ListingsTailoredCvSection>
+    <div class="min-w-0 space-y-6" data-testid="cv-editor-aside">
+      <slot name="aside-start" />
+      <SkillsCard />
+      <EducationCard />
+      <CertificationsCard />
+      <LanguagesCard />
+    </div>
+  </div>
+  <template v-else>
+    <slot name="aside-start" />
+    <ContactCard />
+    <SummaryCard />
+    <ExperienceCard />
+    <SkillsCard />
+    <EducationCard />
+    <CertificationsCard />
+    <ProjectsCard />
+    <LanguagesCard />
+  </template>
 
   <LazyListingsTailoredCvEntryModal
     v-if="editedEntry"
@@ -495,12 +487,14 @@ const emptyMessage = (list: CvProfileList, none: string) => {
     v-if="contactOpened"
     v-model:open="contactOpen"
     :cv="cv"
+    :profile="source"
     @apply="(contact) => (Object.assign(cv, contact), clearFlags('contact'))"
   />
   <LazyListingsTailoredCvLanguagesModal
     v-if="languagesOpened"
     v-model:open="languagesOpen"
     :languages="cv.languages"
+    :profile="source"
     @apply="(languages) => ((cv.languages = languages), clearFlags('languages'))"
   />
   <AppFormModal
@@ -521,6 +515,13 @@ const emptyMessage = (list: CvProfileList, none: string) => {
       />
     </UFormField>
   </AppFormModal>
+  <LazyListingsTailoredCvSkillsModal
+    v-if="skillsOpened"
+    v-model:open="skillsOpen"
+    :skills="cv.skills"
+    :section-order="cv.sectionOrder"
+    @apply="(skills) => ((cv.skills = skills), clearFlags('skills'))"
+  />
   <!-- Only the Developer layout uses groups, so other CVs don't load the modal. -->
   <LazyListingsTailoredCvSkillGroupsModal
     v-if="cv.sectionOrder === 'DEVELOPER'"

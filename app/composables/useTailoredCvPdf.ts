@@ -28,6 +28,7 @@ export const useTailoredCvPdf = ({
   draft,
   saved,
   dirty,
+  reviewing,
   save
 }: {
   listingId: number
@@ -35,6 +36,8 @@ export const useTailoredCvPdf = ({
   draft: Ref<TailoredCvDraft | null | undefined>
   saved: Ref<string | null>
   dirty: Ref<boolean>
+  // Pending AI suggestions: the PDF waits for the review, like saving does.
+  reviewing: Ref<boolean>
   save: () => Promise<boolean>
 }) => {
   // Every call adds another PDF, so a failure is never retried automatically. Unsaved edits (or no
@@ -55,7 +58,7 @@ export const useTailoredCvPdf = ({
     detail?: string
   }>()
   const generate = async () => {
-    if (generatePhase.value || !cv.value) return false
+    if (generatePhase.value || !cv.value || reviewing.value) return false
     generated.value = generateError.value = undefined
     try {
       if (dirty.value || !draft.value) {
