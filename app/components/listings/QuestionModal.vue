@@ -2,8 +2,8 @@
 import type { FormError } from '@nuxt/ui'
 import type { ListingDetail } from '~/composables/useListing'
 
-// Without `question` it adds one; with it, it edits that one. Refine with AI saves first (the AI
-// reads the saved question), then fills the answer here for a final Save.
+// Without `question` it adds one; with it, it edits that one. AI drafting lives on the questions
+// card, which drafts every answer at once.
 const { listingId, question } = defineProps<{
   listingId: number
   question: Question | null
@@ -67,19 +67,9 @@ const validate = (s: Partial<typeof state>): FormError[] => {
   return errors
 }
 
-const aiOpen = ref(false)
-const form = useTemplateRef('form')
-
 const { run, loading } = useMutation(() => emit('changed'))
 
-// A new question gets its id from the first save (Refine with AI), and later saves update it.
-const addedId = ref<number>()
-watch(open, (isOpen) => {
-  if (isOpen) addedId.value = undefined
-})
-const savedId = computed(() => question?.id ?? addedId.value)
-
-const save = () => {
+const submit = async () => {
   // Update replaces the whole record, so every field is sent.
   const fields = {
     question: state.question.trim(),
@@ -87,42 +77,28 @@ const save = () => {
     answer: state.answer || null,
     notes: state.notes.trim() || null
   }
-  return run(async () => {
-    if (savedId.value) {
+  const ok = await run(async () => {
+    if (question) {
       const { updateApplicationQuestion } = await gql(UPDATE_QUESTION, {
-        input: { id: savedId.value, ...fields }
+        input: { id: question.id, ...fields }
       })
       return updateApplicationQuestion.errors
     }
     const { addApplicationQuestion } = await gql(ADD_QUESTION, {
       input: { listingId, ...fields }
     })
-    addedId.value = addApplicationQuestion.applicationQuestion?.id
     return addApplicationQuestion.errors
   })
-}
-
-const submit = async () => {
-  if (!(await save())) return
+  if (!ok) return
   open.value = false
   emit('changed')
-}
-
-// The AI reads the saved question, so the form is saved first and stays open for the result.
-const refine = async () => {
-  if (!(await form.value?.validate())) return
-  if (!(await save())) return
-  form.value?.markClean()
-  emit('changed')
-  aiOpen.value = true
 }
 </script>
 
 <template>
   <AppFormModal
-    ref="form"
     v-model:open="open"
-    :title="savedId ? 'Edit question' : 'Add question'"
+    :title="question ? 'Edit question' : 'Add question'"
     :state="state"
     :validate="validate"
     :loading="loading"
@@ -157,7 +133,7 @@ const refine = async () => {
       <UFormField
         label="Answer"
         name="answer"
-        help="Your own text. Refine with AI revises it in your voice, or writes one if it’s empty."
+        help="What you paste into the form. It has to fit the limit to save. Draft answers with AI revises saved answers."
         :hint="`${state.answer.length} / ${state.charLimit ?? ANSWER_MAX}`"
       >
         <UTextarea
@@ -172,7 +148,7 @@ const refine = async () => {
       <UFormField
         label="Notes for the AI"
         name="notes"
-        help="Instructions only the AI sees, e.g. “mention the Vue migration”. Never part of the answer."
+        help="Instructions only the AI sees when it drafts answers, e.g. “mention the Vue migration”. Never part of the answer."
         :hint="`${state.notes.length} / ${NOTES_MAX}`"
       >
         <UTextarea
@@ -183,25 +159,6 @@ const refine = async () => {
           class="w-full"
         />
       </UFormField>
-      <UButton
-        block
-        icon="i-lucide-sparkles"
-        :disabled="loading"
-        data-testid="question-ai-open"
-        @click="refine"
-        >Refine with AI</UButton
-      >
     </div>
   </AppFormModal>
-
-  <!-- Keyed by question, so its prompt and retry state never carry over to another one. -->
-  <ListingsQuestionAiModal
-    v-if="savedId"
-    :key="savedId"
-    v-model:open="aiOpen"
-    :question-id="savedId"
-    :char-limit="state.charLimit ?? null"
-    :current-answer="state.answer"
-    @use="state.answer = $event"
-  />
 </template>

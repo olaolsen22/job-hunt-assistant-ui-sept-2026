@@ -1,14 +1,16 @@
+import type { ResultOf } from 'gql.tada'
 import { ERROR_MESSAGES } from '~/constants/errorMessages'
 import type { AiOutcome } from '~/utils/aiOutcome'
 
 const GENERATE = graphql(`
-  mutation GenerateApplicationAnswer($input: GenerateApplicationAnswerInput!) {
-    generateApplicationAnswer(input: $input) {
+  mutation GenerateApplicationAnswers($input: GenerateApplicationAnswersInput!) {
+    generateApplicationAnswers(input: $input) {
       result {
         status
         error
         errorCode
-        candidate {
+        candidates {
+          questionId
           answer
           length
           overLimit
@@ -28,17 +30,18 @@ const GENERATE = graphql(`
 `)
 
 const PROMPT = graphql(`
-  query ApplicationAnswerExternalPrompt($questionId: Int!) {
-    applicationAnswerExternalPrompt(questionId: $questionId) {
+  query ApplicationAnswerExternalPrompt($listingId: Int!) {
+    applicationAnswerExternalPrompt(listingId: $listingId) {
       instructions
     }
   }
 `)
 
 const PREVIEW = graphql(`
-  mutation PreviewApplicationAnswer($input: PreviewApplicationAnswerInput!) {
-    previewApplicationAnswer(input: $input) {
-      candidate {
+  mutation PreviewApplicationAnswers($input: PreviewApplicationAnswersInput!) {
+    previewApplicationAnswers(input: $input) {
+      candidates {
+        questionId
         answer
         length
         overLimit
@@ -53,28 +56,26 @@ const PREVIEW = graphql(`
   }
 `)
 
-export interface AnswerCandidate {
-  answer: string
-  length: number
-  overLimit: boolean
-}
+export type AnswerCandidate = NonNullable<
+  ResultOf<typeof PREVIEW>['previewApplicationAnswers']['candidates']
+>[number]
 
-// Built-in and your-own-AI ways to get a candidate answer for one saved question. Neither saves
-// anything: the caller shows the candidate, the owner edits it, and the edit form saves it.
-export const useApplicationAnswerAi = (questionId: () => number) => {
+// Built-in and your-own-AI ways to draft every answer on a listing in one go. Neither saves
+// anything: the review shows each candidate under its question and saves the ticked ones.
+export const useApplicationAnswersAi = (listingId: () => number) => {
   const { run, safetyCode, safetyMessage, needsConfirm, confirmRetry } = useAiRequest()
   const generating = ref(false)
   const previewing = ref(false)
 
   const generate = () => {
-    const input = { questionId: questionId() }
+    const input = { listingId: listingId() }
     return run(
       generating,
       input,
       async (requestId) =>
-        (await gql(GENERATE, { input: { ...input, requestId } })).generateApplicationAnswer,
-      ({ result }): AiOutcome<AnswerCandidate> => {
-        if (result?.candidate) return { value: result.candidate }
+        (await gql(GENERATE, { input: { ...input, requestId } })).generateApplicationAnswers,
+      ({ result }): AiOutcome<AnswerCandidate[]> => {
+        if (result?.candidates) return { value: result.candidates }
         const message = result?.error ?? ERROR_MESSAGES.generic
         return { error: result?.errorCode ? `${message} (${result.errorCode})` : message }
       }
@@ -83,17 +84,17 @@ export const useApplicationAnswerAi = (questionId: () => number) => {
 
   const { instructions, promptLoading, promptError, copied, loadPrompt, copyPrompt } = useAiPrompt(
     async () =>
-      (await gql(PROMPT, { questionId: questionId() })).applicationAnswerExternalPrompt.instructions
+      (await gql(PROMPT, { listingId: listingId() })).applicationAnswerExternalPrompt.instructions
   )
 
-  const preview = async (json: string): Promise<AiOutcome<AnswerCandidate>> => {
+  const preview = async (json: string): Promise<AiOutcome<AnswerCandidate[]>> => {
     previewing.value = true
     try {
-      const { previewApplicationAnswer } = await gql(PREVIEW, {
-        input: { questionId: questionId(), json: json.trim() }
+      const { previewApplicationAnswers } = await gql(PREVIEW, {
+        input: { listingId: listingId(), json: json.trim() }
       })
-      const { candidate, errors } = previewApplicationAnswer
-      if (candidate) return { value: candidate }
+      const { candidates, errors } = previewApplicationAnswers
+      if (candidates) return { value: candidates }
       return { error: errors?.[0]?.message ?? ERROR_MESSAGES.generic }
     } catch (e) {
       return { error: genericError(e) }

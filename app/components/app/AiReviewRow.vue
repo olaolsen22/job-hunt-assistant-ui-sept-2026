@@ -13,6 +13,8 @@ const {
   suggested = null,
   removeLabel = undefined,
   disabled = false,
+  currentLabel = undefined,
+  suggestedLabel = undefined,
   testidPrefix
 } = defineProps<{
   label?: string
@@ -24,6 +26,8 @@ const {
   suggested?: string | null
   removeLabel?: string
   disabled?: boolean
+  currentLabel?: string
+  suggestedLabel?: string
   testidPrefix: string
 }>()
 // default: undefined, or Vue turns a missing Boolean prop into false and every row shows a tick.
@@ -48,6 +52,17 @@ defineSlots<{ suggested?: () => unknown }>()
         class="min-w-0 flex-1"
         :data-testid="`${testidPrefix}-include`"
       />
+      <!-- A labelled row without a tick (saved, nothing to apply) keeps its label where the
+           ticked rows have theirs, so a numbered list still lines up; the badge follows it. -->
+      <p v-else-if="label" class="min-w-0 flex-1 ps-6 text-sm">
+        {{ label }}
+        <UBadge
+          :color="invalid ? 'error' : 'neutral'"
+          :variant="invalid ? 'subtle' : 'outline'"
+          class="ms-1 align-middle"
+          >{{ badge }}</UBadge
+        >
+      </p>
       <template v-else>
         <UBadge :color="invalid ? 'error' : 'neutral'" :variant="invalid ? 'subtle' : 'outline'">{{
           badge
@@ -64,7 +79,12 @@ defineSlots<{ suggested?: () => unknown }>()
         @click="emit('remove')"
       />
     </div>
-    <AppCompareBlock :current="current" :suggested="suggested">
+    <AppCompareBlock
+      :current="current"
+      :suggested="suggested"
+      :current-label="currentLabel"
+      :suggested-label="suggestedLabel"
+    >
       <template v-if="$slots.suggested" #suggested><slot name="suggested" /></template>
     </AppCompareBlock>
   </li>

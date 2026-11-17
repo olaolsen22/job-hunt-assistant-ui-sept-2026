@@ -55,4 +55,39 @@ describe('QuestionsCard', () => {
     expect(wrapper.get('[data-testid="question-add"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="questions-count"]').text()).toContain('Limit reached')
   })
+
+  it('sums up progress, with over the limit said in words', async () => {
+    const wrapper = await mountSuspended(QuestionsCard, {
+      props: {
+        listing: listing([
+          { id: 1, question: 'Why us?', charLimit: 3, answer: 'Hello', notes: null },
+          { id: 2, question: 'Why you?', charLimit: null, answer: 'Because', notes: null },
+          { id: 3, question: 'When?', charLimit: 100, answer: null, notes: 'Say May' },
+          { id: 4, question: 'Where?', charLimit: null, answer: '  ', notes: null }
+        ])
+      }
+    })
+    mounted.push(wrapper)
+
+    expect(wrapper.get('[data-testid="questions-summary"]').text()).toMatch(
+      /2 of 4 answered\s*·\s*1 over its limit/
+    )
+    const rows = wrapper.findAll('[data-testid="question-row"]')
+    expect(rows[1]!.text()).toContain('2. Why you?')
+    expect(rows[1]!.find('[data-testid="question-meta"]').text()).toBe('7 characters')
+    expect(rows[2]!.find('[data-testid="question-meta"]').text()).toContain('Limit 100')
+    expect(rows[2]!.find('[data-testid="question-notes"]').text()).toContain('Notes for the AI')
+    expect(rows[0]!.find('[data-testid="question-notes"]').exists()).toBe(false)
+    expect(rows[1]!.find('[aria-label="Edit question 2"]').exists()).toBe(true)
+  })
+
+  it('shows the empty state with its own Add button and no AI action', async () => {
+    const wrapper = await mountSuspended(QuestionsCard, { props: { listing: listing([]) } })
+    mounted.push(wrapper)
+
+    expect(wrapper.find('[data-testid="questions-empty"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-testid="question-add"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="questions-ai-open"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="questions-summary"]').exists()).toBe(false)
+  })
 })

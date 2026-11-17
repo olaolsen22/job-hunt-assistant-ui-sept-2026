@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
-import { llmModels } from '../fixtures/llmModels'
 import QuestionModal from '~/components/listings/QuestionModal.vue'
 
 const requests: { query: string; variables: { input: Record<string, unknown> } }[] = []
@@ -11,10 +10,6 @@ registerEndpoint('/graphql', {
   handler: async (event) => {
     const body = await readBody(event)
     requests.push(body)
-    if (body.query.includes('query LlmModels')) return { data: { llmModels: llmModels() } }
-    if (body.query.includes('query ApplicationAnswerExternalPrompt'))
-      return { data: { applicationAnswerExternalPrompt: { instructions: 'Answer it' } } }
-    if (body.query.includes('LlmUsage')) return { data: { llmUsageToday: null } }
     if (body.query.includes('mutation AddApplicationQuestion'))
       return {
         data: {
@@ -77,64 +72,21 @@ describe('QuestionModal', () => {
     expect(document.body.textContent).toContain('Over the limit')
   })
 
-  it('saves the edited answer before opening the AI draft, which reads the saved question', async () => {
-    await mount()
-    field('answer-input').value = 'Edited.'
-    field('answer-input').dispatchEvent(new Event('input'))
-    document.body.querySelector<HTMLElement>('[data-testid="question-ai-open"]')!.click()
-    await flushPromises()
-
-    expect(requests.at(-1)?.variables.input).toMatchObject({ id: 3, answer: 'Edited.' })
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Draft the answer with AI'))
-  })
-
-  it('explains instead of drafting when the answer is over the limit', async () => {
-    await mount()
-    field('answer-input').value = 'This is far too long.'
-    field('answer-input').dispatchEvent(new Event('input'))
-    document.body.querySelector<HTMLElement>('[data-testid="question-ai-open"]')!.click()
-    await flushPromises()
-
-    expect(requests).toHaveLength(0)
-    expect(document.body.textContent).toContain('Over the limit')
-    expect(document.body.textContent).not.toContain('Draft the answer with AI')
-  })
-
-  it('refines a new question in one go: adds it, opens the AI, then Save updates it', async () => {
+  it('adds a new question with its fields', async () => {
     const wrapper = await mount(null)
     field('question-input').value = 'Why us?'
     field('question-input').dispatchEvent(new Event('input'))
-    document.body.querySelector<HTMLElement>('[data-testid="question-ai-open"]')!.click()
-    await flushPromises()
+    await save()
 
     expect(requests.at(-1)?.query).toContain('mutation AddApplicationQuestion')
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Draft the answer with AI'))
-    expect(wrapper.emitted('update:open')).toBeUndefined()
-
-    await save()
-    expect(requests.at(-1)?.variables.input).toMatchObject({ id: 9, question: 'Why us?' })
+    expect(requests.at(-1)?.variables.input).toMatchObject({ listingId: 5, question: 'Why us?' })
+    await vi.waitFor(() => expect(wrapper.emitted('changed')).toBeTruthy())
   })
 
-  it('fetches the AI prompt for the question being edited, each time the AI opens', async () => {
-    const wrapper = await mount()
-    const promptIds = () =>
-      requests
-        .filter((r) => r.query.includes('query ApplicationAnswerExternalPrompt'))
-        .map((r) => (r.variables as unknown as { questionId: number }).questionId)
-    const openAi = async () => {
-      document.body.querySelector<HTMLElement>('[data-testid="question-ai-open"]')!.click()
-      await flushPromises()
-      await vi.waitFor(() =>
-        expect(document.body.textContent).toContain('Draft the answer with AI')
-      )
-    }
-    await openAi()
-    await vi.waitFor(() => expect(promptIds()).toEqual([3]))
+  it('offers no AI drafting, which lives on the questions card', async () => {
+    await mount()
 
-    document.body.querySelector<HTMLElement>('[data-testid="ai-modal-cancel"]')!.click()
-    await flushPromises()
-    await wrapper.setProps({ question: { ...question, id: 4 } })
-    await openAi()
-    await vi.waitFor(() => expect(promptIds()).toEqual([3, 4]))
+    expect(document.body.querySelector('[data-testid="question-ai-open"]')).toBeNull()
+    expect(document.body.textContent).not.toContain('Refine with AI')
   })
 })

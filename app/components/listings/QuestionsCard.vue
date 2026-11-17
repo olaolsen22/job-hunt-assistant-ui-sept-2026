@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import type { ListingDetail } from '~/composables/useListing'
 
-// The application form's free-text questions for this listing, with their answers. Answers are
-// edited and drafted in the question's edit form, one question at a time.
+// The application form's free-text questions for this listing, numbered in form order, with their
+// answers and how many are done. One AI run drafts every answer; each question is edited on its own.
 const { listing } = defineProps<{ listing: ListingDetail }>()
 const emit = defineEmits<{ changed: [] }>()
 
@@ -29,6 +29,8 @@ const overBy = (q: Question) =>
   isOverLimit(q.answer ?? '', q.charLimit)
     ? (q.answer ?? '').length - (q.charLimit ?? ANSWER_MAX)
     : 0
+const answered = computed(() => questions.value.filter((q) => q.answer?.trim()).length)
+const overCount = computed(() => questions.value.filter((q) => overBy(q)).length)
 
 const selected = ref<Question | null>(null)
 const formOpen = ref(false)
@@ -37,9 +39,14 @@ const openForm = (question: Question | null) => {
   formOpen.value = true
 }
 
+const aiOpen = ref(false)
+
 const deleteOpen = ref(false)
-const confirmDelete = (question: Question) => {
+// Kept, not looked up: after the delete the list is replaced while the confirm is still closing.
+const selectedNumber = ref(0)
+const confirmDelete = (question: Question, n: number) => {
   selected.value = question
+  selectedNumber.value = n
   deleteOpen.value = true
 }
 
@@ -58,7 +65,7 @@ const remove = async () => {
 
 <template>
   <AppCard title="Application questions" data-testid="questions-card">
-    <template #actions>
+    <template v-if="questions.length" #actions>
       <span v-if="questions.length >= 18" class="text-sm text-muted" data-testid="questions-count">
         {{ questions.length }} / {{ QUESTIONS_PER_LISTING }}
         <template v-if="full">· Limit reached</template>
@@ -77,74 +84,126 @@ const remove = async () => {
 
     <div
       v-if="!questions.length"
-      class="flex flex-col items-center gap-2 py-4 text-center text-muted"
+      class="flex flex-col items-center gap-3 py-4 text-center text-muted"
       data-testid="questions-empty"
     >
       <UIcon name="i-lucide-message-square-text" class="size-8" />
-      <p class="text-sm">No questions yet. Add them in the order they appear on the form.</p>
+      <p class="text-sm">
+        No questions yet. Add the form’s free-text questions in the order they appear.
+      </p>
+      <UButton
+        color="neutral"
+        variant="subtle"
+        icon="i-lucide-plus"
+        data-testid="question-add"
+        @click="openForm(null)"
+        >Add question</UButton
+      >
     </div>
 
-    <p v-if="questions.length" class="mb-3 text-sm text-muted" data-testid="questions-order-hint">
-      Answer in the same order as the form. The AI reads your earlier saved answers so it doesn’t
-      repeat itself.
-    </p>
-    <ul v-if="questions.length" class="divide-y divide-default">
-      <li
-        v-for="q in questions"
-        :key="q.id"
-        class="flex items-start justify-between gap-2 py-3 first:pt-0 last:pb-0"
-        data-testid="question-row"
-      >
-        <div class="min-w-0 space-y-1">
-          <p class="font-medium break-words text-highlighted">{{ q.question }}</p>
-          <p v-if="q.answer" class="line-clamp-2 text-sm break-words whitespace-pre-line">
-            {{ q.answer }}
+    <template v-else>
+      <div class="mb-4 space-y-2">
+        <div
+          class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between"
+        >
+          <p class="flex items-center gap-1 text-sm text-muted" data-testid="questions-summary">
+            {{ answered }} of {{ questions.length }} answered
+            <template v-if="overCount">
+              ·
+              <span class="flex items-center gap-1 text-error">
+                <UIcon name="i-lucide-circle-alert" class="size-4 shrink-0" />
+                {{ overCount }} over {{ overCount === 1 ? 'its' : 'their' }} limit
+              </span>
+            </template>
           </p>
-          <p v-else class="flex flex-wrap items-center gap-x-2 text-sm text-muted">
-            No answer yet
-            <UButton
-              variant="link"
-              size="sm"
-              class="p-0"
-              data-testid="question-add-answer"
-              @click="openForm(q)"
-              >Add answer</UButton
-            >
-          </p>
-          <p
-            v-if="q.answer || q.charLimit"
-            class="flex items-center gap-1 text-xs"
-            :class="overBy(q) ? 'text-error' : 'text-muted'"
-          >
-            <UIcon v-if="overBy(q)" name="i-lucide-circle-alert" class="size-3.5 shrink-0" />
-            {{ (q.answer ?? '').length
-            }}<template v-if="q.charLimit"> / {{ q.charLimit }}</template> characters<template
-              v-if="overBy(q)"
-            >
-              · {{ overBy(q) }} over</template
-            >
-          </p>
-        </div>
-        <div class="flex shrink-0 gap-1">
           <UButton
-            size="lg"
-            variant="ghost"
+            icon="i-lucide-sparkles"
             color="neutral"
-            icon="i-lucide-pencil"
-            aria-label="Edit question"
-            @click="openForm(q)"
-          />
-          <UButton
-            size="lg"
-            variant="ghost"
-            color="error"
-            icon="i-lucide-trash-2"
-            aria-label="Delete question"
-            @click="confirmDelete(q)"
-          />
+            variant="subtle"
+            class="max-sm:w-full max-sm:justify-center"
+            data-testid="questions-ai-open"
+            @click="aiOpen = true"
+            >Draft answers with AI</UButton
+          >
         </div>
-      </li>
-    </ul>
+        <p class="text-sm text-muted" data-testid="questions-order-hint">
+          Add questions in the order the form asks them. They can’t be reordered later.
+        </p>
+      </div>
+
+      <ul class="divide-y divide-default">
+        <li
+          v-for="(q, i) in questions"
+          :key="q.id"
+          class="flex items-start justify-between gap-2 py-3 first:pt-0 last:pb-0"
+          data-testid="question-row"
+        >
+          <div class="min-w-0 max-w-3xl space-y-1">
+            <p class="font-medium break-words text-highlighted">{{ i + 1 }}. {{ q.question }}</p>
+            <p v-if="q.answer" class="line-clamp-3 text-sm break-words whitespace-pre-line">
+              {{ q.answer }}
+            </p>
+            <p v-else class="flex flex-wrap items-center gap-x-2 text-sm text-muted">
+              No answer yet
+              <UButton
+                variant="link"
+                size="sm"
+                class="p-0"
+                data-testid="question-add-answer"
+                @click="openForm(q)"
+                >Write answer</UButton
+              >
+            </p>
+            <p
+              v-if="q.answer || q.charLimit || q.notes"
+              class="flex flex-wrap items-center gap-x-3 text-xs text-muted"
+              data-testid="question-meta"
+            >
+              <!-- Each item stays whole, so a narrow row wraps between items, not mid-item. -->
+              <template v-if="q.answer">
+                <span
+                  class="flex items-center gap-1 whitespace-nowrap"
+                  :class="{ 'text-error': overBy(q) }"
+                >
+                  <UIcon v-if="overBy(q)" name="i-lucide-circle-alert" class="size-3.5 shrink-0" />
+                  {{ q.answer.length }}<template v-if="q.charLimit"> / {{ q.charLimit }}</template>
+                  characters
+                </span>
+                <span v-if="overBy(q)" class="whitespace-nowrap text-error"
+                  >{{ overBy(q) }} over</span
+                >
+              </template>
+              <span v-else-if="q.charLimit" class="whitespace-nowrap">Limit {{ q.charLimit }}</span>
+              <span
+                v-if="q.notes"
+                class="flex items-center gap-1 whitespace-nowrap"
+                data-testid="question-notes"
+              >
+                <UIcon name="i-lucide-sticky-note" class="size-3.5 shrink-0" /> Notes for the AI
+              </span>
+            </p>
+          </div>
+          <div class="flex shrink-0 gap-1">
+            <UButton
+              size="lg"
+              variant="ghost"
+              color="neutral"
+              icon="i-lucide-pencil"
+              :aria-label="`Edit question ${i + 1}`"
+              @click="openForm(q)"
+            />
+            <UButton
+              size="lg"
+              variant="ghost"
+              color="error"
+              icon="i-lucide-trash-2"
+              :aria-label="`Delete question ${i + 1}`"
+              @click="confirmDelete(q, i + 1)"
+            />
+          </div>
+        </li>
+      </ul>
+    </template>
   </AppCard>
 
   <ListingsQuestionModal
@@ -154,9 +213,17 @@ const remove = async () => {
     @changed="emit('changed')"
   />
 
+  <ListingsAnswersAiModal
+    v-if="questions.length"
+    v-model:open="aiOpen"
+    :listing-id="listing.id"
+    :questions="questions"
+    @changed="emit('changed')"
+  />
+
   <AppConfirmModal
     v-model:open="deleteOpen"
-    title="Delete question?"
+    :title="`Delete question ${selectedNumber}?`"
     description="Its answer and notes are deleted too."
     confirm-label="Delete"
     color="error"
