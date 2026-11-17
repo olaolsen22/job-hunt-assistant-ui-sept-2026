@@ -28,9 +28,11 @@ const router = useRouter()
 const fromQuery = (v: unknown): SkillFilter =>
   v === 'none' ? 'none' : Number.isInteger(Number(v)) && v ? Number(v) : 'all'
 const filter = ref<SkillFilter>(fromQuery(route.query.category))
-watch(filter, (value) =>
-  router.replace({ query: value === 'all' ? {} : { category: String(value) } })
-)
+// Merged into the query: the top-skills card keeps its controls there too.
+watch(filter, (value) => {
+  const { category: _, ...rest } = route.query
+  router.replace({ query: value === 'all' ? rest : { ...rest, category: String(value) } })
+})
 
 const search = ref('')
 // Deleting a category clears it on its skills, so null is the only uncategorized value.
@@ -59,10 +61,11 @@ const filterLabel = computed(() =>
 const selected = ref<number[]>([])
 useToastClearance(useTemplateRef('selection-bar'))
 
-// Counts change with every skill change, so both lists reload; the profile reloads on its next visit.
+// Counts change with every skill change (a merge adds up its skills' listings), so all three lists
+// reload; the profile reloads on its next visit.
 const reload = async () => {
   selected.value = []
-  await Promise.all([refresh(), refreshCategories()])
+  await Promise.all([refresh(), refreshCategories(), refreshNuxtData('top-skills')])
 }
 const categorized = (skill: CatalogSkill, categoryId: number | null) => {
   skill.categoryId = categoryId
@@ -182,6 +185,8 @@ const confirmDelete = async () => {
       </UCard>
 
       <div class="min-w-0 space-y-4 lg:col-span-2 xl:col-span-3">
+        <SkillsTopSkills />
+
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
           <UInput
             v-model="search"

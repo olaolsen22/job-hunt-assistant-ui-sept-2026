@@ -51,6 +51,7 @@ registerEndpoint('/graphql', {
     const q = body.query
     if (q.includes('query SkillCategories'))
       return { data: { skillCategories: { nodes: categories } } }
+    if (q.includes('query TopSkills')) return { data: { topSkills: [] } }
     if (q.includes('query SkillsCatalog'))
       return {
         data: { skills: { nodes: skills, pageInfo: { hasNextPage: false, endCursor: null } } }
@@ -101,9 +102,11 @@ const mountPage = async () => {
   await vi.waitFor(() => expect(queryAll('skills-row')).toHaveLength(skills.length))
   return wrapper
 }
-// Each skill row's category select (the page has no other USelect outside a modal).
+// Each skill row's category select; the top-skills period select is the only other one outside a modal.
 const rowSelect = (wrapper: Awaited<ReturnType<typeof mountPage>>, i: number) =>
-  wrapper.findAllComponents(USelect)[i]!
+  wrapper
+    .findAllComponents(USelect)
+    .filter((c) => c.vm.$attrs['data-testid'] !== 'top-skills-period')[i]!
 
 beforeEach(() => {
   categories = [category(1, 'Languages', 0), category(2, 'Frameworks', 1)]
@@ -207,6 +210,26 @@ describe('Skills page', () => {
     expect(callsOf('mutation CleanUpSkills')[0]!.variables!.operations).toEqual([
       { skillIds: [11, 12], names: ['Vue'] }
     ])
+    // A merge adds up listing counts, so the top-skills card reloads with the catalog.
+    await vi.waitFor(() => expect(callsOf('query TopSkills')).toHaveLength(2))
+  })
+
+  it('keeps the top-skills controls in the URL when the category filter changes', async () => {
+    const wrapper = await mountSuspended(SkillsPage, {
+      attachTo: document.body,
+      route: '/skills?period=30&required=1'
+    })
+    mounted.push(wrapper)
+    await vi.waitFor(() => expect(queryAll('skills-row')).toHaveLength(skills.length))
+    await click(query('skill-filter-none'))
+
+    await vi.waitFor(() =>
+      expect(useRouter().currentRoute.value.query).toEqual({
+        period: '30',
+        required: '1',
+        category: 'none'
+      })
+    )
   })
 
   it('warns that a rename onto an existing name merges', async () => {
