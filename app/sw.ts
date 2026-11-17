@@ -14,7 +14,8 @@ declare let self: ServiceWorkerGlobalScope
 // Built app files only. Nothing else is cached, so /api and /graphql always hit the network and
 // can't show stale or another session's data.
 cleanupOutdatedCaches()
-precacheAndRoute(self.__WB_MANIFEST)
+const manifest = self.__WB_MANIFEST
+precacheAndRoute(manifest)
 // Any page opens from the cached SPA shell, so a cold start offline reaches the offline screen.
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('/'), { denylist: [/^\/api\//, /^\/graphql/] })
@@ -73,7 +74,7 @@ self.addEventListener('periodicsync', (event) => {
 
 self.addEventListener('message', (event) => {
   const type = event.data?.type
-  // The update toast's Reload: activate the waiting worker, then the page reloads.
+  // The sidebar's Refresh app action activates a downloaded update.
   if (type === 'SKIP_WAITING') self.skipWaiting()
   // Settings' Check now and last-check line, answered over the MessageChannel port it sent.
   const port = event.ports[0]
