@@ -9,7 +9,7 @@ remove it when you delete one.
   header shows when either is given). Default wrapper for page sections.
 - `<AppMonthField v-model v-model:partial? disabled?>` — month `USelect` + year `UInputNumber`; model is `'YYYY-MM-01' | null`
   and is `null` whenever either part is empty; `partial` is true while only one part is set. Used by every dated profile entry.
-- `<AppCompareBlock current? suggested? current-label? suggested-label? compare?>` — the one layout for reviewing a
+- `<AppCompareBlock current? suggested? current-label? suggested-label? compare? contained?>` (`contained`: side by side by the nearest `@container`, not the viewport) — the one layout for reviewing a
   saved value against an AI suggestion or CV import: labelled "Current" then "Suggested" columns, side by side from `sm`,
   muted "Empty" for blanks. `#suggested` replaces the plain text with an editable field; `compare: false` renders only
   that slot (new item, nothing saved). Columns carry `compare-current` / `compare-suggested` test ids. Screens keep their
@@ -17,7 +17,7 @@ remove it when you delete one.
   `ProfileSkillCleanupModal`, `ProfileCvReview` and `ProfileCvEntryReview`.
 - `<AppAiCostNotice :usage?>` — says who pays for built-in AI: the app's AI key (warning), or the owner's own provider key when the default model's `keySource` is `USER` (info, with what is left of that provider's daily limit via `useLlmCallLimits`, fetched only then). Shows today's `LlmUsage` (for the default model, named by label) when given, names the default model (via `useLlmModels`) and links to `/settings` to change it. Used by `ListingsParseModal`, `ProfileCvImportModal` and `ListingsTailoredCvAiModal`.
 - `<AppAiModal v-model:open title description? busy? wide? close?>` — the frame of every built-in/own-AI modal: phone fullscreen, not dismissible and Cancel disabled while `busy`, `wide` = `max-w-4xl` for in-modal reviews, `close` runs instead of closing (confirm discard). Slots: default body, `#footer-top` (apply/save errors), `#back` (far left, review Back), `#footer-info` (left, counts/problems), `#actions` (primary after Cancel; primary on top on phones). Body order in every modal: description, method tabs, inputs, cost notice, then retry confirm or error.
-- `<AppAiReviewRow v-model:include? testid-prefix label? badge? note? invalid? description? current? suggested? remove-label? disabled? @remove>` — one reviewed AI suggestion (`<li>`): include tick (when `include` is bound) or change badge + note, optional Remove, current next to suggested via `AppCompareBlock`; `#suggested` for editable fields. Test ids `${prefix}-row|-include|-remove`. Used by `ProfileSkillWordingModal`, `ProfileBulletRefinementModal` and `ProfileSkillCleanupModal`.
+- `<AppAiReviewRow v-model:include? testid-prefix label? badge? note? invalid? description? current? suggested? current-label? suggested-label? remove-label? disabled? @remove>` — one reviewed AI suggestion (`<li>`): include tick (when `include` is bound) or change badge + note, optional Remove, current next to suggested via `AppCompareBlock`; `#suggested` for editable fields. Test ids `${prefix}-row|-include|-remove`. Used by `ProfileSkillWordingModal`, `ProfileBulletRefinementModal`, `ProfileSkillCleanupModal` and `ListingsAnswersAiModal`.
 - `<AppAiReviewEmpty icon text>` — centered muted icon above "Nothing to change". `<AppAiReviewSelectAll selected total @all @none>` — "N of M selected" with Select all / none (`review-select-all|none`).
 - `<AppAiMethodTabs v-model builtin? extra? disabled?>` — "Built-in AI" then "Your own AI" (`own`); `builtin` items replace the first tab (CV import: Paste CV); `extra` adds non-AI tabs after them (cover letter: Paste a letter).
 - `<AppAiOwnSteps :ai v-model:reply testid-prefix copy? copy-disabled? note? reply-help? reply-error? start-step?>` — the own-AI steps: copy prompt, prompt-load error with retry, "View prompt / copy manually", paste the reply. `#before` holds a feature's own first step (set `start-step` after it). Test ids `${prefix}-copy-prompt`, `-prompt-error`, `-json`.
@@ -106,9 +106,12 @@ remove it when you delete one.
   `<ListingsStatusTimeline>` + `<ListingsInterviews>`. `@changed` = refetch the listing.
 - `<ListingsStatusTimeline listing @changed>` — `UTimeline` of `statusHistory` with Edit
   (`<ListingsStatusChangeModal>`) per entry and Undo (confirmed) on the newest.
-- `<ListingsQuestionsCard listing @changed>` — application questions with answers (max 20), add/edit/delete via
-  `<ListingsQuestionModal>`; its "Refine with AI" (saves first, stays open) opens `<ListingsQuestionAiModal>` (built-in or own AI,
-  candidate is editable and over-limit blocks "Use answer"; only the edit form's Save writes).
+- `<ListingsQuestionsCard listing @changed>` — application questions (max 20), numbered in form order, with a
+  "N of M answered · N over its limit" summary, one meta line (characters / limit, notes marker) and add/edit/delete via
+  `<ListingsQuestionModal>` (no AI). "Draft answers with AI" opens `<ListingsAnswersAiModal listing-id questions @changed>`:
+  built-in or own AI drafts every question at once, then a ticked review (saved answer vs editable draft, fitting drafts
+  ticked, over-limit untickable until trimmed, "No draft" rows) and "Save N answers"; partial failures keep failed rows
+  for a retry; closing or reloading with unsaved drafts asks first.
 - `<ListingsInterviews listing @changed>` — upcoming/past interviews as "Round N · title", add/edit
   via `<ListingsInterviewModal>`, confirmed delete.
 - `<ListingsApplyModal>`, `<ListingsOutcomeModal>`, `<ListingsStatusChangeModal>`,
@@ -118,9 +121,13 @@ remove it when you delete one.
   — pick an uploaded document or a new PDF (uploaded by the caller on submit); `base-cvs` (the CV picker) also offers
   a CV template and version, which the caller turns into a document on submit (`GENERATE_BASE_CV_DOCUMENT`) and keeps
   for a retry. Used twice by `<ListingsApplyModal>`.
-- `<CvContentEditor v-model:cv v-model:flagged? :flag-language? :source disabled? :ai?>` — the CV's content cards (contact, summary, entries, skills,
+- `<CvContentEditor v-model:cv v-model:flagged? :flag-language? :source disabled? :ai? skills-modal? columns?>` (`#aside-start` slot) — the CV's content cards (contact, summary, entries, skills,
   languages) and their edit modals, applied to `cv` in place. Shared by the tailored CV page, which passes `ai`
-  (`CvEditorAi`: suggestion and AI-run bindings), and the CV template editor, which doesn't. `flagged` content paths
+  (`CvEditorAi`: suggestion and AI-run bindings) and `skills-modal` (skills listed, edited in
+  `<ListingsTailoredCvSkillsModal>`), and the CV template editor, which shows inline `<CvSkillRows v-model:skills
+section-order disabled? @remove @group>` (reorder, remove, Developer category/group). `columns` (tailored CV): two
+  columns from 2xl (main: contact, summary, experience, projects; side: `#aside-start`, skills, education,
+  certifications, languages); without it the slot renders above the single column. `flagged` content paths
   (a translated template) show as "Still in English" badges on their cards (`data-flagged` for scrolling) and clear
   when that card's edit applies. `source` is the API's prefill in the CV's language (`tailoredCvDraftFromProfile` or
   `baseCvFromProfile`), which the Add menus offer back.
@@ -130,8 +137,23 @@ remove it when you delete one.
   slot, `#status` beside the status, `#above` over it.
 - `<ListingsPossibleDuplicates matches disabled? testid-prefix @compare @keep @remove>` — the Possible duplicate alert, in quick add's
   review rows and `<ListingsDuplicateNotice listing-id>` on the listing page (reads `usePossibleDuplicates()`).
+- `<ListingsDescriptionText text lang? clamp?>` — a listing summary paragraph; `clamp` adds 12 lines + Show full description
+  (re-measured on resize and text change). `<ListingsDescriptionSwitch v-model posting-language>` — English / ad-language
+  tabs. Both driven by `useDescriptionView(listing)` → `{ view, hasOriginal, text, lang }` on the listing pages.
 - `<ListingsTailoredCvPdfModal v-model:open url file-name applicable?>` — previews any same-origin PDF: a document
-  (`/api/documents/<id>`) or a CV template version (`baseCvPdfUrl(versionId)`).
+  (`/api/documents/<id>`) or a CV template version (`baseCvPdfUrl(versionId)`). `file-name` is the label; Download / Save use the server's Content-Disposition name.
+- Tailored CV page pieces: `<ListingsTailoredCvSettings v-model:cv disabled? resetting? @rebuild>` (summary line +
+  settings slideover; language only offers a rebuild; default slot for rows under the summary),
+  `<ListingsTailoredCvReviewBar count @accept-all @discard-all>` (sticky bar while AI changes wait: position,
+  Previous/Next in page order), `<ListingsTailoredCvDiff diff>` (a `SuggestionDiff` with Reworded/New/Removed/Added
+  badges). `<ListingsTailoredCvSuggestion review? diff?>`: with `review` the diff and Keep current / Accept;
+  `CvSuggestionView.replaces` makes a section or entry hide its content behind the suggestion.
+- Cover letter page pieces: `<ListingsCoverLetterDetails v-model:letter v-model:open? disabled? resetting? @reset-header>`
+  (summary line "English · To X · date" + details slideover: language, sender, date, recipient; default slot for the
+  latest PDF row), `<ListingsCoverLetterReviewBar @use @discard>` (sticky bar while a new letter waits),
+  `<ListingsCoverLetterText letter name?>` (a letter's text read only), `<ListingsCoverLetterModal v-model:open editor
+listing-id paste?>` (notes + relocation weeks, Built-in / Own AI / Paste tabs). Utils: `withCoverLetterBody(letter,
+body)` (copies subject, greeting, paragraphs, closing), `hasCoverLetterBody`.
 - `<CvTemplatesDetailsModal v-model:open base-cv? @saved>` creates a CV template (prefilled from
   `baseCvFromProfile(language)`, then opens its editor; started as an AI draft, it goes to `/cv-templates/new` and creates nothing) or renames one; `<CvTemplatesDeleteModal v-model:open base-cv
 @deleted @archived>` offers Archive instead once the API says the template is in use.
@@ -153,6 +175,8 @@ remove it when you delete one.
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
 - `<ListingsDates listing>` — posted and deadline lines with icons (card and detail header), posted colored by days ago, deadline
   colored by days left to the server's `dueOn` (ASAP/Not stated show `due ~date`, or "likely filled" once past).
+- `<SkillsTopSkills>` — `/skills` "Most requested skills" card (`topSkills`, top 10); no props, period/required-only
+  in the URL query (`period`, `required`); data under the `top-skills` key — `refreshNuxtData('top-skills')` after skill merges.
 
 ## Composables (`app/composables/`)
 
@@ -182,11 +206,13 @@ remove it when you delete one.
   — the add page checks a filled form's names in one aliased query and provides the result;
   `NameCombobox` and `SkillsField` inject it to flag names the API doesn't know. No provider = nothing
   flagged. Also exports `NameLookup`.
-- `useAiPrompt(fetchInstructions, transform?)` → `{ instructions, promptLoading, promptError, copied, loadPrompt, copyText(text), copyPrompt(), reset() }` — the own-AI prompt every AI composable uses; `transform` appends what the query can't take (cover letter notes); `reset` clears a loaded prompt once the input it was built from changes (CV template AI draft). `AiPromptState` is what `AppAiOwnSteps` takes.
+- `useAiPrompt(fetchInstructions, transform?)` → `{ instructions, promptLoading, promptError, copied, loadPrompt, copyText(text), copyPrompt(), reset() }` — the own-AI prompt every AI composable uses; `transform` appends what the query can't take (cover letter notes and relocation weeks); `reset` clears a loaded prompt once the input it was built from changes (CV template AI draft). `AiPromptState` is what `AppAiOwnSteps` takes.
 - `useAiModalState(open, { tabFor?, onOpen? })` → `{ method, tab, error, errorCode, usage, refreshUsage }` — the open/reset boilerplate of every AI modal: tab from the remembered method (`tabFor` maps it), error cleared on open and on a tab switch, today's usage fetched on open, `errorCode` forgotten with its error; `onOpen(tab)` runs on each open (also when mounted open); call `refreshUsage()` after a run. `useTextRewriteReview(open, reply)` — the review step of the skill wording and translation modals: `rows` (`RewriteRow`: `current`, `text`, `include`), `included`/`blank`/`canApply`/`applicable`, `setAll`, `start(rows)`, `apply(save, done)`, `back`, `discard`, `requestClose`, `applyError`, `confirmOpen`. `useReviewDirty(state)` → `{ dirty, mark, clear }` — whether a review changed since `mark()`, so closing asks to discard only after an edit.
+- `useApplicationAnswersAi(listingId)` → `{ generate, preview(json), generating, previewing, ...useAiPrompt, safety/retry }` — drafts every application answer on a listing (`generateApplicationAnswers` / `previewApplicationAnswers` / `applicationAnswerExternalPrompt`); returns `AnswerCandidate[]` (`questionId`, `answer`, `length`, `overLimit`). `useAnswerReview(questions)` — its review rows (`AnswerRow`): ticks follow whether a draft fits until the owner sets one (`toggle`, `setAll`), `included`, `selectable`, `canSave`, `pending`, `overRows`, live `numberOf`/`limitOf`, trimmed `lengthOf`/`overBy`/`fits`, and `save()` → `{ saved, failed, stale }`: one aliased `updateApplicationQuestion` batch with the live question, limit and notes, per-row `saved`/`error`.
 - `useAiMethod()` → cookie `ai-method` (`builtin | own | null`): AI modals and quick-add open on it and write it after a successful run.
-- `useLeaveConfirm(unsaved)` → `{ open, leave }` — a page's in-app "Leave without saving?" (route-leave guard + confirm state); `useAiLeaveGuard()` → `{ open, leave }` — used once by the default layout: any navigation to another path while a built-in AI request is in flight asks first; `navigateAfterConfirm(to)` navigates past it after a page already asked. Reload/close is `plugins/leave-guard.client.ts`.
+- `useLeaveConfirm(unsaved)` → `{ open, leave }` — a page's in-app "Leave without saving?" (route-leave guard + confirm state); `useAiLeaveGuard()` → `{ open, leave }` — used once by the default layout: any navigation to another path while a built-in AI request is in flight asks first; `navigateAfterConfirm(to)` navigates past it after a page already asked. There is no app-wide reload/close guard; `ListingsAnswersAiModal` adds its own `beforeunload` while it holds unsaved drafts.
 - `useDeleteDocument(done)` → `{ target, confirmOpen, deleting, ask(pdf), confirm, isDeleted(id) }` — confirmed delete of a listing's unsent PDF; deleted ids stay hidden until the documents refetch; `done(deletedId | null)` after every attempt.
+- `useBackLink({ to, label })` — a sub page's parent link, shown in the default layout's fixed navbar (arrow, then the destination's short name from `sm`; icon-only with `Back to <label>` aria-label on phones). Keyed by route path, so the next page's link survives the old page unmounting. `useBackLinkState()` is the layout's read side. Top-level sidebar pages don't call it.
 - `useAppToast()` → `{ success, info, warning, error, undoable(title, onUndo, opts?) }`, each `(title, { description?, icon?, action?: { label, to?, onClick? }, id? }?)`. This is the only way to show a toast: a fixed color, icon and `TOAST_DURATION` per kind, one outline `md` action, and the id defaults to `kind:title`, so a repeated message replaces the old one. The PWA update toast is the one direct `useToast` exception. `useCopyAsText(noun)` → `{ copied, copy(text) }` — clipboard write with an error toast; `copied` flips for 2 s.
 - `useDebounce(fn, ms)` — debounced `fn`, dropped on unmount (search fields). `useOpenedOnce(open)` — latch for `<LazyX v-if="opened">`: loads a modal on its first open and keeps it mounted so the close animation plays.
 - `useParsePrompt(name)` → `{ instructions, promptLoading, promptError, copied, load (toasts on failure), loadPrompt, copy(posting), parsing, parse(posting), parsingUrl, parseFromUrl(listingId), parsingNewUrl, parseNewUrl(url) }` — fetches
@@ -255,6 +281,15 @@ remove it when you delete one.
 - `formatMonth(iso)` — `YYYY-MM-DD` as `nb-NO` short month + year; `formatMonthRange(start, end, openLabel?)`
   ("Mar 2020 – Present"; no `openLabel` shows just the start); `formatYears(months)` ("2.5 yrs", "<1 yr", "" for 0).
 - `daysFromToday(iso)` — whole days from local today to a `YYYY-MM-DD` date; negative if past.
+- `tailoredCv.ts` (partial): `changedCvSections(cv, next, split?)` splits an external reply into per-section and
+  per-entry changes; with `split` (tailored CV), added entries and a new order are their own changes
+  (`kind: 'add' | 'order'`). `orderCvEntries(cv, list, ids)` applies an order; `cvEntryName(entry)` gives the review
+  label name. `missingLinks(links, source)` / `missingLanguages(languages, source)`: the profile's links (URL
+  compared without protocol/`www.`/trailing slash) and languages (name, case-insensitive) a draft lacks, as copies.
+- `tailoredCvDiff.ts` — `diffBullets(current, suggested)` (kept/reworded/new/removed, paired by `sourceBulletId`, then
+  text), `diffChips(current, suggested, id, name)` (kept/added/removed), `suggestionDiff(key, current, suggested,
+style)` → `SuggestionDiff | null` (skills, or an entry's bullets/paragraph/technologies/details; null keeps the text
+  compare), type `CvSuggestionView`.
 
 ## Constants (`app/constants/`, import explicitly)
 
