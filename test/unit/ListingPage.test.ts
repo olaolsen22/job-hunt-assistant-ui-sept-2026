@@ -18,14 +18,16 @@ const listing = {
   employmentType: null,
   schedule: null,
   workMode: null,
-  description: null,
+  description: null as string | null,
+  originalDescription: null as string | null,
   url: 'https://example.com/job',
   postedOn: '2026-10-01',
   deadlineType: 'UNSPECIFIED',
   deadlineOn: null,
   dueOn: '2026-10-31',
-  postingLanguage: null,
+  postingLanguage: null as string | null,
   favoritedAt: null,
+  shortlistedAt: null,
   analyzedAt: null as string | null,
   reanalyzedAt: null as string | null,
   archivedAt: null,
@@ -86,17 +88,46 @@ const mountPage = async (overrides: Partial<typeof listing> = {}) => {
 }
 
 describe('Listing page', () => {
+  it('puts Back to the remembered listings view in the navbar', async () => {
+    useListingsView().value = '/listings?status=APPLIED'
+    const wrapper = await mountPage()
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/5',
+      to: '/listings?status=APPLIED',
+      label: 'Listings'
+    })
+    useListingsView().value = '/listings'
+    wrapper.unmount()
+  })
+
   it.each(['SAVED', 'APPLIED'])(
     'shows one requirements card in the agreed %s order',
     async (status) => {
       const wrapper = await mountPage({ status })
+      expect(wrapper.get('[data-testid="listing-shortlist"]').attributes('aria-pressed')).toBe(
+        'false'
+      )
       expect(wrapper.findAll('[data-testid="requirement-map-card"]')).toHaveLength(1)
       const text = wrapper.text()
       const requirements = text.indexOf('Requirements')
       const cv = text.indexOf('Tailored CV')
       expect(requirements).toBeLessThan(cv)
-      if (status === 'SAVED') expect(text.indexOf('Summary')).toBeLessThan(requirements)
-      else expect(text.indexOf('Application')).toBeLessThan(requirements)
+      expect(text.indexOf('Application')).toBeLessThan(requirements)
+      const workspace = wrapper.get('[data-testid="listing-workspace"]')
+      const details = wrapper.get('[data-testid="listing-details"]')
+      expect(workspace.find('[data-testid="listing-header"]').exists()).toBe(true)
+      expect(workspace.find('[data-testid="requirement-map-card"]').exists()).toBe(true)
+      expect(workspace.text()).toContain('Tailored CV')
+      expect(workspace.text()).not.toContain('Summary')
+      expect(details.text()).toContain('Summary')
+      expect(details.text()).toContain('Skills')
+      expect(details.find('[data-testid="requirement-map-card"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="listing-columns"]').classes()).toContain('2xl:grid-cols-2')
+      expect(
+        wrapper
+          .get('[data-testid="listing-columns"]')
+          .element.parentElement?.classList.contains('2xl:max-w-none')
+      ).toBe(true)
       expect(wrapper.find('[data-testid="listing-more"]').exists()).toBe(true)
       expect(text).toContain('Analyze ad')
       wrapper.unmount()
@@ -187,7 +218,7 @@ describe('Listing page', () => {
     invitation.unmount()
   })
 
-  it('shows the title and status badges in a header above the cards', async () => {
+  it('shows the title and status badges in the workspace header', async () => {
     const wrapper = await mountPage()
     const header = wrapper.get('[data-testid="listing-header"]')
 
@@ -421,5 +452,62 @@ describe('Listing skills on the profile', () => {
       )
     )
     wrapper.unmount()
+  })
+
+  describe('summary language switch', () => {
+    const switchOf = (wrapper: Awaited<ReturnType<typeof mountPage>>) =>
+      wrapper.find('[data-testid="listing-description-language"]')
+    const summary = (wrapper: Awaited<ReturnType<typeof mountPage>>) =>
+      wrapper.get('[data-testid="listing-description-text"]')
+
+    it('shows the English summary alone when there is no original', async () => {
+      const wrapper = await mountPage({
+        description: 'Build Vue apps.',
+        postingLanguage: 'ENGLISH'
+      })
+      expect(switchOf(wrapper).exists()).toBe(false)
+      expect(summary(wrapper).text()).toBe('Build Vue apps.')
+      expect(summary(wrapper).attributes('lang')).toBe('en')
+      wrapper.unmount()
+    })
+
+    it('hides the switch when the original is only whitespace', async () => {
+      const wrapper = await mountPage({
+        description: 'Build Vue apps.',
+        originalDescription: '  ',
+        postingLanguage: 'NORWEGIAN'
+      })
+      expect(switchOf(wrapper).exists()).toBe(false)
+      expect(summary(wrapper).text()).toBe('Build Vue apps.')
+      wrapper.unmount()
+    })
+
+    it('switches between the English and the Norwegian summary', async () => {
+      const wrapper = await mountPage({
+        description: 'Build Vue apps.',
+        originalDescription: 'Bygg Vue-apper.',
+        postingLanguage: 'NORWEGIAN'
+      })
+      const tabs = switchOf(wrapper).findAll('[role="tab"]')
+      expect(tabs.map((t) => t.text())).toEqual(['English', 'Norwegian'])
+      expect(summary(wrapper).text()).toBe('Build Vue apps.')
+      expect(summary(wrapper).attributes('lang')).toBe('en')
+
+      await tabs[1]!.trigger('mousedown', { button: 0 })
+      await vi.waitFor(() => expect(summary(wrapper).text()).toBe('Bygg Vue-apper.'))
+      expect(summary(wrapper).attributes('lang')).toBe('nb')
+
+      await tabs[0]!.trigger('mousedown', { button: 0 })
+      await vi.waitFor(() => expect(summary(wrapper).text()).toBe('Build Vue apps.'))
+      expect(summary(wrapper).attributes('lang')).toBe('en')
+      wrapper.unmount()
+    })
+
+    it('does not clamp the summary on the full listing page', async () => {
+      const wrapper = await mountPage({ description: 'Build Vue apps.' })
+      expect(summary(wrapper).classes()).not.toContain('line-clamp-12')
+      expect(wrapper.find('[data-testid="listing-description-toggle"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
   })
 })

@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { FormError } from '@nuxt/ui'
+import AppCard from '~/components/app/Card.vue'
 import {
   DEADLINE_TYPE_OPTIONS,
   EMPLOYMENT_TYPE_OPTIONS,
   LANGUAGE_OPTIONS,
+  LANGUAGE_TAGS,
+  languageLabel,
   LISTING_KIND_OPTIONS,
   SCHEDULE_OPTIONS,
   SENIORITY_OPTIONS,
@@ -18,6 +21,8 @@ const state = defineModel<ListingFormState>({ required: true })
 defineProps<{
   validate: (s: ListingFormState) => FormError[]
   submitLabel: string
+  wide?: boolean
+  stickyActions?: boolean
   cancelTo: string
 }>()
 defineEmits<{ submit: [] }>()
@@ -25,6 +30,13 @@ defineEmits<{ submit: [] }>()
 const form = useTemplateRef('form')
 // Lets the add page show every field's error right after filling the form from a parsed ad.
 defineExpose({ validate: () => form.value?.validate({ silent: true }) })
+
+// CV, letter and requirement prompts written in the ad's language use its own summary.
+const originalLanguage = computed(() =>
+  state.value.postingLanguage && state.value.postingLanguage !== 'ENGLISH'
+    ? state.value.postingLanguage
+    : undefined
+)
 
 // Unsolicited is offered only to a listing that already is one (made through the API).
 const kindItems = computed(() =>
@@ -38,9 +50,12 @@ const kindItems = computed(() =>
     :state="state"
     :validate="validate"
     class="w-full max-w-3xl space-y-4 sm:space-y-6"
+    :class="{
+      '2xl:max-w-none 2xl:grid 2xl:grid-cols-2 2xl:items-start 2xl:gap-6 2xl:space-y-0': wide
+    }"
     @submit="$emit('submit')"
   >
-    <AppCard title="Details">
+    <AppCard title="Details" :class="{ '2xl:row-span-2': wide }">
       <div class="grid gap-3 sm:grid-cols-2 sm:gap-4">
         <UFormField label="Job title" name="title" required class="sm:col-span-2">
           <UInput v-model="state.title" placeholder="As written in the ad" class="w-full" />
@@ -182,24 +197,61 @@ const kindItems = computed(() =>
     </AppCard>
 
     <AppCard>
-      <UFormField label="Summary" name="description" help="Short summary, not the full ad text">
-        <UTextarea
-          v-model="state.description"
-          :rows="3"
-          autoresize
-          placeholder="The role in your own words"
-          class="w-full"
-        />
-      </UFormField>
+      <div class="space-y-4">
+        <UFormField
+          :label="originalLanguage ? 'Summary in English' : 'Summary'"
+          name="description"
+          help="Short summary, not the full ad text"
+        >
+          <UTextarea
+            v-model="state.description"
+            :rows="3"
+            autoresize
+            placeholder="The role in your own words"
+            class="w-full"
+          />
+        </UFormField>
+        <!-- Hidden, not cleared, for an English ad: switching back keeps the text, and the API
+             drops it on save while the ad is English. -->
+        <UFormField
+          v-if="originalLanguage"
+          :label="`Summary in ${languageLabel(originalLanguage)}`"
+          name="originalDescription"
+          help="The same key points in the ad's language"
+        >
+          <UTextarea
+            v-model="state.originalDescription"
+            :rows="3"
+            autoresize
+            :placeholder="`The role in ${languageLabel(originalLanguage)}`"
+            :lang="LANGUAGE_TAGS[originalLanguage]"
+            class="w-full"
+            data-testid="listing-form-original-description"
+          />
+        </UFormField>
+      </div>
     </AppCard>
 
     <slot />
 
-    <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+    <component
+      :is="stickyActions ? AppCard : 'div'"
+      :ui="
+        stickyActions
+          ? { body: 'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end' }
+          : undefined
+      "
+      :class="{
+        '2xl:col-span-2': wide,
+        'lg:sticky lg:bottom-0 lg:z-20': stickyActions,
+        'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end': !stickyActions
+      }"
+      data-testid="listing-form-actions"
+    >
       <UButton :to="cancelTo" color="neutral" variant="ghost" class="justify-center sm:w-auto"
         >Cancel</UButton
       >
       <UButton type="submit" class="justify-center sm:w-auto">{{ submitLabel }}</UButton>
-    </div>
+    </component>
   </UForm>
 </template>

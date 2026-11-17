@@ -139,6 +139,7 @@ export const cleanListingDraft = (d: Record<string, unknown>) => {
     schedule: option(SCHEDULE_OPTIONS, d.schedule),
     workMode: option(WORK_MODE_OPTIONS, d.workMode),
     description: text(d.description),
+    originalDescription: text(d.originalDescription),
     postedOn: isoDate(d.postedOn),
     // Parse results saved before the backend merged ROLLING into ASAP can still say ROLLING.
     deadlineType:
@@ -205,6 +206,8 @@ export const emptyListing = () => ({
   schedule: undefined as Schedule | undefined,
   workMode: undefined as WorkMode | undefined,
   description: '',
+  // The same summary in the ad's language; empty for an English ad.
+  originalDescription: '',
   url: '',
   postedOn: todayIso(),
   deadlineType: 'UNSPECIFIED' as DeadlineType,
@@ -238,6 +241,9 @@ export const toListingInput = (l: ListingFields) => ({
   schedule: l.schedule ?? null,
   workMode: l.workMode ?? null,
   description: orNull(l.description),
+  // Sent as held (fill loads the saved one), so null clears it. The API drops it anyway when the
+  // ad is English or has no language.
+  originalDescription: orNull(l.originalDescription),
   // Empty only for an unsolicited application, which has neither.
   url: orNull(l.url),
   postedOn: l.postedOn || null,
@@ -291,6 +297,7 @@ export const useListingForm = () => {
       schedule: listing.schedule ?? undefined,
       workMode: listing.workMode ?? undefined,
       description: listing.description ?? '',
+      originalDescription: listing.originalDescription ?? '',
       url: listing.url ?? '',
       postedOn: listing.postedOn ?? '',
       deadlineType: listing.deadlineType,

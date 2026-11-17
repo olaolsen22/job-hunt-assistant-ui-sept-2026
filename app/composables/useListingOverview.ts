@@ -19,6 +19,7 @@ const LISTING_OVERVIEW = graphql(
         archivedAt
         url
         description
+        originalDescription
         postingLanguage
         seniority
         employmentType

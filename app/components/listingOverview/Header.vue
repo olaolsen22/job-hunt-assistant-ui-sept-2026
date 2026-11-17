@@ -4,8 +4,6 @@ import { LISTING_KIND_OPTIONS } from '~/constants/listing'
 
 const { listing } = defineProps<{ listing: ListingOverview }>()
 
-const listingsView = useListingsView()
-
 // The API owns dueOn (DATE: the deadline, ASAP: posted + 14, otherwise posted + 30), so only a
 // dated deadline is exact; the others show the estimate with "~" like the listings list.
 const due = computed(() => dueSummary(listing))
@@ -21,13 +19,6 @@ const deadline = computed(() => {
 
 <template>
   <header class="space-y-3">
-    <nav aria-label="Listing navigation">
-      <ULink :to="listingsView" class="inline-flex items-center gap-1.5 py-2 text-sm text-muted">
-        <UIcon name="i-lucide-arrow-left" class="size-4 shrink-0" />
-        Back to listings
-      </ULink>
-    </nav>
-
     <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
       <div class="min-w-0 space-y-2">
         <h1

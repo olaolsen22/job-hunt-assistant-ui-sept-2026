@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { useListingForm } from '~/composables/useListingForm'
+import { cleanListingDraft, useListingForm } from '~/composables/useListingForm'
 
 const fillRequired = (state: ReturnType<typeof useListingForm>['state']) => {
   state.title = ' Frontend Developer '
@@ -61,6 +61,7 @@ describe('useListingForm', () => {
       schedule: null,
       workMode: null,
       description: null,
+      originalDescription: null,
       url: 'https://example.com/job',
       postedOn: '2026-09-01',
       deadlineType: 'DATE',
@@ -92,6 +93,7 @@ describe('useListingForm', () => {
       jobRoleName: 'Developer',
       employmentType: 'PERMANENT',
       description: null,
+      originalDescription: null,
       deadlineOn: '2026-10-01',
       locations: [{ countryCode: 'SE', city: null }],
       languages: [{ language: 'NORWEGIAN', level: null, isRequired: true }],
@@ -161,6 +163,7 @@ describe('useListingForm', () => {
       schedule: null,
       workMode: null,
       description: null,
+      originalDescription: null,
       url: 'https://example.com/job',
       postedOn: '2026-09-01',
       deadlineType: 'UNSPECIFIED' as const,
@@ -299,5 +302,85 @@ describe('useListingForm', () => {
 
     expect(validate(state)).toEqual([])
     expect(toInput()).toMatchObject({ kind: 'UNSOLICITED', url: null, postedOn: null })
+  })
+
+  describe('summary in the ad language', () => {
+    const norwegianListing = (originalDescription: string | null) =>
+      ({
+        id: 1,
+        kind: 'VACANCY',
+        title: 'Utvikler',
+        company: { name: 'Acme' },
+        jobRole: { name: 'Developer' },
+        description: 'Build Vue apps.',
+        originalDescription,
+        url: 'https://example.com/job',
+        postedOn: '2026-09-01',
+        deadlineType: 'UNSPECIFIED',
+        deadlineOn: null,
+        postingLanguage: 'NORWEGIAN',
+        analyzedAt: null,
+        locations: [],
+        languages: [],
+        skills: [],
+        contacts: []
+      }) as never
+
+    it('starts empty and sends null when nothing is written', () => {
+      const { state, toInput } = useListingForm()
+      fillRequired(state)
+      expect(state.originalDescription).toBe('')
+      expect(toInput().originalDescription).toBeNull()
+
+      state.originalDescription = '   '
+      expect(toInput().originalDescription).toBeNull()
+    })
+
+    it('sends the trimmed original summary', () => {
+      const { state, toInput } = useListingForm()
+      fillRequired(state)
+      state.postingLanguage = 'NORWEGIAN'
+      state.originalDescription = '  Bygg Vue-apper.  '
+      expect(toInput()).toMatchObject({
+        postingLanguage: 'NORWEGIAN',
+        originalDescription: 'Bygg Vue-apper.'
+      })
+    })
+
+    it('trims the original summary from a parsed draft and drops a non-string', () => {
+      expect(cleanListingDraft({ originalDescription: '  Bygg Vue-apper. \n' })).toMatchObject({
+        originalDescription: 'Bygg Vue-apper.'
+      })
+      expect(cleanListingDraft({ originalDescription: 42 }).originalDescription).toBe('')
+      expect(cleanListingDraft({}).originalDescription).toBe('')
+    })
+
+    it('loads the saved original on fill and sends it back unchanged', () => {
+      const { state, toInput, fill } = useListingForm()
+      fill(norwegianListing('Bygg Vue-apper.'))
+      expect(state.originalDescription).toBe('Bygg Vue-apper.')
+      expect(toInput().originalDescription).toBe('Bygg Vue-apper.')
+    })
+
+    it('fills an empty field from a listing without an original', () => {
+      const { state, toInput, fill } = useListingForm()
+      state.originalDescription = 'Left over'
+      fill(norwegianListing(null))
+      expect(state.originalDescription).toBe('')
+      expect(toInput().originalDescription).toBeNull()
+    })
+
+    it('keeps the saved original when a re-parse has none, and takes a new one', () => {
+      const { state, fill, mergeDraft } = useListingForm()
+      fill(norwegianListing('Lagret sammendrag'))
+      mergeDraft({ description: 'New English summary' })
+      expect(state).toMatchObject({
+        description: 'New English summary',
+        originalDescription: 'Lagret sammendrag'
+      })
+
+      mergeDraft({ originalDescription: ' Nytt sammendrag ' })
+      expect(state.originalDescription).toBe('Nytt sammendrag')
+    })
   })
 })

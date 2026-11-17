@@ -81,6 +81,8 @@ export type ListingKind = (typeof LISTING_KIND_OPTIONS)[number]['value']
 export type Language = (typeof LANGUAGE_OPTIONS)[number]['value']
 export const languageLabel = (value: Language) =>
   LANGUAGE_OPTIONS.find((o) => o.value === value)!.label
+// BCP 47 tags for `lang` on text written in a language, so screen readers and spellcheck follow it.
+export const LANGUAGE_TAGS: Record<Language, string> = { ENGLISH: 'en', NORWEGIAN: 'nb' }
 export type CefrLevel = (typeof CEFR_LEVELS)[number]
 export type Proficiency = (typeof PROFICIENCY_OPTIONS)[number]['value']
 export type ProjectKind = (typeof PROJECT_KIND_OPTIONS)[number]['value']

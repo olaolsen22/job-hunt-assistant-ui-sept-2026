@@ -30,6 +30,7 @@ const baseListing = (): ListingOverview => ({
   archivedAt: null,
   url: 'https://jobs.example/5',
   description: 'Build Vue applications.',
+  originalDescription: null,
   postingLanguage: 'ENGLISH',
   seniority: null,
   employmentType: 'PERMANENT',
@@ -119,6 +120,17 @@ afterEach(() => {
 })
 
 describe('listing overview (v2)', () => {
+  it('puts Back to the remembered listings view in the navbar', async () => {
+    useListingsView().value = '/listings?status=APPLIED'
+    await mountPage()
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/v2/5',
+      to: '/listings?status=APPLIED',
+      label: 'Listings'
+    })
+    useListingsView().value = '/listings'
+  })
+
   it('starts the listing and requirement map requests together', async () => {
     await mountPage()
     expect(queries.some((q) => q.includes('query ListingOverview('))).toBe(true)
@@ -237,6 +249,109 @@ describe('listing overview (v2)', () => {
     const empty = wrapper!.find('[data-testid="overview-no-description"]')
     expect(empty.text()).toContain('No description saved')
     expect(empty.find('a').attributes('href')).toBe('https://jobs.example/5')
+  })
+
+  describe('about the role', () => {
+    const summary = () => wrapper!.get('[data-testid="listing-description-text"]')
+    const tabs = () =>
+      wrapper!.findAll(
+        '[data-testid="overview-description"] [data-testid="listing-description-language"] [role="tab"]'
+      )
+
+    it('shows the English summary without a switch when there is no original', async () => {
+      await mountPage()
+      expect(has('listing-description-language')).toBe(false)
+      expect(summary().text()).toBe('Build Vue applications.')
+      expect(summary().attributes('lang')).toBe('en')
+    })
+
+    it('marks the English summary of a Norwegian ad as English', async () => {
+      reset({ postingLanguage: 'NORWEGIAN' })
+      await mountPage()
+      expect(has('listing-description-language')).toBe(false)
+      expect(summary().attributes('lang')).toBe('en')
+    })
+
+    it('switches to the Norwegian summary from the card header', async () => {
+      reset({ postingLanguage: 'NORWEGIAN', originalDescription: 'Bygg Vue-applikasjoner.' })
+      await mountPage()
+      expect(tabs().map((t) => t.text())).toEqual(['English', 'Norwegian'])
+      expect(summary().text()).toBe('Build Vue applications.')
+
+      await tabs()[1]!.trigger('mousedown', { button: 0 })
+      await vi.waitFor(() => expect(summary().text()).toBe('Bygg Vue-applikasjoner.'))
+      expect(summary().attributes('lang')).toBe('nb')
+    })
+
+    it('hides the switch when only an original exists, showing the empty state', async () => {
+      reset({ description: null, postingLanguage: 'NORWEGIAN', originalDescription: 'Bygg.' })
+      await mountPage()
+      expect(has('listing-description-language')).toBe(false)
+      expect(has('overview-no-description')).toBe(true)
+    })
+
+    describe('clamp', () => {
+      afterEach(() => vi.restoreAllMocks())
+      // happy-dom has no layout, so pretend the 12-line box hides text (or not).
+      const overflow = (hidden: boolean) => {
+        vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(hidden ? 600 : 100)
+        vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(100)
+      }
+
+      it('clamps a long summary and toggles it open and closed', async () => {
+        overflow(true)
+        await mountPage()
+        expect(summary().classes()).toContain('line-clamp-12')
+        await vi.waitFor(() => expect(has('listing-description-toggle')).toBe(true))
+        const toggle = () => wrapper!.get('[data-testid="listing-description-toggle"]')
+        expect(toggle().text()).toBe('Show full description')
+        expect(toggle().attributes('aria-expanded')).toBe('false')
+
+        await toggle().trigger('click')
+        expect(summary().classes()).not.toContain('line-clamp-12')
+        expect(toggle().text()).toBe('Show less')
+        expect(toggle().attributes('aria-expanded')).toBe('true')
+
+        await toggle().trigger('click')
+        expect(summary().classes()).toContain('line-clamp-12')
+      })
+
+      it('shows no toggle when the summary fits', async () => {
+        overflow(false)
+        await mountPage()
+        await flushPromises()
+        expect(summary().classes()).toContain('line-clamp-12')
+        expect(has('listing-description-toggle')).toBe(false)
+      })
+
+      it('measures again after switching to a longer original', async () => {
+        reset({ postingLanguage: 'NORWEGIAN', originalDescription: 'Bygg Vue-applikasjoner.' })
+        const scroll = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(100)
+        vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(100)
+        await mountPage()
+        await flushPromises()
+        expect(has('listing-description-toggle')).toBe(false)
+
+        scroll.mockReturnValue(600)
+        await tabs()[1]!.trigger('mousedown', { button: 0 })
+        await vi.waitFor(() => expect(has('listing-description-toggle')).toBe(true))
+      })
+
+      it('drops the toggle when collapsing after switching to a short original while open', async () => {
+        reset({ postingLanguage: 'NORWEGIAN', originalDescription: 'Bygg Vue-applikasjoner.' })
+        const scroll = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(600)
+        vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(100)
+        await mountPage()
+        await vi.waitFor(() => expect(has('listing-description-toggle')).toBe(true))
+        await wrapper!.get('[data-testid="listing-description-toggle"]').trigger('click')
+
+        scroll.mockReturnValue(100)
+        await tabs()[1]!.trigger('mousedown', { button: 0 })
+        await vi.waitFor(() => expect(summary().text()).toBe('Bygg Vue-applikasjoner.'))
+        await wrapper!.get('[data-testid="listing-description-toggle"]').trigger('click')
+        await vi.waitFor(() => expect(has('listing-description-toggle')).toBe(false))
+      })
+    })
   })
 
   it('lists upcoming interviews first and unanswered questions', async () => {

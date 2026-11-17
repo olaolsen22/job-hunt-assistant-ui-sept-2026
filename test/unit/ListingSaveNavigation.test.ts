@@ -4,6 +4,7 @@ import { flushPromises } from '@vue/test-utils'
 import { mockNuxtImport, mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import AddPage from '~/pages/listings/add.vue'
 import EditPage from '~/pages/listings/[id]/edit.vue'
+import ListingForm from '~/components/listings/Form.vue'
 
 const { navigateTo, toastAdd } = vi.hoisted(() => ({ navigateTo: vi.fn(), toastAdd: vi.fn() }))
 mockNuxtImport('navigateTo', () => navigateTo)
@@ -219,8 +220,114 @@ describe('Leaving a listing form after saving', () => {
 
     // The installed app has no browser Back, so this is the only way out.
     await vi.waitFor(() => expect(wrapper.text()).toContain('Something went wrong'))
-    expect(wrapper.get('[data-testid="edit-listing-back"]').attributes('href')).toBe('/listings/1')
+    // Back sits in the layout's navbar; the listing's header card needs a loaded listing.
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/1/edit',
+      to: '/listings/1',
+      label: 'Listing'
+    })
+    expect(wrapper.find('[data-testid="edit-listing-header"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="parse-open"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+describe('Edit listing header', () => {
+  it('shows the saved title in a desktop-sticky card, with Back in the navbar', async () => {
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: async (event) => {
+        const { query } = await readBody(event)
+        if (!query.includes('listingById')) return { data: {} }
+        return {
+          data: {
+            listingById: {
+              id: 1,
+              kind: 'VACANCY',
+              title: 'Frontend Developer',
+              company: { id: 3, name: 'Acme', applicationCount: 0, avoidedAt: null },
+              jobRole: { name: 'Developer' },
+              seniority: null,
+              employmentType: null,
+              schedule: null,
+              workMode: null,
+              description: null,
+              originalDescription: null,
+              url: 'https://example.com/job',
+              postedOn: '2026-10-01',
+              deadlineType: 'UNSPECIFIED',
+              deadlineOn: null,
+              dueOn: null,
+              postingLanguage: null,
+              favoritedAt: null,
+              shortlistedAt: null,
+              analyzedAt: null,
+              reanalyzedAt: null,
+              archivedAt: null,
+              status: 'SAVED',
+              statusHistory: [],
+              interviews: [],
+              applicationQuestions: [],
+              documents: [],
+              locations: [],
+              languages: [],
+              skills: [],
+              contacts: []
+            }
+          }
+        }
+      }
+    })
+    const wrapper = await mountSuspended(EditPage, { route: '/listings/1/edit' })
+
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="edit-listing-header"]').exists()).toBe(true)
+    )
+    const header = wrapper.get('[data-testid="edit-listing-header"]')
+    expect(header.classes()).toEqual(
+      expect.arrayContaining(['lg:sticky', 'lg:top-0', 'rounded-lg', 'bg-default'])
+    )
+    expect(header.get('h1').text()).toBe('Frontend Developer')
+    expect(header.text()).toContain('Acme')
+    expect(header.find('[data-testid="parse-open"]').text()).toBe('Analyze ad')
+    expect(useBackLinkState().value).toEqual({
+      path: '/listings/1/edit',
+      to: '/listings/1',
+      label: 'Listing'
+    })
+    wrapper.unmount()
+  })
+})
+
+describe('Wide listing form', () => {
+  it('expands into two columns when requested by the edit page', async () => {
+    const { state, validate } = useListingForm()
+    const wrapper = await mountSuspended(ListingForm, {
+      props: {
+        modelValue: state,
+        validate,
+        submitLabel: 'Save changes',
+        cancelTo: '/listings/5',
+        wide: true,
+        stickyActions: true
+      }
+    })
+    expect(wrapper.classes()).toContain('2xl:max-w-none')
+    expect(wrapper.classes()).toContain('2xl:grid-cols-2')
+    const actions = wrapper.get('[data-testid="listing-form-actions"]')
+    expect(actions.classes()).toEqual(
+      expect.arrayContaining([
+        'lg:sticky',
+        'lg:bottom-0',
+        'rounded-lg',
+        'bg-default',
+        '2xl:col-span-2'
+      ])
+    )
+    expect(actions.text()).toContain('Cancel')
+    expect(actions.text()).toContain('Save changes')
+    await wrapper.setProps({ stickyActions: false })
+    expect(wrapper.get('[data-testid="listing-form-actions"]').classes()).not.toContain('lg:sticky')
     wrapper.unmount()
   })
 })

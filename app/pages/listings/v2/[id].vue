@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useMediaQuery, useResizeObserver } from '@vueuse/core'
+import { useMediaQuery } from '@vueuse/core'
 
 // Read-only v2 of the listing page, designed from the listing data alone; v1 stays at
 // /listings/[id] and nothing links here yet.
@@ -14,31 +14,19 @@ const map = useRequirementMapQuery(id)
 const { listing, loading, error, refresh } = await overview
 
 const listingsView = useListingsView()
+useBackLink({ to: listingsView, label: 'Listings' })
+
+useListingTitle(listing)
 
 // The page renders client-side only (server: false data), so this is known before content shows.
 const isPhone = useMediaQuery('(max-width: 39.99rem)')
 
-const descriptionEl = ref<HTMLElement>()
-const descriptionOpen = ref(false)
-const descriptionClamped = ref(false)
-// The toggle only shows when the clamp actually hides text; re-measured when the width changes
-// (sidebar collapse, rotation). While expanded nothing is clamped, so the last answer stands.
-useResizeObserver(descriptionEl, ([entry]) => {
-  if (descriptionOpen.value || !entry) return
-  const el = entry.target as HTMLElement
-  descriptionClamped.value = el.scrollHeight > el.clientHeight
-})
-watch(
-  descriptionEl,
-  async (el) => {
-    if (!el) return
-    await nextTick()
-    descriptionClamped.value = el.scrollHeight > el.clientHeight
-  },
-  { flush: 'post' }
-)
-
-const DESCRIPTION_LANG = { ENGLISH: 'en', NORWEGIAN: 'nb' } as const
+const {
+  view: descriptionView,
+  hasOriginal: hasOriginalDescription,
+  text: descriptionText,
+  lang: descriptionLang
+} = useDescriptionView(listing)
 
 const progressCount = computed(() =>
   listing.value
@@ -52,10 +40,6 @@ const progressCount = computed(() =>
 <template>
   <div class="space-y-4 @container sm:space-y-6">
     <template v-if="error">
-      <ULink :to="listingsView" class="inline-flex items-center gap-1.5 py-2 text-sm text-muted">
-        <UIcon name="i-lucide-arrow-left" class="size-4 shrink-0" />
-        Back to listings
-      </ULink>
       <UAlert
         color="error"
         title="Couldn't load the listing"
@@ -77,10 +61,6 @@ const progressCount = computed(() =>
     </div>
 
     <template v-else-if="!listing">
-      <ULink :to="listingsView" class="inline-flex items-center gap-1.5 py-2 text-sm text-muted">
-        <UIcon name="i-lucide-arrow-left" class="size-4 shrink-0" />
-        Back to listings
-      </ULink>
       <UAlert
         color="error"
         title="Listing not found"
@@ -122,27 +102,18 @@ const progressCount = computed(() =>
 
           <div class="space-y-4 sm:space-y-6 @7xl:col-span-5">
             <AppCard title="About the role" data-testid="overview-description">
-              <template v-if="listing.description">
-                <p
-                  ref="descriptionEl"
-                  :lang="
-                    listing.postingLanguage ? DESCRIPTION_LANG[listing.postingLanguage] : undefined
-                  "
-                  class="max-w-prose text-sm wrap-break-word whitespace-pre-line"
-                  :class="{ 'line-clamp-12': !descriptionOpen }"
-                >
-                  {{ listing.description }}
-                </p>
-                <UButton
-                  v-if="descriptionClamped"
-                  variant="link"
-                  class="mt-2 px-0"
-                  :aria-expanded="descriptionOpen"
-                  data-testid="overview-description-toggle"
-                  @click="descriptionOpen = !descriptionOpen"
-                  >{{ descriptionOpen ? 'Show less' : 'Show full description' }}</UButton
-                >
+              <template v-if="hasOriginalDescription && listing.description" #actions>
+                <ListingsDescriptionSwitch
+                  v-model="descriptionView"
+                  :posting-language="listing.postingLanguage"
+                />
               </template>
+              <ListingsDescriptionText
+                v-if="listing.description"
+                :text="descriptionText"
+                :lang="descriptionLang"
+                clamp
+              />
               <p v-else class="text-sm text-muted" data-testid="overview-no-description">
                 No description saved.
                 <ULink v-if="listing.url" :to="listing.url" target="_blank" class="text-primary"

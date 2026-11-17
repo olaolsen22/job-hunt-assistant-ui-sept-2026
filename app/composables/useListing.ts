@@ -23,6 +23,7 @@ const LISTING = graphql(
         schedule
         workMode
         description
+        originalDescription
         url
         postedOn
         deadlineType
@@ -30,6 +31,7 @@ const LISTING = graphql(
         dueOn
         postingLanguage
         favoritedAt
+        shortlistedAt
         analyzedAt
         reanalyzedAt
         archivedAt

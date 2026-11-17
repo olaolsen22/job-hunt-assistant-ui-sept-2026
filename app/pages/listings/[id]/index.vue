@@ -18,6 +18,15 @@ const id = Number(route.params.id)
 
 const { listing, loading, error, refresh } = await useListing(id)
 const listingsView = useListingsView()
+useBackLink({ to: listingsView, label: 'Listings' })
+const {
+  view: descriptionView,
+  hasOriginal: hasOriginalDescription,
+  text: descriptionText,
+  lang: descriptionLang
+} = useDescriptionView(listing)
+
+useListingTitle(listing)
 
 const SET_ARCHIVED = graphql(`
   mutation SetListingArchived($input: SetListingArchivedInput!) {
@@ -128,19 +137,9 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
 
 <template>
   <div class="flex justify-center">
-    <div class="w-full max-w-3xl space-y-4 sm:space-y-6 lg:max-w-6xl">
-      <div class="space-y-2">
-        <nav aria-label="Listing navigation">
-          <ULink
-            :to="listingsView"
-            class="inline-flex items-center gap-1.5 py-2 text-sm text-muted"
-          >
-            <UIcon name="i-lucide-arrow-left" class="size-4 shrink-0" />
-            Back to listings
-          </ULink>
-        </nav>
-
-        <div v-if="listing" class="flex w-full items-center gap-2 sm:justify-end">
+    <div class="w-full max-w-3xl space-y-4 sm:space-y-6 lg:max-w-6xl 2xl:max-w-none">
+      <div v-if="listing">
+        <div class="flex w-full items-center gap-2 sm:justify-end">
           <UButton
             :to="`/listings/${listing.id}/edit?analyze`"
             icon="i-lucide-sparkles"
@@ -211,121 +210,129 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
           data-testid="listing-archived-notice"
         />
 
-        <header class="space-y-3" data-testid="listing-header">
-          <div class="flex items-start justify-between gap-2">
-            <h1 class="min-w-0 break-words text-xl font-semibold text-highlighted">
-              {{ listing.title }}
-            </h1>
-            <AppFavoriteButton
-              :id="listing.id"
-              target="listing"
-              :favorited-at="listing.favoritedAt"
-              size="md"
-              class="shrink-0"
-            />
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <ListingsStatusBadge :status="listing.status" prominent />
-            <!-- Most listings are vacancies, so only the exceptions get a badge. -->
-            <UBadge
-              v-if="listing.kind !== 'VACANCY'"
-              color="neutral"
-              variant="subtle"
-              size="lg"
-              icon="i-lucide-mail-open"
-              data-testid="listing-kind"
-              >{{ labelOf(LISTING_KIND_OPTIONS, listing.kind) }}</UBadge
-            >
-            <ListingsAnalyzedBadge
-              :analyzed-at="listing.analyzedAt"
-              :reanalyzed-at="listing.reanalyzedAt"
-              size="lg"
-            />
-            <UBadge
-              v-if="listing.archivedAt"
-              color="neutral"
-              variant="subtle"
-              size="lg"
-              icon="i-lucide-archive"
-              data-testid="listing-archived"
-              >Archived</UBadge
-            >
-            <CompaniesAvoidedBadge
-              v-if="listing.company.avoidedAt"
-              label="Avoided company"
-              size="lg"
-            />
-          </div>
-
-          <div class="space-y-2 sm:grid sm:grid-cols-2 sm:gap-x-4 sm:space-y-0">
-            <div class="space-y-2">
-              <p class="flex items-center gap-1.5 text-sm text-muted">
-                <UIcon name="i-lucide-building-2" class="size-4 shrink-0" />
-                <ULink :to="`/companies/${listing.company.id}`" data-testid="listing-company">{{
-                  listing.company.name
-                }}</ULink>
-              </p>
-              <p
-                class="flex items-center gap-1.5 text-sm text-muted"
-                data-testid="listing-job-role"
-              >
-                <UIcon name="i-lucide-briefcase" class="size-4 shrink-0" />
-                {{ listing.jobRole.name }}
-              </p>
-              <ListingsLocation :listing="listing" />
-            </div>
-            <div class="mt-2 sm:mt-0">
-              <ListingsDates :listing="listing" />
-            </div>
-          </div>
-
-          <dl class="flex flex-wrap gap-x-6 gap-y-2" data-testid="listing-key-facts">
-            <div v-for="fact in keyFacts" :key="fact.label">
-              <dt class="text-xs text-muted">{{ fact.label }}</dt>
-              <dd class="text-sm">{{ fact.value }}</dd>
-            </div>
-          </dl>
-          <div class="flex flex-wrap gap-2">
-            <UButton
-              v-if="listing.url"
-              :to="listing.url"
-              target="_blank"
-              rel="noopener"
-              variant="soft"
-              color="neutral"
-              icon="i-lucide-external-link"
-              label="View ad"
-              data-testid="listing-view-ad"
-              class="w-full justify-center sm:w-auto"
-            />
-            <UButton
-              v-if="listing.status === 'SAVED'"
-              icon="i-lucide-check"
-              class="w-full justify-center sm:w-auto"
-              data-testid="listing-record-application"
-              @click="applyOpen = true"
-              >Record application</UButton
-            >
-          </div>
-        </header>
-
-        <template v-if="listing.status !== 'SAVED'">
-          <ListingsApplication
-            v-model:apply-open="applyOpen"
-            :listing="listing"
-            @changed="refresh"
-          />
-          <ListingsRequirementMapCard :listing="listing" />
-          <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
-          <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
-          <ListingsQuestionsCard :listing="listing" @changed="refresh" />
-        </template>
-
         <div
-          class="space-y-4 sm:space-y-6 lg:grid lg:grid-cols-3 lg:items-start lg:gap-6 lg:space-y-0"
+          class="grid min-w-0 gap-4 sm:gap-6 2xl:grid-cols-2 2xl:items-start 2xl:gap-8"
+          data-testid="listing-columns"
         >
-          <div class="space-y-4 sm:space-y-6 lg:col-span-2 lg:row-start-1">
+          <div class="min-w-0 space-y-4 sm:space-y-6" data-testid="listing-workspace">
+            <header class="space-y-3" data-testid="listing-header">
+              <div class="flex items-start justify-between gap-2">
+                <h1 class="min-w-0 break-words text-xl font-semibold text-highlighted">
+                  {{ listing.title }}
+                </h1>
+                <div class="flex shrink-0 items-center">
+                  <ListingsShortlistButton
+                    :id="listing.id"
+                    :shortlisted-at="listing.shortlistedAt"
+                    size="md"
+                    @changed="refresh"
+                  />
+                  <AppFavoriteButton
+                    :id="listing.id"
+                    target="listing"
+                    :favorited-at="listing.favoritedAt"
+                    size="md"
+                    class="shrink-0"
+                  />
+                </div>
+              </div>
+
+              <div class="flex flex-wrap gap-2">
+                <ListingsStatusBadge :status="listing.status" prominent />
+                <!-- Most listings are vacancies, so only the exceptions get a badge. -->
+                <UBadge
+                  v-if="listing.kind !== 'VACANCY'"
+                  color="neutral"
+                  variant="subtle"
+                  size="lg"
+                  icon="i-lucide-mail-open"
+                  data-testid="listing-kind"
+                  >{{ labelOf(LISTING_KIND_OPTIONS, listing.kind) }}</UBadge
+                >
+                <ListingsAnalyzedBadge
+                  :analyzed-at="listing.analyzedAt"
+                  :reanalyzed-at="listing.reanalyzedAt"
+                  size="lg"
+                />
+                <UBadge
+                  v-if="listing.archivedAt"
+                  color="neutral"
+                  variant="subtle"
+                  size="lg"
+                  icon="i-lucide-archive"
+                  data-testid="listing-archived"
+                  >Archived</UBadge
+                >
+                <CompaniesAvoidedBadge
+                  v-if="listing.company.avoidedAt"
+                  label="Avoided company"
+                  size="lg"
+                />
+              </div>
+
+              <div class="space-y-2 sm:grid sm:grid-cols-2 sm:gap-x-4 sm:space-y-0">
+                <div class="space-y-2">
+                  <p class="flex items-center gap-1.5 text-sm text-muted">
+                    <UIcon name="i-lucide-building-2" class="size-4 shrink-0" />
+                    <ULink :to="`/companies/${listing.company.id}`" data-testid="listing-company">{{
+                      listing.company.name
+                    }}</ULink>
+                  </p>
+                  <p
+                    class="flex items-center gap-1.5 text-sm text-muted"
+                    data-testid="listing-job-role"
+                  >
+                    <UIcon name="i-lucide-briefcase" class="size-4 shrink-0" />
+                    {{ listing.jobRole.name }}
+                  </p>
+                  <ListingsLocation :listing="listing" />
+                </div>
+                <div class="mt-2 sm:mt-0">
+                  <ListingsDates :listing="listing" />
+                </div>
+              </div>
+
+              <dl class="flex flex-wrap gap-x-6 gap-y-2" data-testid="listing-key-facts">
+                <div v-for="fact in keyFacts" :key="fact.label">
+                  <dt class="text-xs text-muted">{{ fact.label }}</dt>
+                  <dd class="text-sm">{{ fact.value }}</dd>
+                </div>
+              </dl>
+              <div class="flex flex-wrap gap-2">
+                <UButton
+                  v-if="listing.url"
+                  :to="listing.url"
+                  target="_blank"
+                  rel="noopener"
+                  variant="soft"
+                  color="neutral"
+                  icon="i-lucide-external-link"
+                  label="View ad"
+                  data-testid="listing-view-ad"
+                  class="w-full justify-center sm:w-auto"
+                />
+                <UButton
+                  v-if="listing.status === 'SAVED'"
+                  icon="i-lucide-check"
+                  class="w-full justify-center sm:w-auto"
+                  data-testid="listing-record-application"
+                  @click="applyOpen = true"
+                  >Record application</UButton
+                >
+              </div>
+            </header>
+
+            <ListingsApplication
+              v-model:apply-open="applyOpen"
+              :listing="listing"
+              @changed="refresh"
+            />
+            <ListingsRequirementMapCard :listing="listing" />
+            <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
+            <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
+            <ListingsQuestionsCard :listing="listing" @changed="refresh" />
+          </div>
+          <div class="min-w-0 space-y-4 sm:space-y-6" data-testid="listing-details">
             <AppCard title="Summary">
               <dl class="grid gap-x-4 gap-y-3 border-b border-default pb-4 sm:grid-cols-2">
                 <div>
@@ -358,24 +365,25 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
                   </dd>
                 </div>
               </dl>
-              <p v-if="listing.description" class="mt-4 whitespace-pre-line text-sm">
-                {{ listing.description }}
-              </p>
+              <template v-if="listing.description">
+                <div
+                  v-if="hasOriginalDescription"
+                  class="mt-4 mb-2 flex flex-wrap items-center justify-between gap-2"
+                >
+                  <h3 class="text-xs text-muted">About the role</h3>
+                  <ListingsDescriptionSwitch
+                    v-model="descriptionView"
+                    :posting-language="listing.postingLanguage"
+                  />
+                </div>
+                <ListingsDescriptionText
+                  :text="descriptionText"
+                  :lang="descriptionLang"
+                  :class="{ 'mt-4': !hasOriginalDescription }"
+                />
+              </template>
               <p v-else class="mt-4 text-sm text-muted">No summary</p>
             </AppCard>
-            <template v-if="listing.status === 'SAVED'">
-              <ListingsRequirementMapCard :listing="listing" />
-              <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
-              <ListingsCoverLetterCard :listing="listing" @changed="refresh" />
-              <ListingsQuestionsCard :listing="listing" @changed="refresh" />
-              <ListingsApplication
-                v-model:apply-open="applyOpen"
-                :listing="listing"
-                @changed="refresh"
-              />
-            </template>
-          </div>
-          <div class="space-y-4 sm:space-y-6 lg:col-start-3 lg:row-start-1">
             <AppCard title="Skills">
               <p v-if="!listing.skills.length" class="text-sm text-muted">No skills listed</p>
               <div v-else class="space-y-4">
