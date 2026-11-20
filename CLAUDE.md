@@ -50,10 +50,13 @@ Docs: `docs/STATUS.md` (per-page behaviour + decisions; search it), `docs/BACKLO
 
 ## Workflow for real features (not small fixes)
 
-1. `ux-designer` agent before placing new UI.
-2. Implement here, rebuild preview.
-3. `tester` agent: tests + screenshots (its screenshots count as your visual check; open only the
+1. User flow first: ask the owner for the user flow. If changing a feature with no documented
+   flow, ask before touching it. Brainstorm it together; agree a brief overview of the flow.
+2. `ux-designer` agent on the agreed flow before placing new UI.
+3. Tests first (light: cover the flow's key behaviour, not every edge), then implement here,
+   rebuild preview.
+4. `tester` agent: fill test gaps + screenshots (its screenshots count as your visual check; open only the
    ones it flags or the owner should see).
-4. `senior-reviewer` on the diff; fix what it finds.
+5. `senior-reviewer` on the diff; fix what it finds.
 
 Pass agents a short brief (files changed, intent) so they don't re-explore the repo.
