@@ -34,10 +34,19 @@ watch([month, year], ([m, y]) => {
   model.value = toIso(m, y)
   partial.value = !m !== !y
 })
+
+// A picked month can't be unpicked in the select, so without this an end date could never go back
+// to empty (ongoing). Focus moves to the month select because the button disappears.
+const root = useTemplateRef('root')
+const clear = () => {
+  month.value = undefined
+  year.value = undefined
+  nextTick(() => root.value?.querySelector<HTMLElement>('button')?.focus())
+}
 </script>
 
 <template>
-  <div class="flex gap-2">
+  <div ref="root" class="flex gap-2">
     <USelect
       v-model="month"
       :items="MONTHS"
@@ -53,9 +62,19 @@ watch([month, year], ([m, y]) => {
       :max="2100"
       :increment="false"
       :decrement="false"
+      :format-options="{ useGrouping: false }"
       placeholder="Year"
       aria-label="Year"
       class="w-28"
+    />
+    <UButton
+      v-if="(month || year) && !disabled"
+      icon="i-lucide-x"
+      color="neutral"
+      variant="ghost"
+      square
+      aria-label="Clear month and year"
+      @click="clear"
     />
   </div>
 </template>

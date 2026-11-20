@@ -43,4 +43,30 @@ describe('MonthField', () => {
     expect(wrapper.findComponent(USelect).props('modelValue')).toBe(3)
     expect(wrapper.findComponent(UInputNumber).props('modelValue')).toBe(2021)
   })
+
+  it('clears both parts back to null from the clear button', async () => {
+    const wrapper = await mountField('2021-03-01')
+    await wrapper.find('[aria-label="Clear month and year"]').trigger('click')
+    await nextTick()
+    expect(lastEmit(wrapper)).toBeNull()
+    expect(wrapper.emitted('update:partial')?.at(-1)?.[0] ?? false).toBe(false)
+    expect(wrapper.find('[aria-label="Clear month and year"]').exists()).toBe(false)
+  })
+
+  it('hides the clear button when empty or disabled', async () => {
+    expect((await mountField(null)).find('[aria-label="Clear month and year"]').exists()).toBe(
+      false
+    )
+    const disabled = await mountSuspended(MonthField, {
+      props: { modelValue: '2021-03-01', disabled: true }
+    })
+    expect(disabled.find('[aria-label="Clear month and year"]').exists()).toBe(false)
+  })
+
+  it('shows the year without digit grouping', async () => {
+    const wrapper = await mountField('2026-03-01')
+    expect(wrapper.findComponent(UInputNumber).props('formatOptions')).toEqual({
+      useGrouping: false
+    })
+  })
 })
