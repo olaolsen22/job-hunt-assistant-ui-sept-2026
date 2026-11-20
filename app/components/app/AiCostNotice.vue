@@ -7,23 +7,13 @@ const { usage = undefined } = defineProps<{ usage?: LlmUsage }>()
 const tokens = new Intl.NumberFormat()
 const { models, defaultModel, label } = useLlmModels()
 const current = computed(() => models.value.find((m) => m.id === defaultModel.value))
-const ownKey = computed(() => current.value?.keySource === 'USER')
-
-// Only the owner's own keys have limits, so they're fetched only when one is in use.
-const { limits, status: limitsStatus, execute: loadLimits } = useLlmCallLimits(false)
-watch(
-  ownKey,
-  (own) => {
-    if (own && limitsStatus.value === 'idle') loadLimits()
-  },
-  { immediate: true }
-)
+// Only an own key's limit is mentioned here; the shared pool shows in today's usage line.
+const { ownKey, cap, state } = useRequestCap(() => usage, current)
 const remaining = computed(() => {
-  const limit = limits.value.find((l) => l.provider === current.value?.provider)
-  if (limit?.dailyRequestLimit == null) return undefined
-  return limit.dailyRequestLimit === 0
+  if (!ownKey.value || !cap.value || state.value === 'unlimited') return undefined
+  return state.value === 'paused'
     ? 'This key is paused in Settings.'
-    : `${limit.remainingRequests ?? 0} requests left today.`
+    : `${cap.value.left ?? 0} requests left today.`
 })
 </script>
 
@@ -47,7 +37,7 @@ const remaining = computed(() => {
           and uses <span data-testid="ai-notice-model">{{ label(defaultModel) }}</span></template
         >.
         <template v-if="ownKey && remaining">{{ remaining }}</template>
-        <ULink to="/settings" class="font-medium underline">Change model</ULink>
+        <ULink to="/settings#model" class="font-medium underline">Change model</ULink>
       </p>
       <!-- Today's usage on one line; the model only when it differs from the one named above. -->
       <p v-if="usage" class="text-muted">

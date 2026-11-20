@@ -18,8 +18,8 @@ const { success: toastSuccess } = useAppToast()
 type Mode = 'none' | 'paused' | 'daily'
 const MODES = [
   { label: 'No limit', value: 'none' },
-  { label: 'Pause', value: 'paused', description: 'No AI calls on this key until you change it.' },
-  { label: 'Daily allowance', value: 'daily' }
+  { label: 'Paused', value: 'paused', description: 'Blocks AI on this key until you change it.' },
+  { label: 'Daily cap', value: 'daily', description: 'Stops AI on this key once the cap is hit.' }
 ]
 const modeOf = (value: number | null): Mode =>
   value == null ? 'none' : value === 0 ? 'paused' : 'daily'
@@ -58,7 +58,7 @@ const submit = async () => {
   <AppFormModal
     v-model:open="open"
     :title="`${providerLabel(limit.provider)} daily limit`"
-    description="Counts built-in AI requests on your own key. Resets every day."
+    description="Counts built-in AI requests on your own key. Kept if you replace or remove the key."
     :state="state"
     :validate="validate"
     :loading="saving"

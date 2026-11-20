@@ -13,12 +13,12 @@ doesn't send is cleared; only `contacts` and `trainingProgram` are kept when omi
 - Job-role categories: `jobRoleCategories` and create, update and set mutations. Parses and imports
   send `jobRoleCategoryName`, but the form has no control for it. The listings "IT" toggle already
   filters by category name.
-- Usage history: `usageDaily(days, credentialId)`. The dashboard shows today only.
 - Unsolicited applications (`ListingKind.UNSOLICITED`: no ad link, posting date or due date). The UI
   shows them and keeps the kind on save, but can't create one: the form requires an ad link.
 
 ## Features / UX
 
+- AI settings, after the 2026-11-18 overhaul: "Previous keys" per provider row (`providerKeys(includeRetired)`), usage filtered by key (`usageDaily(credentialId)`), a by-day usage chart, a quick Pause action on a key row. The dashboard widget's link reads "View all" (fixed `DashboardWidget` label).
 - Tailored CV page, phase 2 of the redesign (phase 1 is the `redesign-tailored-cv-page` change; the
   ux-designer proposed it on 2026-11-16):
   - Show the content as one page that looks like a CV: name, headline, contact line, then sections

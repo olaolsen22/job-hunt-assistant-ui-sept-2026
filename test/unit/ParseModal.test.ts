@@ -288,7 +288,7 @@ describe('ParseModal', () => {
     expect(line('ai-usage-requests')?.replace(/\s+/g, ' ').trim()).toBe('3 of 50 requests')
     expect(
       document.body.querySelector('[data-testid="parse-cost-notice"] a')?.getAttribute('href')
-    ).toBe('/settings')
+    ).toBe('/settings#model')
     wrapper.vm.source = 'text'
     await flushPromises()
     expect(notice()).not.toBeNull()
@@ -363,7 +363,7 @@ describe('ParseModal', () => {
       await vi.waitFor(() => expect(error()?.textContent).toContain('Stopped: daily-limit-reached'))
       expect(
         error()?.querySelector('[data-testid="ai-limit-settings"]')?.getAttribute('href')
-      ).toBe('/settings')
+      ).toBe('/settings#keys')
       expect(
         document.body.querySelector<HTMLTextAreaElement>('[data-testid="parse-ad"]')!.value
       ).toBe('Some ad')

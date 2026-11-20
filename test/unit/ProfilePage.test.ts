@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
-import { USelectMenu, USelect, UCheckbox } from '#components'
+import type { Component } from 'vue'
+import { USelectMenu, USelect, UCheckbox, URadioGroup } from '#components'
 import { VueDraggable } from 'vue-draggable-plus'
 import ProfileExperienceModal from '~/components/profile/ExperienceModal.vue'
 import ProfileProjectKindSelect from '~/components/profile/ProjectKindSelect.vue'
@@ -15,9 +16,10 @@ import ProfileTargetLocations from '~/components/profile/TargetLocations.vue'
 
 registerEndpoint('/api/auth/me', () => ({ id: '1', email: 'owner@example.com', role: 'Owner' }))
 
-// Simulate desktop so collapsible sections are expanded and sidebar Skills renders.
+// Simulate a tablet-up screen; `wide` switches on the two-column layout (from 1536px).
+let wide = false
 vi.stubGlobal('matchMedia', (query: string) => ({
-  matches: query === '(min-width: 768px)',
+  matches: query === '(min-width: 768px)' || (wide && query === '(min-width: 1536px)'),
   media: query,
   addEventListener: () => {},
   removeEventListener: () => {},
@@ -185,7 +187,11 @@ const TooltipStub = defineComponent({
       h('div', { 'data-tooltip': props.disabled ? undefined : props.text }, slots.default?.())
 })
 
-const mountPage = async (profile: typeof emptyProfile = filledProfile, respond?: Respond) => {
+const mountPage = async (
+  profile: typeof emptyProfile = filledProfile,
+  respond?: Respond,
+  stubs: Record<string, Component> = {}
+) => {
   const requests: Request[] = []
   const current = structuredClone(profile) as typeof filledProfile
   registerEndpoint('/graphql', {
@@ -196,10 +202,11 @@ const mountPage = async (profile: typeof emptyProfile = filledProfile, respond?:
       return { data: respond?.(body, current) ?? { profile: current } }
     }
   })
-  // useAsyncData keeps its data between mounts in the same file.
+  // useAsyncData keeps its data between mounts in the same file, and so does the route.
   clearNuxtData('profile')
+  await useRouter().replace({ query: {} })
   const wrapper = await mountSuspended(ProfilePage, {
-    global: { stubs: { UTooltip: TooltipStub } }
+    global: { stubs: { UTooltip: TooltipStub, ...stubs } }
   })
   await flushPromises()
   return { wrapper, requests, profile: current }
@@ -233,8 +240,21 @@ const setInputIn = (
 
 const contentLanguage = (wrapper: Awaited<ReturnType<typeof mountSuspended>>) =>
   wrapper
-    .findAllComponents(USelect)
-    .find((select) => select.vm.$attrs['data-testid'] === 'profile-content-language')!
+    .findAllComponents(URadioGroup)
+    .find((group) => group.vm.$attrs['data-testid'] === 'profile-content-language')!
+
+// The language tabs (UTabs, Reka) switch on mousedown, as a pointer would.
+const languageTabs = (wrapper: { element: Element }) => [
+  ...wrapper.element.querySelectorAll<HTMLElement>(
+    '[data-testid="profile-language-view"] [role="tab"]'
+  )
+]
+const chooseView = async (wrapper: { element: Element }, label: string) => {
+  languageTabs(wrapper)
+    .find((tab) => tab.textContent?.includes(label))!
+    .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  await flushPromises()
+}
 
 const EXPERIENCE_ACTIONS =
   '[data-testid="profile-experience"] [data-testid="profile-entry-actions"]'
@@ -270,7 +290,7 @@ describe('ProfilePage', () => {
     })
     failed = true
     await expect(wrapper.vm.refreshCvProfile()).rejects.toThrow()
-    expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('Ada Lovelace')
+    expect(wrapper.get('[data-testid="profile-contact"]').text()).toContain('Ada Lovelace')
     wrapper.unmount()
   })
 
@@ -292,7 +312,7 @@ describe('ProfilePage', () => {
 
   it('shows every section of a filled profile', async () => {
     const { wrapper } = await mountPage()
-    expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('Ada Lovelace')
+    expect(wrapper.get('[data-testid="profile-contact"]').text()).toContain('Ada Lovelace')
     expect(wrapper.get('[data-testid="profile-link"]').attributes('target')).toBe('_blank')
     for (const section of [
       'summary',
@@ -326,60 +346,101 @@ describe('ProfilePage', () => {
     norwegian.wrapper.unmount()
   })
 
-  it('lists Preferences last in the side column, after Certifications', async () => {
+  const order = (html: string, ids: string[]) =>
+    ids.map((id) => html.indexOf(`data-testid="profile-${id}"`))
+  const ascending = (positions: number[]) =>
+    positions.every((p, i) => p >= 0 && (i === 0 || p > positions[i - 1]!))
+
+  it('shows one column in reading order, with the off-CV zone last', async () => {
     const { wrapper } = await mountPage()
-    const html = wrapper.html()
-    for (const [before, after] of [
-      ['skills', 'languages'],
-      ['languages', 'hobbies'],
-      ['hobbies', 'certifications'],
-      ['certifications', 'preferences']
-    ]) {
-      expect(html.indexOf(`data-testid="profile-${before}"`)).toBeLessThan(
-        html.indexOf(`data-testid="profile-${after}"`)
-      )
-    }
+    expect(wrapper.find('[data-testid="profile-columns"]').exists()).toBe(false)
+    expect(wrapper.get('h1').text()).toBe('CV profile')
+    const positions = order(wrapper.html(), [
+      'settings',
+      'contact',
+      'summary',
+      'experience',
+      'skills',
+      'education',
+      'certifications',
+      'projects',
+      'languages',
+      'hobbies',
+      'references',
+      'off-cv',
+      'preferences',
+      'address',
+      'story'
+    ])
+    expect(ascending(positions)).toBe(true)
+    expect(wrapper.get('[data-testid="profile-preferences"] h2').text()).toBe('Job preferences')
     wrapper.unmount()
+  })
+
+  it('splits the cards into a main and a side column from 1536px', async () => {
+    wide = true
+    try {
+      const { wrapper } = await mountPage()
+      const [main, side] = wrapper.get('[data-testid="profile-columns"]').findAll(':scope > div')
+      expect(
+        ascending(
+          order(main!.html(), ['contact', 'summary', 'experience', 'projects', 'references'])
+        )
+      ).toBe(true)
+      expect(
+        ascending(
+          order(side!.html(), [
+            'settings',
+            'skills',
+            'education',
+            'certifications',
+            'languages',
+            'hobbies'
+          ])
+        )
+      ).toBe(true)
+      expect(main!.find('[data-testid="profile-skills"]').exists()).toBe(false)
+      // The off-CV zone stays full width below both columns.
+      expect(
+        wrapper
+          .get('[data-testid="profile-columns"]')
+          .find('[data-testid="profile-off-cv"]')
+          .exists()
+      ).toBe(false)
+      expect(wrapper.find('[data-testid="profile-off-cv"]').exists()).toBe(true)
+      wrapper.unmount()
+    } finally {
+      wide = false
+    }
   })
 
   it('shows an empty state with an add action for a new profile', async () => {
     const { wrapper } = await mountPage(emptyProfile)
-    // Core sections always visible when empty
     for (const section of [
+      'contact',
       'summary',
       'experience',
       'projects',
       'education',
       'skills',
       'languages',
-      'certifications'
+      'certifications',
+      'references',
+      'hobbies'
     ]) {
       expect(wrapper.find(`[data-testid="profile-${section}-empty"]`).exists()).toBe(true)
     }
-    // Minor sections hidden behind "Add more sections" when profile is mostly empty
-    for (const section of ['references', 'hobbies']) {
-      expect(wrapper.find(`[data-testid="profile-${section}-empty"]`).exists()).toBe(false)
-    }
     expect(wrapper.find('[data-testid="profile-onboarding"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="profile-jump"]').exists()).toBe(false)
+    // Nothing to translate yet, so no language strip.
+    expect(wrapper.find('[data-testid="profile-settings"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Add experience')
-
-    await wrapper.get('[data-testid="profile-add-more-sections"]').trigger('click')
-    for (const section of ['references', 'hobbies']) {
-      expect(wrapper.find(`[data-testid="profile-${section}-empty"]`).exists()).toBe(true)
-    }
-    expect(wrapper.find('[data-testid="profile-add-more-sections"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
-  it('skips the onboarding card and shows every section for a filled profile', async () => {
+  it('skips the onboarding card and shows the language strip for a filled profile', async () => {
     const { wrapper } = await mountPage(filledProfile)
     expect(wrapper.find('[data-testid="profile-onboarding"]').exists()).toBe(false)
-    const jumps = wrapper.get('[data-testid="profile-jump"]').findAll('a')
-    expect(jumps.map((a) => a.attributes('href'))).toContain('#profile-skills')
-    for (const jump of jumps) {
-      expect(wrapper.find(jump.attributes('href')!).exists()).toBe(true)
-    }
-    expect(wrapper.find('[data-testid="profile-add-more-sections"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="profile-settings"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -398,7 +459,7 @@ describe('ProfilePage', () => {
     clickSave()
 
     await vi.waitFor(() =>
-      expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('Staff engineer')
+      expect(wrapper.get('[data-testid="profile-contact"]').text()).toContain('Staff engineer')
     )
     expect(requests.find((r) => r.query.includes('updateProfile('))!.variables.input).toEqual({
       fullName: 'Ada Lovelace',
@@ -449,7 +510,6 @@ describe('ProfilePage', () => {
       return { updateProfile: { profile, errors: null } }
     })
 
-    await wrapper.get('[data-testid="profile-add-more-sections"]').trigger('click')
     await wrapper.get('[data-testid="profile-hobbies-add"]').trigger('click')
     await flushPromises()
     setInput('names-field-input', 'Climbing')
@@ -932,6 +992,41 @@ describe('ProfilePage entry forms', () => {
 })
 
 describe('ProfilePage skills and languages', () => {
+  it('offers the AI skill tidy-ups in the section menu, before Clear section', async () => {
+    // The AI modals have their own tests; here only which one opens matters.
+    const modalStub = (name: string) =>
+      defineComponent({
+        props: { open: Boolean },
+        setup: (props) => () => (props.open ? h('div', { 'data-testid': name }) : null)
+      })
+    const { wrapper } = await mountPage(filledProfile, undefined, {
+      ProfileSkillCleanupModal: modalStub('cleanup-modal'),
+      ProfileSkillWordingModal: modalStub('wording-modal')
+    })
+    expect(wrapper.find('[data-testid="profile-skills-edit"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="profile-skills-menu"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const items = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+    expect(items.map((el) => el.textContent?.trim())).toEqual([
+      'Clean up skills with AI',
+      'Fix skill wording',
+      'Clear section…'
+    ])
+    items[1]!.click()
+    await vi.waitFor(() =>
+      expect(wrapper.find('[data-testid="wording-modal"]').exists()).toBe(true)
+    )
+    expect(wrapper.find('[data-testid="cleanup-modal"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('has no skills menu while there are no skills', async () => {
+    const { wrapper } = await mountPage(emptyProfile)
+    expect(wrapper.find('[data-testid="profile-skills-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="profile-skills-menu"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('changes a skill level with one tap in the bulk form', async () => {
     const { wrapper, requests } = await mountPage(filledProfile, (body, profile) => {
       if (!body.query.includes('setProfileSkill(')) return undefined
@@ -1082,7 +1177,7 @@ describe('ProfilePage references, hobbies and links', () => {
   it('shows hobbies, the link kind and the personal details', async () => {
     const { wrapper } = await mountPage()
     expect(wrapper.get('[data-testid="profile-hobbies"]').text()).toContain('Chess')
-    expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('EU citizen')
+    expect(wrapper.get('[data-testid="profile-contact"]').text()).toContain('EU citizen')
     expect(wrapper.get('[data-testid="profile-link"]').text()).toContain('GitHub')
     wrapper.unmount()
   })
@@ -1193,14 +1288,10 @@ describe('ProfilePage translations', () => {
   })
   const bulletTr = '[data-testid="profile-bullet-translation"]'
 
+  // These profiles are written in Norwegian, so the translated view is English.
   const startTranslating = async (wrapper: Awaited<ReturnType<typeof mountPage>>['wrapper']) => {
-    await wrapper.get('[data-testid="profile-menu"]').trigger('keydown', { key: 'Enter' })
-    await flushPromises()
-    const item = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((el) =>
-      el.textContent?.trim().startsWith('Translate to')
-    )!
-    item.click()
-    await flushPromises()
+    await chooseView(wrapper, 'English')
+    await vi.waitFor(() => expect(useRoute().query.lang).toBe('english'))
   }
 
   it('adds a bullet translation in the language that is not the content language', async () => {
@@ -1428,23 +1519,154 @@ describe('ProfilePage translations', () => {
     wrapper.unmount()
   })
 
-  it('shows translation progress in a bar that ends translating', async () => {
+  it('switches between the written and translated views through ?lang', async () => {
     const { wrapper } = await mountPage(withTranslation(tr()))
+    expect(languageTabs(wrapper).map((t) => t.textContent?.trim())).toEqual([
+      'Norwegian',
+      'English2'
+    ])
+    expect(wrapper.find(bulletTr).exists()).toBe(false)
+
     await startTranslating(wrapper)
-    expect(wrapper.get('[data-testid="profile-translating-progress"]').text()).toContain(
-      '1 of 3 translated'
+    expect(wrapper.find(bulletTr).exists()).toBe(true)
+    expect(wrapper.find('[data-testid="profile-translate-progress"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="profile-translate-ai"]').exists()).toBe(true)
+
+    await chooseView(wrapper, 'Norwegian')
+    await vi.waitFor(() => expect(useRoute().query.lang).toBeUndefined())
+    expect(wrapper.find(bulletTr).exists()).toBe(false)
+    expect(wrapper.find('[data-testid="profile-translate-progress"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('opens the translated view from the URL, but not for the written language', async () => {
+    const { wrapper } = await mountPage(withTranslation(tr()))
+    await useRouter().replace({ query: { lang: 'norwegian' } })
+    await flushPromises()
+    expect(wrapper.find(bulletTr).exists()).toBe(false)
+
+    await useRouter().replace({ query: { lang: 'english' } })
+    await vi.waitFor(() => expect(wrapper.find(bulletTr).exists()).toBe(true))
+    const selected = languageTabs(wrapper).find((t) => t.getAttribute('aria-selected') === 'true')
+    expect(selected?.textContent).toContain('English')
+    wrapper.unmount()
+  })
+
+  it('stays in the written view on an empty profile, which has no tabs to switch back', async () => {
+    const { wrapper } = await mountPage(emptyProfile)
+    await useRouter().replace({ query: { lang: 'english' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="profile-settings"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="profile-off-cv"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="profile-summary-add"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('says there is nothing to translate when only untranslated sections have content', async () => {
+    const { wrapper } = await mountPage({ ...emptyProfile, hobbies: ['Chess'] })
+    expect(wrapper.get('[data-testid="profile-settings-summary"]').text()).toBe(
+      'Written in Norwegian · English: nothing to translate yet'
     )
-    await wrapper.get('[data-testid="profile-translate-done"]').trigger('click')
-    expect(wrapper.find('[data-testid="profile-translating-bar"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="profile-bullet-translation"]').exists()).toBe(false)
+    await startTranslating(wrapper)
+    expect(wrapper.find('[data-testid="profile-translate-progress"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('hides every editing action and the off-CV zone in the translated view', async () => {
+    const { wrapper } = await mountPage({ ...withTranslation(tr()), references: [] })
+    const editing = [
+      'profile-menu',
+      'profile-edit',
+      'profile-summary-edit',
+      'profile-experience-menu',
+      'profile-skills-edit',
+      'profile-skills-menu',
+      'profile-hobbies-edit',
+      'profile-references-add',
+      'profile-entry-actions',
+      'profile-settings-open',
+      'profile-off-cv'
+    ]
+    for (const id of editing) expect(wrapper.find(`[data-testid="${id}"]`).exists(), id).toBe(true)
+
+    await startTranslating(wrapper)
+    for (const id of editing) expect(wrapper.find(`[data-testid="${id}"]`).exists(), id).toBe(false)
+    // The cards and their content stay, read only.
+    expect(wrapper.find('[data-testid="profile-references-empty"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="profile-experience"]').text()).toContain('Acme')
+    wrapper.unmount()
+  })
+
+  it('keeps the Summary card open in the translated view when there is no summary', async () => {
+    const { wrapper } = await mountPage({ ...withTranslation(), summary: null })
+    expect(wrapper.find('[data-testid="profile-summary-empty"]').exists()).toBe(true)
+
+    await startTranslating(wrapper)
+    expect(wrapper.find('[data-testid="profile-summary-empty"]').exists()).toBe(false)
+    expect(
+      wrapper
+        .get('[data-testid="profile-summary"]')
+        .find('[data-testid="profile-translation"]')
+        .exists()
+    ).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows translation progress in the summary line, the tab badge and the bar', async () => {
+    const { wrapper } = await mountPage(withTranslation(tr()))
+    // Job title, the bullet and the BSc degree; only the bullet is translated.
+    expect(wrapper.get('[data-testid="profile-settings-summary"]').text()).toBe(
+      'Written in Norwegian · English: 1 of 3 translated'
+    )
+    expect(languageTabs(wrapper)[1]!.textContent?.trim()).toBe('English2')
+    expect(wrapper.find('[data-testid="profile-settings-stale"]').exists()).toBe(false)
+
+    await startTranslating(wrapper)
+    expect(wrapper.get('[data-testid="profile-settings-summary"]').text()).toBe(
+      'English: 1 of 3 translated'
+    )
+    const bar = wrapper.findAllComponents({ name: 'UProgress' })[0]!
+    expect(bar.props('modelValue')).toBe(1)
+    expect(bar.props('max')).toBe(3)
+    wrapper.unmount()
+  })
+
+  it('counts outdated translations, and drops the badge when everything is translated', async () => {
+    const done = {
+      ...withTranslation(tr({ isStale: true })),
+      experiences: [
+        {
+          ...withTranslation(tr({ isStale: true })).experiences[0]!,
+          translations: [
+            {
+              id: 1,
+              language: 'ENGLISH',
+              title: 'Developer',
+              sourceTitle: 'Utvikler',
+              isMachine: false,
+              isStale: false
+            }
+          ]
+        }
+      ],
+      educations: [{ ...filledProfile.educations[0]!, degree: null, field: null }]
+    }
+    const { wrapper } = await mountPage(done)
+    expect(wrapper.get('[data-testid="profile-settings-summary"]').text()).toBe(
+      'Written in Norwegian · English: all 2 translated · 1 outdated'
+    )
+    expect(wrapper.get('[data-testid="profile-settings-stale"]').text()).toBe('· 1 outdated')
+    expect(languageTabs(wrapper)[1]!.textContent?.trim()).toBe('English')
     wrapper.unmount()
   })
 
   it('disables the content language once a translation exists', async () => {
     const { wrapper } = await mountPage(withTranslation(tr()))
+    await wrapper.get('[data-testid="profile-settings-open"]').trigger('click')
+    await flushPromises()
     expect(contentLanguage(wrapper).props('disabled')).toBe(true)
-    expect(wrapper.get('[data-testid="profile-content-language-hint"]').text()).toContain(
-      'Delete all translations'
+    expect(document.body.textContent).toContain(
+      'Delete all translations before changing the language the profile is written in.'
     )
     wrapper.unmount()
   })
@@ -1455,7 +1677,8 @@ describe('ProfilePage translations', () => {
         ? { setProfileContentLanguage: { profile: { contentLanguage: 'ENGLISH' }, errors: null } }
         : undefined
     )
-    const select = wrapper.get('[data-testid="profile-content-language"]')
+    await wrapper.get('[data-testid="profile-settings-open"]').trigger('click')
+    await flushPromises()
     expect(contentLanguage(wrapper).props('disabled')).toBe(false)
     contentLanguage(wrapper).vm.$emit('update:modelValue', 'ENGLISH')
 
@@ -1467,7 +1690,7 @@ describe('ProfilePage translations', () => {
     await vi.waitFor(() =>
       expect(requests.filter((r) => r.query.includes('query Profile'))).toHaveLength(2)
     )
-    expect(select.exists()).toBe(true)
+    expect(wrapper.find('[data-testid="profile-settings"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -1527,7 +1750,7 @@ describe('ProfilePage clearing sections', () => {
         ? cleared(profile, { experiences: [] })
         : undefined
     )
-    await chooseAction(wrapper, '[data-testid="profile-experience-menu"]', 'Clear section')
+    await chooseAction(wrapper, '[data-testid="profile-experience-menu"]', 'Clear section…')
     expect(document.body.textContent).toContain(
       'This permanently deletes 1 experience, with their bullets and translations.'
     )
@@ -1568,7 +1791,7 @@ describe('ProfilePage clearing sections', () => {
     clickConfirm()
     await vi.waitFor(() => expect(clearRequest(requests)).toBeDefined())
     expect(clearRequest(requests)!.variables.input.sections).toHaveLength(9)
-    expect(wrapper.get('[data-testid="profile-header"]').text()).toContain('Ada Lovelace')
+    expect(wrapper.get('[data-testid="profile-contact"]').text()).toContain('Ada Lovelace')
     wrapper.unmount()
   })
 
@@ -1583,7 +1806,7 @@ describe('ProfilePage clearing sections', () => {
           }
         : undefined
     )
-    await chooseAction(wrapper, '[data-testid="profile-skills-menu"]', 'Clear section')
+    await chooseAction(wrapper, '[data-testid="profile-skills-menu"]', 'Clear section…')
     clickConfirm()
     await flushPromises()
 
@@ -1672,7 +1895,7 @@ describe('ProfilePage story', () => {
           }
         : undefined
     )
-    await chooseAction(wrapper, '[data-testid="profile-story-menu"]', 'Clear section')
+    await chooseAction(wrapper, '[data-testid="profile-story-menu"]', 'Clear section…')
     expect(document.body.textContent).toContain('This permanently deletes your story')
     clickConfirm()
 

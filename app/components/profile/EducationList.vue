@@ -4,10 +4,9 @@ import type { ProfileEducation } from '~/composables/useProfile'
 const props = withDefaults(
   defineProps<{
     educations: readonly ProfileEducation[]
-    defaultOpen?: boolean
     count?: number
   }>(),
-  { defaultOpen: true, count: undefined }
+  { count: undefined }
 )
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
@@ -64,7 +63,6 @@ const remove = async () => {
     icon="i-lucide-graduation-cap"
     testid="profile-education"
     :empty="!educations.length"
-    :default-open="defaultOpen"
     :count="count"
     empty-message="No education yet."
     add-label="Add education"

@@ -1,16 +1,16 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui'
 import type { ProfileData, ProfileSkill } from '~/composables/useProfile'
 
 // Read-only list; Add opens the single-skill form (it has the name search), Edit the bulk one.
 // `profile` lets the wording review show each bullet's current text.
-withDefaults(
+const props = withDefaults(
   defineProps<{
     skills: readonly ProfileSkill[]
     profile: ProfileData
-    defaultOpen?: boolean
     count?: number
   }>(),
-  { defaultOpen: true, count: undefined }
+  { count: undefined }
 )
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
@@ -20,6 +20,24 @@ const cleanupOpen = ref(false)
 const wordingOpen = ref(false)
 const cleanupOpened = useOpenedOnce(cleanupOpen)
 const wordingOpened = useOpenedOnce(wordingOpen)
+
+// The AI tidy-ups are occasional, so they sit in the ⋮ menu and keep the header to Edit and Add.
+const menuItems = computed<DropdownMenuItem[]>(() =>
+  props.skills.length
+    ? [
+        {
+          label: 'Clean up skills with AI',
+          icon: 'i-lucide-sparkles',
+          onSelect: () => (cleanupOpen.value = true)
+        },
+        {
+          label: 'Fix skill wording',
+          icon: 'i-lucide-spell-check',
+          onSelect: () => (wordingOpen.value = true)
+        }
+      ]
+    : []
+)
 
 const { target } = useProfileTranslation()
 const translated = (s: ProfileSkill) =>
@@ -33,8 +51,8 @@ const translated = (s: ProfileSkill) =>
     icon="i-lucide-wrench"
     testid="profile-skills"
     :empty="!skills.length"
-    :default-open="defaultOpen"
     :count="count"
+    :menu-items="menuItems"
     empty-message="No skills yet."
     add-label="Add skill"
     @clear="emit('clear')"
@@ -42,26 +60,6 @@ const translated = (s: ProfileSkill) =>
   >
     <template v-if="skills.length" #actions>
       <div class="flex flex-wrap justify-end gap-2">
-        <UButton
-          icon="i-lucide-sparkles"
-          color="neutral"
-          variant="subtle"
-          size="sm"
-          aria-label="Clean up skills"
-          data-testid="profile-skills-cleanup"
-          @click="cleanupOpen = true"
-          >Clean up</UButton
-        >
-        <UButton
-          icon="i-lucide-spell-check"
-          color="neutral"
-          variant="subtle"
-          size="sm"
-          aria-label="Fix skill wording"
-          data-testid="profile-skills-wording"
-          @click="wordingOpen = true"
-          >Fix wording</UButton
-        >
         <UButton
           icon="i-lucide-pencil"
           color="neutral"

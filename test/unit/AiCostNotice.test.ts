@@ -55,6 +55,14 @@ describe('AiCostNotice', () => {
     expect(limitRequests).toBe(0)
   })
 
+  it('links “Change model” straight to the model section in Settings', async () => {
+    models = llmModels()
+    const wrapper = await billing()
+
+    const link = wrapper.findAll('a').find((a) => a.text() === 'Change model')!
+    expect(link.attributes('href')).toBe('/settings#model')
+  })
+
   it('names the owner’s own key and what is left of its daily limit', async () => {
     models = { models: [...llmModels().models, ownKeyModel], defaultModel: ownKeyModel.id }
     const wrapper = await billing()

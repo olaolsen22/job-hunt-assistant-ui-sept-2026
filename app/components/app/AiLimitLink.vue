@@ -4,7 +4,7 @@
 
 <template>
   <UButton
-    to="/settings"
+    to="/settings#keys"
     color="neutral"
     variant="soft"
     icon="i-lucide-settings"

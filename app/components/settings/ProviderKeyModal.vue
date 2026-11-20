@@ -41,15 +41,23 @@ const submit = async () => {
 <template>
   <AppFormModal
     v-model:open="open"
-    :title="`${replacing ? 'Replace' : 'Set'} ${providerLabel(provider)} key`"
-    description="The key is stored encrypted and never shown again."
+    :title="`${replacing ? 'Replace' : 'Connect'} ${providerLabel(provider)} key`"
+    :description="
+      replacing
+        ? 'The current key stops being used once this one is saved.'
+        : 'Runs on this key are billed to your own provider account.'
+    "
     :state="state"
     :validate="validate"
     :loading="saving"
     @submit="submit"
   >
     <div class="space-y-4">
-      <UFormField label="API key" name="apiKey">
+      <UFormField
+        label="API key"
+        name="apiKey"
+        help="Stored encrypted. Only the last 4 characters are ever shown again."
+      >
         <UInput
           v-model="state.apiKey"
           type="password"

@@ -726,7 +726,7 @@ describe('Quick add collected batch processing', () => {
     expect(requests.parses).toHaveLength(1)
     const error = w.get('[data-testid="quick-add-batch-error"]')
     expect(error.text()).toContain('Stopped: daily-limit-reached')
-    expect(error.get('[data-testid="ai-limit-settings"]').attributes('href')).toBe('/settings')
+    expect(error.get('[data-testid="ai-limit-settings"]').attributes('href')).toBe('/settings#keys')
   })
 
   it('asks before retrying an interrupted batch, with a new request id', async () => {

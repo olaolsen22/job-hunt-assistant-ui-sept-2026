@@ -27,24 +27,25 @@ const apply = () => {
     title="Edit skills"
     :description="CV_APPLY_DESCRIPTION"
     save-label="Apply"
+    wide
     :state="{ skills: draft }"
     @submit="apply"
   >
     <div class="space-y-3" data-testid="tailored-cv-skills-modal">
-      <p v-if="!draft.length" class="text-sm text-muted">No skills in this CV.</p>
-      <CvSkillRows
-        v-model:skills="draft"
-        :section-order="sectionOrder"
-        @remove="(i) => draft.splice(i, 1)"
-      />
+      <!-- Above the list, so what Group means is read before typing one. -->
       <p class="text-xs text-muted">
         {{
           sectionOrder === 'DEVELOPER'
             ? 'A group replaces the category in the PDF, and skills with the same group share a line.'
             : 'Categories and groups show with the Developer PDF layout.'
         }}
-        Changes apply to this CV only.
       </p>
+      <p v-if="!draft.length" class="text-sm text-muted">No skills in this CV.</p>
+      <CvSkillRows
+        v-model:skills="draft"
+        :section-order="sectionOrder"
+        @remove="(i) => draft.splice(i, 1)"
+      />
     </div>
   </AppFormModal>
 </template>

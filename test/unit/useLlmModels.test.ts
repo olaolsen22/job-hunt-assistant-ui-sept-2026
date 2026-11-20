@@ -3,16 +3,10 @@ import { defineComponent, h } from 'vue'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import { readBody } from 'h3'
 import { useLlmModels } from '~/composables/useLlmModels'
+import { llmModels, ownKeyModel } from '../fixtures/llmModels'
+import { usageToday } from '../fixtures/providerKeys'
 
 type Body = { query: string; variables: Record<string, unknown> }
-
-const llmModels = (defaultModel: string) => ({
-  models: [
-    { id: 'fast', label: 'Fast' },
-    { id: 'strong', label: 'Strong' }
-  ],
-  defaultModel
-})
 
 let calls: Body[] = []
 let saveReply: (model: unknown) => unknown
@@ -25,19 +19,7 @@ registerEndpoint('/graphql', {
     if (body.query.includes('query LlmModels')) return { data: { llmModels: llmModels('fast') } }
     if (body.query.includes('mutation SetDefaultLlmModel'))
       return { data: { setDefaultLlmModel: saveReply(body.variables.model) } }
-    return {
-      data: {
-        llmUsageToday: {
-          model: 'fast',
-          requests: 1,
-          inputTokens: 1,
-          outputTokens: 1,
-          requestsLimit: null,
-          remainingRequests: null,
-          resetsAt: '2026-10-13T00:00:00Z'
-        }
-      }
-    }
+    return { data: { llmUsageToday: usageToday() } }
   }
 })
 
@@ -102,6 +84,23 @@ describe('useLlmModels', () => {
 
     expect(count('query LlmModels')).toBe(2)
     expect(count('DashboardLlmUsage')).toBe(1)
+  })
+
+  it('keeps the provider model id and key source from the saved list', async () => {
+    saveReply = () => ({
+      llmModels: { models: [...llmModels().models, ownKeyModel], defaultModel: ownKeyModel.id },
+      errors: null
+    })
+    const state = await setup()
+
+    await state.setDefault(ownKeyModel.id)
+
+    expect(state.models.value.find((m) => m.id === state.defaultModel.value)).toMatchObject({
+      provider: 'openai',
+      modelId: 'gpt-4.1-mini',
+      keySource: 'USER'
+    })
+    expect(state.label(ownKeyModel.id)).toBe('GPT-4.1 mini')
   })
 
   it('falls back to the id for unknown labels', async () => {

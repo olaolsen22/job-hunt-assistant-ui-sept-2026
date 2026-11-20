@@ -5,6 +5,7 @@ const MODELS = graphql(`
         id
         label
         provider
+        modelId
         keySource
       }
       defaultModel
@@ -20,6 +21,7 @@ const SET_DEFAULT = graphql(`
           id
           label
           provider
+          modelId
           keySource
         }
         defaultModel

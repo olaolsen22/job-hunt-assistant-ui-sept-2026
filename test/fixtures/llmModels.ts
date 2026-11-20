@@ -1,8 +1,20 @@
 // Two models, so the pickers render; `defaultModel` is what the server reports for the user.
 export const llmModels = (defaultModel = 'fast') => ({
   models: [
-    { id: 'fast', label: 'Fast', provider: 'gemini', keySource: 'SHARED' },
-    { id: 'strong', label: 'Strong', provider: 'gemini', keySource: 'SHARED' }
+    {
+      id: 'fast',
+      label: 'Fast',
+      provider: 'gemini',
+      modelId: 'gemini-2.5-flash',
+      keySource: 'SHARED'
+    },
+    {
+      id: 'strong',
+      label: 'Strong',
+      provider: 'gemini',
+      modelId: 'gemini-2.5-pro',
+      keySource: 'SHARED'
+    }
   ],
   defaultModel
 })
@@ -12,6 +24,7 @@ export const ownKeyModel = {
   id: 'openai:gpt-4.1-mini',
   label: 'GPT-4.1 mini',
   provider: 'openai',
+  modelId: 'gpt-4.1-mini',
   keySource: 'USER'
 }
 

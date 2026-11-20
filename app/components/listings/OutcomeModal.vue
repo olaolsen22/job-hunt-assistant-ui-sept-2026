@@ -5,9 +5,11 @@ const {
   listingId,
   outcomes,
   labels = {},
-  appliedAt
+  appliedAt,
+  title = 'Record outcome'
 } = defineProps<{
   listingId: number
+  title?: string
   outcomes: readonly Outcome[]
   // Replaces the default label of an outcome whose meaning depends on the current status.
   labels?: Partial<Record<Outcome, string>>
@@ -16,21 +18,7 @@ const {
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
 
-const RECORD_OUTCOME = graphql(`
-  mutation RecordOutcome($input: RecordOutcomeInput!) {
-    recordOutcome(input: $input) {
-      listing {
-        id
-      }
-      errors {
-        __typename
-        ... on Error {
-          message
-        }
-      }
-    }
-  }
-`)
+// RECORD_OUTCOME lives in useUndoStatusChange.ts: undoing an outcome re-records it there too.
 
 const items = computed(() =>
   OUTCOME_OPTIONS.filter((o) => outcomes.includes(o.value)).map((o) => ({
@@ -74,7 +62,7 @@ const submit = async () => {
 <template>
   <AppConfirmModal
     v-model:open="open"
-    title="Record outcome"
+    :title="title"
     confirm-label="Save"
     :loading="loading"
     :disabled="!outcome || !occurredAt"

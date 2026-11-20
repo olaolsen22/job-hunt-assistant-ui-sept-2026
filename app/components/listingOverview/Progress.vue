@@ -17,12 +17,6 @@ const interviews = computed(() => {
     ...past.map((interview) => ({ interview, upcoming: false }))
   ]
 })
-
-// Calendar days in the owner's zone, so tonight is "today" and tomorrow morning is "tomorrow".
-const relativeDays = (iso: string) => {
-  const days = daysFromToday(new Date(iso).toLocaleDateString('sv-SE'))
-  return days <= 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`
-}
 </script>
 
 <template>

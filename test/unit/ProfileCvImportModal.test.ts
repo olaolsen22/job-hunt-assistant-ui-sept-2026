@@ -234,7 +234,7 @@ describe('CV import modal', () => {
     await vi.waitFor(() => expect(query('cv-error').textContent).toContain('Stopped'))
     expect(
       query('cv-error').querySelector('[data-testid="ai-limit-settings"]')?.getAttribute('href')
-    ).toBe('/settings')
+    ).toBe('/settings#keys')
     expect((query('cv-text') as HTMLTextAreaElement).value).toBe('Keep this CV')
   })
 

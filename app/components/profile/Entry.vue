@@ -16,6 +16,9 @@ const emit = defineEmits<{ edit: []; delete: []; changed: [] }>()
 const refineOpen = ref(false)
 const refineOpened = useOpenedOnce(refineOpen)
 const { profile } = useProfile()
+// The written text is read only in the translated view (see ProfileSection); its translation rows
+// keep their own menus.
+const { translating } = useProfileTranslation()
 </script>
 
 <template>
@@ -30,6 +33,7 @@ const { profile } = useProfile()
         <slot />
       </div>
       <ProfileRowActions
+        v-if="!translating"
         :name="title"
         :refine="!!bullets.length"
         testid="profile-entry-actions"

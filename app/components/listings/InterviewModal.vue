@@ -2,9 +2,15 @@
 import type { ListingDetail } from '~/composables/useListing'
 
 // Without `interview` it adds one; with it, it edits that one.
-const { listingId, interview } = defineProps<{
+const {
+  listingId,
+  interview,
+  movesToInterviewing = false
+} = defineProps<{
   listingId: number
   interview: ListingDetail['interviews'][number] | null
+  // The API moves an Applied listing to Interviewing when its first interview is added.
+  movesToInterviewing?: boolean
 }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ changed: [] }>()
@@ -53,6 +59,9 @@ watch(open, (isOpen) => {
 })
 
 const { run, loading } = useMutation(() => emit('changed'))
+const notify = useAppToast()
+// Said up front and after, so the status change doesn't look like a side effect gone wrong.
+const announce = computed(() => !interview && movesToInterviewing)
 
 const submit = async () => {
   const fields = {
@@ -72,6 +81,7 @@ const submit = async () => {
   })
   if (!ok) return
   open.value = false
+  if (announce.value) notify.success('Interview added. Status is now Interviewing.')
   emit('changed')
 }
 </script>
@@ -80,6 +90,7 @@ const submit = async () => {
   <AppConfirmModal
     v-model:open="open"
     :title="interview ? 'Edit interview' : 'Add interview'"
+    :description="announce ? 'This moves the application to Interviewing.' : undefined"
     confirm-label="Save"
     :loading="loading"
     :disabled="!scheduledAt"

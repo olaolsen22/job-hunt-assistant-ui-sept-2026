@@ -338,7 +338,9 @@ describe('Tailored CV page', () => {
     await vi.waitFor(() => expect(el('tailored-cv-optimize')).not.toBeNull())
     await click('tailored-cv-optimize')
     await vi.waitFor(() => expect(el('tailored-cv-ai-usage')?.textContent).toContain('Fast'))
-    expect(el('tailored-cv-ai-usage')!.querySelector('a')?.getAttribute('href')).toBe('/settings')
+    expect(el('tailored-cv-ai-usage')!.querySelector('a')?.getAttribute('href')).toBe(
+      '/settings#model'
+    )
     await click('tailored-cv-ai-run')
     await vi.waitFor(() => expect(el('tailored-cv-progress')).toBeNull())
 
@@ -396,7 +398,9 @@ describe('Tailored CV page', () => {
         'SKILLS'
       ])
       expect(el('tailored-cv-skills-error')!.textContent).toContain('Stopped: daily-limit-reached')
-      expect(el('tailored-cv-ai-error')!.querySelector('a')?.getAttribute('href')).toBe('/settings')
+      expect(el('tailored-cv-ai-error')!.querySelector('a')?.getAttribute('href')).toBe(
+        '/settings#keys'
+      )
       expect(el('tailored-cv-entry-error')).toBeNull()
     })
 

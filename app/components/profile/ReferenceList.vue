@@ -5,12 +5,14 @@ import type { ProfileReference } from '~/composables/useProfile'
 const props = withDefaults(
   defineProps<{
     references: readonly ProfileReference[]
-    defaultOpen?: boolean
     count?: number
   }>(),
-  { defaultOpen: true, count: undefined }
+  { count: undefined }
 )
 const emit = defineEmits<{ changed: []; clear: [] }>()
+
+// Read only in the translated view (see ProfileSection).
+const { translating } = useProfileTranslation()
 
 const MOVE_REFERENCE = graphql(`
   mutation MoveProfileReference($input: MoveProfileReferenceInput!) {
@@ -108,7 +110,6 @@ const remove = async () => {
     icon="i-lucide-users"
     testid="profile-references"
     :empty="!references.length"
-    :default-open="defaultOpen"
     :count="count"
     empty-message="No references yet."
     add-label="Add reference"
@@ -121,7 +122,7 @@ const remove = async () => {
       handle=".drag-handle"
       ghost-class="opacity-50"
       :animation="150"
-      :disabled="loading"
+      :disabled="loading || translating"
       class="divide-y divide-default"
       @update="move"
     >
@@ -132,6 +133,7 @@ const remove = async () => {
         data-testid="profile-reference"
       >
         <UButton
+          v-if="!translating"
           icon="i-lucide-grip-vertical"
           color="neutral"
           variant="ghost"
@@ -152,6 +154,7 @@ const remove = async () => {
           </p>
         </div>
         <ProfileRowActions
+          v-if="!translating"
           :name="r.name"
           testid="profile-reference-actions"
           @edit="openForm(r)"

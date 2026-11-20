@@ -2,11 +2,13 @@
 import { PROFICIENCY_OPTIONS } from '~/constants/listing'
 import type { ProfileLanguage } from '~/composables/useProfile'
 
-withDefaults(
-  defineProps<{ languages: readonly ProfileLanguage[]; defaultOpen?: boolean; count?: number }>(),
-  { defaultOpen: true, count: undefined }
-)
+withDefaults(defineProps<{ languages: readonly ProfileLanguage[]; count?: number }>(), {
+  count: undefined
+})
 const emit = defineEmits<{ changed: []; clear: [] }>()
+
+// Read only in the translated view (see ProfileSection).
+const { translating } = useProfileTranslation()
 
 const REMOVE_LANGUAGE = graphql(`
   mutation RemoveProfileLanguage($input: RemoveProfileLanguageInput!) {
@@ -60,7 +62,6 @@ const remove = async () => {
     icon="i-lucide-languages"
     testid="profile-languages"
     :empty="!languages.length"
-    :default-open="defaultOpen"
     :count="count"
     empty-message="No languages yet."
     add-label="Add language"
@@ -82,6 +83,7 @@ const remove = async () => {
           >Written: {{ proficiencyLabel(l.written) }}</UBadge
         >
         <ProfileRowActions
+          v-if="!translating"
           :name="l.name"
           remove-label="Remove"
           testid="profile-language-actions"

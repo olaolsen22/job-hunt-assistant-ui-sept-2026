@@ -247,9 +247,14 @@ describe('Listing page', () => {
     wrapper.unmount()
   })
 
-  it('opens the record-application form from the header', async () => {
+  it('records the application from the Application card, not the header', async () => {
     const wrapper = await mountPage()
-    await wrapper.get('[data-testid="listing-record-application"]').trigger('click')
+    expect(wrapper.find('[data-testid="listing-record-application"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-testid="listing-header"]').find('[data-testid="listing-apply"]').exists()
+    ).toBe(false)
+
+    await wrapper.get('[data-testid="listing-apply"]').trigger('click')
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain('Apply through the original ad')
     )
@@ -280,19 +285,55 @@ describe('Listing page', () => {
     wrapper.unmount()
   })
 
-  it('shows an applied listing whose documents were never sent', async () => {
+  it('lists only the sent documents on the Applied row', async () => {
     const wrapper = await mountPage({
       status: 'APPLIED',
+      statusHistory: [
+        { id: 1, status: 'APPLIED', occurredAt: '2026-10-14T10:00:00Z', note: null }
+      ] as unknown as typeof listing.statusHistory,
       documents: [
-        { id: 1, kind: 'CV', fileName: 'cv.pdf', createdAt: '2026-10-13T10:00:00Z', sentAt: null }
+        { id: 1, kind: 'CV', fileName: 'cv.pdf', createdAt: '2026-10-13T10:00:00Z', sentAt: null },
+        {
+          id: 2,
+          kind: 'COVER_LETTER',
+          fileName: 'letter.pdf',
+          createdAt: '2026-10-13T10:00:00Z',
+          sentAt: '2026-10-14T10:00:00Z'
+        }
       ] as unknown as typeof listing.documents
     })
 
-    expect(wrapper.get('[data-testid="listing-documents"]').text()).toContain('cv.pdf')
-    expect(wrapper.get('[data-testid="listing-documents"]').text()).not.toContain('Sent')
-    expect(wrapper.get('[data-testid="listing-documents"] time').attributes('datetime')).toBe(
-      '2026-10-13T10:00:00Z'
-    )
+    const documents = wrapper.get('[data-testid="listing-documents"]').text()
+    expect(documents).toContain('letter.pdf')
+    expect(documents).not.toContain('cv.pdf')
+    wrapper.unmount()
+  })
+
+  it('archives a finished application from the card', async () => {
+    const wrapper = await mountPage({
+      status: 'REJECTED',
+      statusHistory: [
+        { id: 1, status: 'APPLIED', occurredAt: '2026-10-14T10:00:00Z', note: null },
+        { id: 2, status: 'REJECTED', occurredAt: '2026-10-20T10:00:00Z', note: null }
+      ] as unknown as typeof listing.statusHistory
+    })
+    const inputs: Record<string, unknown>[] = []
+    registerEndpoint('/graphql', {
+      method: 'POST',
+      handler: async (event) => {
+        const { query, variables } = await readBody(event)
+        if (query.includes('mutation')) {
+          inputs.push(variables)
+          return { data: { setListingArchived: { listing: { id: 5 }, errors: null } } }
+        }
+        return { data: { listingById: listing } }
+      }
+    })
+
+    await wrapper.get('[data-testid="application-archive"]').trigger('click')
+    await vi.waitFor(() => expect(inputs).toHaveLength(1))
+    expect(inputs[0]).toEqual({ input: { id: 5, isArchived: true } })
+    await vi.waitFor(() => expect(useToast().toasts.value.at(-1)?.title).toBe('Archived'))
     wrapper.unmount()
   })
 

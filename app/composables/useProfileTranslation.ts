@@ -22,8 +22,11 @@ export const translationKey = (kind: 'bullet' | 'experience' | 'education', id: 
 
 // provide/inject (same as Vue 2): the page owns the mode, and bullets and entry lists deep inside
 // read it without every component passing it down as a prop.
-const KEY: InjectionKey<ProfileTranslationState> = Symbol('profileTranslation')
+// Exported for the few components that also render outside the page and inject it optionally.
+export const PROFILE_TRANSLATION_KEY: InjectionKey<ProfileTranslationState> =
+  Symbol('profileTranslation')
 
-export const provideProfileTranslation = (state: ProfileTranslationState) => provide(KEY, state)
+export const provideProfileTranslation = (state: ProfileTranslationState) =>
+  provide(PROFILE_TRANSLATION_KEY, state)
 
-export const useProfileTranslation = () => inject(KEY)!
+export const useProfileTranslation = () => inject(PROFILE_TRANSLATION_KEY)!

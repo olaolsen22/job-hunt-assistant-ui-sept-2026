@@ -32,71 +32,82 @@ const groupsId = useId()
 </script>
 
 <template>
-  <VueDraggable
-    v-model="skills"
-    tag="ul"
-    handle=".drag-handle"
-    ghost-class="opacity-50"
-    :animation="150"
-    :disabled="disabled"
-    class="space-y-1"
-    data-testid="tailored-cv-skill-list"
-  >
-    <!-- Keyed without the index, so moving a skill keeps its row (and the focused
-       button) instead of remounting it. Phones: name and remove first, then the
-       category and order controls on their own line. -->
-    <li
-      v-for="(skill, i) in skills"
-      :key="skill.sourceSkillId ?? skill.name"
-      class="flex flex-wrap items-center gap-x-1 gap-y-1"
-      data-testid="tailored-cv-skill"
+  <div class="@container">
+    <!-- Column headings for the one-line layout; each control has its own aria-label. Spacers match
+     the drag handle (w-7) and the arrows plus remove (three 24px buttons and gaps, w-20). -->
+    <div
+      v-if="sectionOrder === 'DEVELOPER' && skills.length"
+      class="hidden items-center gap-1 pb-1 text-xs font-medium text-muted @2xl:flex"
+      aria-hidden="true"
     >
-      <!-- Mouse only: the arrow buttons cover touch and keyboard, so no tab stop. -->
-      <span
-        class="drag-handle hidden shrink-0 cursor-grab touch-none p-1.5 text-muted sm:inline-flex"
-        aria-hidden="true"
+      <span class="w-7 shrink-0" />
+      <span class="min-w-0 flex-1">Skill</span>
+      <span class="w-40 shrink-0">Category</span>
+      <span class="w-48 shrink-0">Group</span>
+      <span class="w-20 shrink-0" />
+    </div>
+    <VueDraggable
+      v-model="skills"
+      tag="ul"
+      handle=".drag-handle"
+      ghost-class="opacity-50"
+      :animation="150"
+      :disabled="disabled"
+      class="divide-y divide-default"
+      data-testid="tailored-cv-skill-list"
+    >
+      <!-- Keyed without the index, so moving a skill keeps its row (and the focused
+       button) instead of remounting it. A narrow list (phones): name, order and remove first, then
+       the category and group on their own line. Container queries, not viewport ones, so
+       the same rows fit the modal and the wide template editor. -->
+      <li
+        v-for="(skill, i) in skills"
+        :key="skill.sourceSkillId ?? skill.name"
+        class="flex flex-wrap items-center gap-1 py-2.5 @2xl:py-1.5"
+        data-testid="tailored-cv-skill"
       >
-        <UIcon name="i-lucide-grip-vertical" class="size-4" />
-      </span>
-      <span class="min-w-0 flex-1 break-words">{{ skill.name }}</span>
-      <UButton
-        icon="i-lucide-x"
-        color="neutral"
-        variant="ghost"
-        size="sm"
-        class="sm:order-last"
-        :aria-label="`Remove ${skill.name}`"
-        @click="emit('remove', i, skill.name)"
-      />
-      <div class="flex w-full items-center gap-1 sm:w-auto">
-        <!-- Categories and groups only group skills in the Developer layout. -->
-        <template v-if="sectionOrder === 'DEVELOPER'">
+        <!-- Mouse only: the arrow buttons cover touch and keyboard, so no tab stop. -->
+        <span
+          class="drag-handle hidden shrink-0 cursor-grab touch-none p-1.5 text-muted sm:inline-flex"
+          aria-hidden="true"
+        >
+          <UIcon name="i-lucide-grip-vertical" class="size-4" />
+        </span>
+        <span class="min-w-0 flex-1 text-sm break-words">{{ skill.name }}</span>
+        <!-- Categories and groups only group skills in the Developer layout. Narrow, the fields
+           take their own full line (order-last) so the group placeholder isn't clipped. -->
+        <div
+          v-if="sectionOrder === 'DEVELOPER'"
+          class="order-last flex w-full items-center gap-1 @2xl:order-none @2xl:w-auto"
+        >
           <USelect
             :model-value="knownCategory(skill.categoryId)"
             :items="categoryItems"
             size="sm"
             :aria-label="`${skill.name} category`"
-            class="min-w-0 flex-1 sm:w-40 sm:flex-none"
+            class="min-w-0 flex-1 @2xl:w-40 @2xl:flex-none"
             @update:model-value="(choice) => (skill.categoryId = fromCategoryChoice(choice))"
           />
           <!-- A native datalist keeps the field free text while offering used labels. -->
           <UInput
             :model-value="skill.group ?? ''"
             size="sm"
-            placeholder="Group"
+            placeholder="Uses category"
             :list="groupsId"
             autocomplete="off"
             :aria-label="`${skill.name} group`"
-            class="min-w-0 flex-1 sm:w-36 sm:flex-none"
+            class="min-w-0 flex-1 @2xl:w-48 @2xl:flex-none"
             data-testid="tailored-cv-skill-group"
             @update:model-value="(value) => ((skill.group = value), emit('group'))"
           />
-        </template>
+        </div>
+        <!-- Bigger tap targets in the narrow layout, compact in the table. -->
         <UButton
           icon="i-lucide-chevron-up"
           color="neutral"
           variant="ghost"
           size="sm"
+          class="p-2.5 @2xl:p-1"
           :disabled="i === 0"
           :aria-label="`Move ${skill.name} earlier`"
           @click="move(i, i - 1)"
@@ -106,13 +117,23 @@ const groupsId = useId()
           color="neutral"
           variant="ghost"
           size="sm"
+          class="p-2.5 @2xl:p-1"
           :disabled="i === skills.length - 1"
           :aria-label="`Move ${skill.name} later`"
           @click="move(i, i + 1)"
         />
-      </div>
-    </li>
-  </VueDraggable>
+        <UButton
+          icon="i-lucide-x"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          class="p-2.5 @2xl:p-1"
+          :aria-label="`Remove ${skill.name}`"
+          @click="emit('remove', i, skill.name)"
+        />
+      </li>
+    </VueDraggable>
+  </div>
   <datalist :id="groupsId">
     <option v-for="label in usedGroups" :key="label" :value="label" />
   </datalist>

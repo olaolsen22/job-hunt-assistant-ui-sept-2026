@@ -2,10 +2,7 @@
 import { EMPLOYMENT_TYPE_OPTIONS, WORK_MODE_OPTIONS } from '~/constants/listing'
 import type { ProfileData } from '~/composables/useProfile'
 
-const { profile, defaultOpen = true } = defineProps<{
-  profile: ProfileData
-  defaultOpen?: boolean
-}>()
+const { profile } = defineProps<{ profile: ProfileData }>()
 // Read-only; everything, target locations included, is edited in the Preferences form.
 const emit = defineEmits<{ saved: [profile: ProfileData]; changed: [] }>()
 
@@ -42,11 +39,10 @@ const empty = computed(() => !rows.value.length && !profile.targetLocations.leng
 
 <template>
   <ProfileSection
-    title="Preferences"
+    title="Job preferences"
     icon="i-lucide-sliders-horizontal"
     testid="profile-preferences"
     :empty="empty"
-    :default-open="defaultOpen"
     empty-message="No preferences yet."
     add-label="Set preferences"
     @add="open = true"
@@ -55,12 +51,13 @@ const empty = computed(() => !rows.value.length && !profile.targetLocations.leng
       <UButton
         icon="i-lucide-pencil"
         color="neutral"
-        variant="ghost"
+        variant="subtle"
         size="sm"
         aria-label="Edit preferences"
         data-testid="profile-preferences-edit"
         @click="open = true"
-      />
+        >Edit</UButton
+      >
     </template>
 
     <dl v-if="rows.length" class="space-y-3" data-testid="profile-preferences-rows">

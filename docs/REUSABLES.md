@@ -101,22 +101,26 @@ remove it when you delete one.
   and the listing detail page.
 - `<ListingsStatusBadge status>` — application status badge (colors in `APPLICATION_STATUS_OPTIONS`).
   Used by `<ListingsRow>` and `<ListingsApplication>`.
-- `<ListingsApplication listing v-model:apply-open @changed>` — the detail page's Application card: status/archived
-  badges, company application count, Record application / Record outcome buttons per status, and
-  `<ListingsStatusTimeline>` + `<ListingsInterviews>`. `@changed` = refetch the listing.
-- `<ListingsStatusTimeline listing @changed>` — `UTimeline` of `statusHistory` with Edit
-  (`<ListingsStatusChangeModal>`) per entry and Undo (confirmed) on the newest.
+- `<ListingsApplication listing @changed @archive>` — the detail page's Application card: a context line per status
+  ("Applied 10. nov. 2026 · 8 days ago", "Next: HR screen · … (in 7 days)", outcome by who acted), the next-step
+  buttons per status (Record application / Add interview / Record outcome / Record decision / Archive listing, the
+  only Record application on the page), a ⋮ menu for the current status (edit date + note, Undo via
+  `useUndoStatusChange`) and `<ListingsApplicationTimeline>`. `@archive` = the page's archive toggle.
+- `<ListingsApplicationTimeline listing @changed>` — one `UTimeline` (newest first, `reverse`) of status changes and
+  interviews from `timelineRows()`: interviews at their scheduled time with relative time and an Upcoming badge, the
+  Applied row lists sent documents, INTERVIEWING entries hidden. Per-row ⋮: edit (`<ListingsStatusChangeModal>` /
+  `<ListingsInterviewModal>`), confirmed interview delete.
 - `<ListingsQuestionsCard listing @changed>` — application questions (max 20), numbered in form order, with a
   "N of M answered · N over its limit" summary, one meta line (characters / limit, notes marker) and add/edit/delete via
-  `<ListingsQuestionModal>` (no AI). "Draft answers with AI" opens `<ListingsAnswersAiModal listing-id questions @changed>`:
+  `<ListingsQuestionModal listing-id question remaining @changed @added(count)>` (no AI; add mode has One question with
+  "Add another" or Paste several, one batched add). "Draft answers with AI" opens `<ListingsAnswersAiModal listing-id questions @changed>`:
   built-in or own AI drafts every question at once, then a ticked review (saved answer vs editable draft, fitting drafts
   ticked, over-limit untickable until trimmed, "No draft" rows) and "Save N answers"; partial failures keep failed rows
   for a retry; closing or reloading with unsaved drafts asks first.
-- `<ListingsInterviews listing @changed>` — upcoming/past interviews as "Round N · title", add/edit
-  via `<ListingsInterviewModal>`, confirmed delete.
 - `<ListingsApplyModal>`, `<ListingsOutcomeModal>`, `<ListingsStatusChangeModal>`,
   `<ListingsInterviewModal>` — `v-model:open` form modals (on `<AppConfirmModal>`) that own their
-  mutation and emit `changed`.
+  mutation and emit `changed`. OutcomeModal takes `title` + per-outcome `labels`; InterviewModal's
+  `moves-to-interviewing` says (and toasts) that the first interview moves Applied to Interviewing.
 - `<ListingsDocumentPicker v-model:document-id v-model:file v-model:base-cv-version-id? label documents required? help? base-cvs?>`
   — pick an uploaded document or a new PDF (uploaded by the caller on submit); `base-cvs` (the CV picker) also offers
   a CV template and version, which the caller turns into a document on submit (`GENERATE_BASE_CV_DOCUMENT`) and keeps
@@ -160,18 +164,24 @@ body)` (copies subject, greeting, paragraphs, closing), `hasCoverLetterBody`.
 - `<CvTemplatesAiDraftModal v-model:open editor>` — the own-AI draft of a template's current language: target role, notes and CV style build the prompt ("Create prompt"; a changed detail needs "Update prompt", the pasted reply stays), the reply goes through `previewBaseCv` and into `editor.replaceContent`, unsaved. Test ids `cv-ai-draft-*`.
 - `/profile` (`pages/profile.vue`, data from `useProfile()`) is built from `<Profile…>` components, which own their
   mutations and emit `changed` (page refetches) or `saved` (Basics/Preferences return the whole profile):
-  `<ProfileSection title icon testid empty empty-message add-label full? clearable? @add @clear>` (card with a centered empty state; header
-  Add when filled, `actions` slot to override; `clearable` adds a ⋮ "Clear section" when filled, and the lists re-emit `clear`),
+  `<ProfileSection title icon testid empty empty-message add-label full? clearable? count? menu-items? @add @clear>` (always-open card
+  styled like `TailoredCvSection`, one-line empty state with Add; header Add when filled, `actions` slot to override; ⋮ lists
+  `menuItems` then "Clear section…" when `clearable` and filled, and the lists re-emit `clear`; injects `PROFILE_TRANSLATION_KEY`
+  optionally and hides every action while translating),
+  `<ProfileSettings v-model:translating content-language target progress stale-count has-translations loading? @change-language @translate-ai>`
+  (language strip: written/translated `UTabs` with a to-do badge, progress line, "Change settings" slideover with the
+  written language, and in the translated view a progress bar + Translate with AI),
   `<ProfileClearSectionsModal v-model:target :profile @saved>` (confirms and runs `clearProfileSections` for one
   `ProfileSectionName` or `'ALL'`, naming what is deleted and kept), `<ProfileEntry kind entry-id title subtitle? dates? bullets>` (an
   entry row with edit/delete + `<ProfileBullets kind entry-id bullets>`: add/edit/delete/drag-reorder, max 20),
   `<ProfileNamesField v-model lookup?>` (name chips; combobox with `lookup`, free text without, used for hobbies; exposes `commit()` to add typed text before saving), `<ProfileProjectKindSelect v-model>` (nullable project type; clearable USelectMenu, placeholder "Not specified"), `<ProfileLocationField v-model:country-code v-model:city>` (country + city, city reset on country change), `<ProfileReferenceList>`/`<ProfileReferenceModal>` (drag-reorder via `moveProfileReference`), the four `…List` + `…Modal` pairs (Experience,
   Education, Certification, Project), `<ProfileSkillList>`/`<ProfileSkillModal>`, `<ProfileLanguageList>` (inline
   levels), `<ProfilePreferencesCard>` (+ target locations via `saveLocation`) and `<ProfileBasicsModal>`.
-  Translations mode: the page provides `{ translating, target }` (`provideProfileTranslation`); `<ProfileBullets>` then
+  Translated view (`?lang=<target>` on `/profile`): the page provides `{ translating, target, … }` (`provideProfileTranslation`); `<ProfileBullets>` then
   renders `<ProfileBulletTranslation :bullet>` per bullet, Experience/Education lists put `<ProfileEntryTranslation :experience|:education>` in Entry's `#translation` slot, and the Summary card shows `<ProfileTranslationBlock :profile>`
-  (headline + summary in the language that isn't `contentLanguage`; stale/machine badges). While translating, a sticky
-  bottom bar shows bullet progress and Done; translation rows use `<ProfileRowActions>` with a confirmed delete.
+  (headline + summary in the language that isn't `contentLanguage`; stale/machine badges). While translating, the written
+  text is read only: sections hide their actions and Entry/Language/Reference rows their ⋮ (and reference drag); translation
+  rows keep their own `<ProfileRowActions>` with a confirmed delete.
 - `<ListingsLocation listing>` — map-pin line of `City, Country` joined by `|`.
 - `<ListingsDates listing>` — posted and deadline lines with icons (card and detail header), posted colored by days ago, deadline
   colored by days left to the server's `dueOn` (ASAP/Not stated show `due ~date`, or "likely filled" once past).
@@ -181,7 +191,8 @@ body)` (copies subject, greeting, paragraphs, closing), `hasCoverLetterBody`.
 ## Composables (`app/composables/`)
 
 - `useAiRequest()` → `{ attempt(input, request), run(busy, input, request, read), safetyCode, safetyMessage, needsConfirm, confirmRetry }` — one per AI action. `run` is the usual built-in call: `busy` while it runs, the first payload error as `{ error, code }`, a refetch of the models on `UnknownLlmModelError`, a network failure as `genericError(e)`, else `read(payload)` → `AiOutcome<T>` (`utils/aiOutcome.ts`: `{ value }` or `{ error, code? }`). `useAiInFlight()` (key `ai-in-flight`) counts requests still waiting, for the layout's leave guard. `attempt` passes a `requestId` to `request`: a new one per action, the same one only when the previous attempt got no answer and `input` is unchanged. It records the `AiSafetyError` code/message of the answer; `needsConfirm` is true after `operation-interrupted` / `result-unavailable` until `confirmRetry()`. `aiSafetyCode(errors)` reads the code. Used by `useParsePrompt`, `useProfileCvImport`, `useTailoredCvDraft` and `useCoverLetterDraft`, which also return `needsConfirm`, `safetyMessage` and `confirmRetry`.
-- `useProviderKeys()` → `{ keys, status, error, saving, setKey(provider, apiKey), removing, removeKey(provider) }` — Owner only; `providerKeys` under key `provider-keys`. `setKey` returns the API's message or nothing; both mutations patch the row and refresh the models, limits and usage. `useLlmCallLimits(immediate = true)` → `{ limits, status, error, refresh, execute, saving, setLimit(provider, limit | null) }` — `llmCallLimits` under key `llm-call-limits` (null = no limit, 0 = paused). Types `ProviderKey`, `LlmCallLimit`.
+- `useProviderKeys()` → `{ keys, keyFor(credentialId), status, error, refresh, saving, setKey(provider, apiKey), removing, removeKey(provider) }` — Owner only; `providerKeys(includeRetired: true)` under key `provider-keys`. `keys` is one live row per provider (placeholder when not connected), sorted by label; `keyFor` also finds retired keys (usage history). `setKey` returns the API's message or nothing; both mutations refetch the keys and refresh the models, limits and usage. `useLlmCallLimits(immediate = true)` → `{ limits, status, error, refresh, execute, saving, setLimit(provider, limit | null) }` — `llmCallLimits` under key `llm-call-limits` (null = no limit, 0 = paused; the Owner gets every supported provider). Types `ProviderKey`, `LlmCallLimit`.
+- `useLlmUsage(immediate = true)` — `llmUsageToday` (model, provider, keySource, requests, tokens, shared cap) under key `dashboard-llm-usage`; type `LlmUsage`. `useLlmUsageHistory(days: Ref<number>)` — Owner only, `usageDaily(days)` under key `llm-usage-history`, refetches when `days` changes; row type `LlmUsageDay`. `useRequestCap(usage, model)` → `{ ownKey, cap, state, loading }` — today's cap for a model via `requestCap`/`capState`, fetching `llmCallLimits` only for an own key; `loading` while that limit is unknown. Used by Settings' model card, the dashboard widget and `AppAiCostNotice`.
 - `useCollectedJobProcessing(parse)` — page-local sequential runner. `start`, `retry`, `skip`, `stop`, and `invalidate` control `idle`/`running`/`paused`/`finished`/`stopped`; `accepted` holds validated raw drafts in order. `completed`, `skipped`, `unprocessed`, `currentBatch`, `total`, `error`, `errorCode` (the failed batch's `AiSafetyError` code), and `busy` support progress and recovery UI. `markPublished()` is a one-shot guard for appending drafts.
 
 - `LISTING_COMPARE_FIELDS` fragment + `ComparedListing` type (`composables/listingCompareFields.ts`) — fields the compare modal needs.
@@ -195,6 +206,10 @@ body)` (copies subject, greeting, paragraphs, closing), `hasCoverLetterBody`.
 - `useMutation(onStale?)` → `{ run, loading }` — `run(async () => payload.errors)` toasts the API's
   error message (or a generic one on a network error) and resolves `true` on success; a
   `*NotFoundError` calls `onStale` to refetch.
+- `useUndoStatusChange(listing, onChanged)` (`useUndoStatusChange.ts`) → `{ label, request, confirm, confirmOpen,
+confirmTitle, confirmDescription, loading }` — undoes the newest status change (off while a request runs or the undone entry is still showing): outcomes at once with an Undo toast
+  that re-records them, Applied/Interviewing behind a confirm; `DuplicateListingError` toasts a link to the open
+  listing. The same file exports `RECORD_OUTCOME` (shared with `<ListingsOutcomeModal>`).
 - `toListingInput(fields)` builds the full-replace `ListingInput` (form and quick-add rows); `emptyListing()` is its starting value. `useListingForm()` → `{ state, validate, toInput, fill, fillDraft, mergeDraft }` — listing form state (incl. `kind`, sent on
   every save since `updateListing` is a full replace), `UForm` validator,
   mapping to the API's `ListingInput`, `fill(listing: ListingDetail)` to load an existing one, and
@@ -213,7 +228,7 @@ body)` (copies subject, greeting, paragraphs, closing), `hasCoverLetterBody`.
 - `useLeaveConfirm(unsaved)` → `{ open, leave }` — a page's in-app "Leave without saving?" (route-leave guard + confirm state); `useAiLeaveGuard()` → `{ open, leave }` — used once by the default layout: any navigation to another path while a built-in AI request is in flight asks first; `navigateAfterConfirm(to)` navigates past it after a page already asked. There is no app-wide reload/close guard; `ListingsAnswersAiModal` adds its own `beforeunload` while it holds unsaved drafts.
 - `useDeleteDocument(done)` → `{ target, confirmOpen, deleting, ask(pdf), confirm, isDeleted(id) }` — confirmed delete of a listing's unsent PDF; deleted ids stay hidden until the documents refetch; `done(deletedId | null)` after every attempt.
 - `useBackLink({ to, label })` — a sub page's parent link, shown in the default layout's fixed navbar (arrow, then the destination's short name from `sm`; icon-only with `Back to <label>` aria-label on phones). Keyed by route path, so the next page's link survives the old page unmounting. `useBackLinkState()` is the layout's read side. Top-level sidebar pages don't call it.
-- `useAppToast()` → `{ success, info, warning, error, undoable(title, onUndo, opts?) }`, each `(title, { description?, icon?, action?: { label, to?, onClick? }, id? }?)`. This is the only way to show a toast: a fixed color, icon and `TOAST_DURATION` per kind, one outline `md` action, and the id defaults to `kind:title`, so a repeated message replaces the old one. The PWA update toast is the one direct `useToast` exception. `useCopyAsText(noun)` → `{ copied, copy(text) }` — clipboard write with an error toast; `copied` flips for 2 s.
+- `useAppToast()` → `{ success, info, warning, error, undoable(title, onUndo, opts?) }`, each `(title, { description?, icon?, action?: { label, to?, onClick? }, id? }?)`. This is the only way to show a toast: a fixed color, icon and `TOAST_DURATION` per kind, one outline `md` action, and the id defaults to `kind:title`, so a repeated message replaces the old one. The PWA update toast is the one direct `useToast` exception. `useCopyAsText(noun)` → `{ copied, copiedKey, copy(text, key?) }` — clipboard write with an error toast; `copied` flips for 2 s and `copiedKey` holds the key passed (one of several Copy buttons in a list).
 - `useDebounce(fn, ms)` — debounced `fn`, dropped on unmount (search fields). `useOpenedOnce(open)` — latch for `<LazyX v-if="opened">`: loads a modal on its first open and keeps it mounted so the close animation plays.
 - `useParsePrompt(name)` → `{ instructions, promptLoading, promptError, copied, load (toasts on failure), loadPrompt, copy(posting), parsing, parse(posting), parsingUrl, parseFromUrl(listingId), parsingNewUrl, parseNewUrl(url) }` — fetches
   `listingParsePrompt`, `listingQuickParsePrompt` or `companyParsePrompt` and copies it + `<posting>` text
@@ -259,6 +274,7 @@ body)` (copies subject, greeting, paragraphs, closing), `hasCoverLetterBody`.
 ## Utils (`app/utils/`, auto-imported)
 
 - `companyResearch.ts` — `researchFromJson(d)` → `{ research, ignored }`: the research fields of an external AI's company JSON, keeping only values the API accepts (enums, http(s) URLs, mod-11 org.nr, 1800..now year, ≤500 description, ≤50 unique skills) and naming the dropped ones; `researchSummary(research)` one-line summary (empty when none); `fillEmptyResearch(form, research)` fills only the empty fields of the edit form → `{ filled, kept }`; `parseCompaniesReply(reply)` → `{ rows }` or `{ error }`; `basicsFromJson(d)` (industry + valid locations, bad country codes listed) / `fillEmptyBasics(form, basics)` (empty industry; locations only when none); `hasCompanyResearch(company)` (any research field or skill; not `researchedAt`, which an edit save leaves); `isValidOrgNumber`, `formatOrgNumber`; `CompanyResearch` (= `CompanyDetailsInput`), `ResearchForm`.
+- `applicationQuestions.ts` — limits (`QUESTION_MAX`, `NOTES_MAX`, `ANSWER_MAX`, `CHAR_LIMIT_MAX`, `QUESTIONS_PER_LISTING`), `isOverLimit(answer, charLimit)`, `parseQuestionLines(text, remaining)` → `PastedQuestion[]` (`question`, `charLimit` from a trailing "(500)", `overflow` past the free slots, `error`); blank lines skipped, leading "1." dropped.
 - `providerLabel(provider)` (`aiProviders.ts`) — display name of an AI provider id (`openai` → OpenAI), the id itself when unknown.
 - `collectedJobs.ts` — `parseCollectedJobs(source)` validates full listing JSON objects by URL, preserving every field without requiring text; `prepareCollectedJobs(source)` checks authenticated URL batches (≤100), maps indexes and filters normalized repeats across batches, returns `{ rows, remaining, skipped }` only after all succeed; `collectedJobsPosting(rows)` serializes the retained complete objects as JSON (empty rows yield no payload). Exports `CollectedJob`, `PreparedJobs`.
 - `collectedJobBatches.ts` — `planCollectedJobBatches(rows)` preserves full objects and input order in consecutive batches of at most 20 jobs (our choice) and 100,000 compact JSON characters (the API's QUICK cap); throws `OversizedCollectedJobError(index)` before processing if one object cannot fit. `collectedJobBatchPosting(batch)` is the exact compact request text. `decodeCollectedJobReply(reply, expectedCount)` extracts a JSON array and accepts only the expected count of object values. Exports the two limit constants and `OversizedCollectedJobError`.
@@ -273,6 +289,7 @@ body)` (copies subject, greeting, paragraphs, closing), `hasCoverLetterBody`.
 - `formatPlaces(locations)` — a company's `{ city?, countryCode }[]` as `Oslo, NO · SE`.
 - `todayIso()` — local today as `YYYY-MM-DD` (not `toISOString()`, which is UTC).
 - `daysAgoIso(n)` — local date `n` days back as `YYYY-MM-DD`; `localDayStartIso(n)` — UTC instant of local midnight `n` days back.
+- `requestCap(ownKey, usageToday, providerLimit)` / `capState(cap)` / `summarizeUsage(rows)` (`utils/llmUsage.ts`) — today's cap for the default model (shared per-model pool for all users from usage today, or the owner's provider limit on an own key) → `{ used, max, left, resetsAt, pooled }`; state `unlimited | ok | near (≥80 %) | reached | paused`; `usageDaily` rows folded per model + key into `{ own, shared }` groups with totals and `partlyPriced`. Used through `useRequestCap` and by Settings' usage card.
 - `formatDateTime(iso)` — formats a `DateTime` instant as `nb-NO` medium date + short time, local zone.
 - `toDateTimeLocal(value = now)` — a date/ISO string as local `YYYY-MM-DDTHH:mm` for
   `<input type="datetime-local">` (send back with `new Date(value).toISOString()`).
@@ -281,6 +298,10 @@ body)` (copies subject, greeting, paragraphs, closing), `hasCoverLetterBody`.
 - `formatMonth(iso)` — `YYYY-MM-DD` as `nb-NO` short month + year; `formatMonthRange(start, end, openLabel?)`
   ("Mar 2020 – Present"; no `openLabel` shows just the start); `formatYears(months)` ("2.5 yrs", "<1 yr", "" for 0).
 - `daysFromToday(iso)` — whole days from local today to a `YYYY-MM-DD` date; negative if past.
+- `applicationTimeline.ts`: `statusLabel(status, previous?)` (Rejected/Withdrawn read by who acted, e.g. "Declined by
+  you" after an offer), `relativeDays(instant)` ("today", "tomorrow", "in 3 days", "3 days ago"),
+  `formatInstantDate(instant)`, `timelineRows(listing, now?)`, `applicationContext(listing, now?)` → `{ line,
+nextInterview }`, `FINISHED_STATUSES`.
 - `tailoredCv.ts` (partial): `changedCvSections(cv, next, split?)` splits an external reply into per-section and
   per-entry changes; with `split` (tailored CV), added entries and a new order are their own changes
   (`kind: 'add' | 'order'`). `orderCvEntries(cv, list, ids)` applies an order; `cvEntryName(entry)` gives the review

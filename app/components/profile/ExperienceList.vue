@@ -4,10 +4,9 @@ import type { ProfileExperience } from '~/composables/useProfile'
 const props = withDefaults(
   defineProps<{
     experiences: readonly ProfileExperience[]
-    defaultOpen?: boolean
     count?: number
   }>(),
-  { defaultOpen: true, count: undefined }
+  { count: undefined }
 )
 const emit = defineEmits<{ changed: []; clear: [] }>()
 
@@ -64,7 +63,6 @@ const remove = async () => {
     icon="i-lucide-briefcase"
     testid="profile-experience"
     :empty="!experiences.length"
-    :default-open="defaultOpen"
     :count="count"
     empty-message="No experience yet."
     add-label="Add experience"

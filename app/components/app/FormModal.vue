@@ -13,6 +13,8 @@ const props = defineProps<{
   validate?: (state: Partial<T>) => FormError[]
   // Changes kept outside `state` that closing would also lose (an entry form's typed bullet).
   unsaved?: boolean
+  // Wider on tablet and desktop, for a form laid out as a table (the tailored CV's skills).
+  wide?: boolean
 }>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{ submit: [] }>()
@@ -69,7 +71,7 @@ defineExpose({
     :title="title"
     :description="description"
     :dismissible="!loading"
-    :ui="{ content: PHONE_FULLSCREEN_MODAL }"
+    :ui="{ content: [PHONE_FULLSCREEN_MODAL, wide && 'sm:max-w-3xl'] }"
   >
     <template #body>
       <UForm

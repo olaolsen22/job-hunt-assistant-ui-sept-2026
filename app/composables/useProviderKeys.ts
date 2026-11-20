@@ -5,15 +5,17 @@ const KEY_FIELDS = graphql(`
   fragment ProviderKeyFields on ProviderKeyStatus {
     provider
     configured
+    credentialId
     last4
     createdAt
+    retiredAt
   }
 `)
 
 const KEYS = graphql(
   `
     query ProviderKeys {
-      providerKeys {
+      providerKeys(includeRetired: true) {
         ...ProviderKeyFields
       }
     }
@@ -105,22 +107,30 @@ export type LlmCallLimit = ResultOf<typeof LIMIT_FIELDS>
 // Owner only: the caller renders nothing that uses this for a Guest. The key itself is only ever
 // a mutation variable; nothing here keeps it.
 export const useProviderKeys = () => {
-  const { data, status, error } = useAsyncData('provider-keys', () => gql(KEYS), {
+  // Retired keys come too: usage history names the key a past request ran on.
+  const { data, status, error, refresh } = useAsyncData('provider-keys', () => gql(KEYS), {
     server: false
   })
   const llm = useLlmModels()
   const limits = useLlmCallLimits(false)
   // A key changes which models the account has and which providers can be limited. The usage
-  // numbers follow the default model, which may have run on the key.
+  // numbers follow the default model, which may have run on the key. Setting a key retires the
+  // previous one, so the list is fetched again rather than patched.
   const refreshAfterKeyChange = () =>
-    Promise.all([llm.refresh(), limits.refresh(), refreshNuxtData('dashboard-llm-usage')])
-  const keys = computed(() => data.value?.providerKeys ?? [])
-  const patch = (key: ProviderKey) => {
-    if (!data.value) return
-    data.value = {
-      providerKeys: data.value.providerKeys.map((k) => (k.provider === key.provider ? key : k))
-    }
-  }
+    Promise.all([
+      refresh(),
+      llm.refresh(),
+      limits.refresh(),
+      refreshNuxtData('dashboard-llm-usage')
+    ])
+  const all = computed(() => data.value?.providerKeys ?? [])
+  // One row per provider: its live key, or the "not connected" placeholder.
+  const keys = computed(() =>
+    all.value
+      .filter((k) => !k.retiredAt)
+      .sort((a, b) => providerLabel(a.provider).localeCompare(providerLabel(b.provider)))
+  )
+  const keyFor = (credentialId: string) => all.value.find((k) => k.credentialId === credentialId)
 
   // Returns the API's message for the modal to show, or nothing when saved.
   const saving = ref(false)
@@ -129,7 +139,6 @@ export const useProviderKeys = () => {
     try {
       const { setProviderKey: payload } = await gql(SET_KEY, { provider, apiKey })
       if (payload.errors?.length) return payload.errors[0]!.message
-      if (payload.providerKey) patch(payload.providerKey)
       await refreshAfterKeyChange()
     } catch {
       return ERROR_MESSAGES.generic
@@ -142,14 +151,11 @@ export const useProviderKeys = () => {
   const removeKey = (provider: string) =>
     run(async () => {
       const { removeProviderKey: payload } = await gql(REMOVE_KEY, { provider })
-      if (payload.providerKey) {
-        patch(payload.providerKey)
-        await refreshAfterKeyChange()
-      }
+      if (payload.providerKey) await refreshAfterKeyChange()
       return payload.errors
     })
 
-  return { keys, status, error, saving, setKey, removing, removeKey }
+  return { keys, keyFor, status, error, refresh, saving, setKey, removing, removeKey }
 }
 
 // Shared key: Settings lists the limits and the AI cost notice shows what is left. getCachedData

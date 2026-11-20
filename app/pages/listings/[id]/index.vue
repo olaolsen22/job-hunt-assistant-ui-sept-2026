@@ -47,7 +47,6 @@ const SET_ARCHIVED = graphql(`
 const { success: toastSuccess } = useAppToast()
 const { state, toInput, fill } = useListingForm()
 const markOpen = ref(false)
-const applyOpen = ref(false)
 
 // The API has no mutation for just this flag and updateListing replaces the whole listing,
 // so rebuild the full input from the loaded listing.
@@ -298,9 +297,8 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
                   <dd class="text-sm">{{ fact.value }}</dd>
                 </div>
               </dl>
-              <div class="flex flex-wrap gap-2">
+              <div v-if="listing.url" class="flex flex-wrap gap-2">
                 <UButton
-                  v-if="listing.url"
                   :to="listing.url"
                   target="_blank"
                   rel="noopener"
@@ -311,22 +309,10 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
                   data-testid="listing-view-ad"
                   class="w-full justify-center sm:w-auto"
                 />
-                <UButton
-                  v-if="listing.status === 'SAVED'"
-                  icon="i-lucide-check"
-                  class="w-full justify-center sm:w-auto"
-                  data-testid="listing-record-application"
-                  @click="applyOpen = true"
-                  >Record application</UButton
-                >
               </div>
             </header>
 
-            <ListingsApplication
-              v-model:apply-open="applyOpen"
-              :listing="listing"
-              @changed="refresh"
-            />
+            <ListingsApplication :listing="listing" @changed="refresh" @archive="toggleArchived" />
             <ListingsRequirementMapCard :listing="listing" />
             <ListingsTailoredCvCard :listing="listing" @changed="refresh" />
             <ListingsCoverLetterCard :listing="listing" @changed="refresh" />

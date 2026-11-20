@@ -1,79 +1,57 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 
-const props = withDefaults(
-  defineProps<{
-    title: string
-    icon: string
-    empty: boolean
-    emptyMessage: string
-    addLabel: string
-    testid: string
-    full?: boolean
-    clearable?: boolean
-    compactEmpty?: boolean
-    count?: number
-    collapsible?: boolean
-    defaultOpen?: boolean
-  }>(),
-  { compactEmpty: true, defaultOpen: true, collapsible: undefined, count: undefined }
-)
+// One profile card, styled like the tailored CV's sections: always open, labelled Add/Edit
+// buttons, and a ⋮ menu for the rarer actions (`menuItems`, then Clear section).
+const {
+  title,
+  empty,
+  clearable,
+  count = undefined,
+  menuItems = []
+} = defineProps<{
+  title: string
+  icon: string
+  empty: boolean
+  emptyMessage: string
+  addLabel: string
+  testid: string
+  full?: boolean
+  clearable?: boolean
+  count?: number
+  menuItems?: DropdownMenuItem[]
+}>()
 const emit = defineEmits<{ add: []; clear: [] }>()
 
-// When provided by the profile page, sections become collapsible on mobile automatically.
-const injectedCollapsible = inject<Ref<boolean> | null>('profile-mobile-collapsible', null)
-const isCollapsible = computed(() => props.collapsible ?? injectedCollapsible?.value ?? false)
-const isOpen = ref(props.defaultOpen)
-
-// The page's jump links name a section; open it so the jump never lands on a closed card.
-const jumpTarget = inject<Ref<string | null> | null>('profile-jump-target', null)
-if (jumpTarget)
-  watch(jumpTarget, (id) => {
-    if (id === props.testid) isOpen.value = true
-  })
-
-const toggle = () => {
-  if (isCollapsible.value) isOpen.value = !isOpen.value
-}
+// While the Norwegian (other-language) view is open, the English text is read only: editing it
+// would mark its translations outdated. Optional, so the card also works outside the page.
+const translation = inject(PROFILE_TRANSLATION_KEY, null)
+const readOnly = computed(() => !!translation?.translating.value)
 
 const menu = computed<DropdownMenuItem[]>(() => [
-  {
-    label: 'Clear section',
-    icon: 'i-lucide-eraser',
-    color: 'error',
-    onSelect: () => emit('clear')
-  }
+  ...menuItems,
+  ...(clearable && !empty
+    ? [
+        {
+          label: 'Clear section…',
+          icon: 'i-lucide-eraser',
+          color: 'error' as const,
+          onSelect: () => emit('clear')
+        }
+      ]
+    : [])
 ])
 </script>
 
 <template>
-  <!-- UCard always renders its padded body; hide it while collapsed so no empty strip shows. -->
-  <AppCard
-    :id="testid"
-    class="scroll-mt-4"
-    :data-testid="testid"
-    :ui="isCollapsible && !isOpen ? { body: 'hidden' } : undefined"
-  >
+  <AppCard :id="testid" class="scroll-mt-4" :data-testid="testid">
     <template #header>
-      <div
-        class="flex items-center justify-between gap-2"
-        :role="isCollapsible ? 'button' : undefined"
-        :aria-expanded="isCollapsible ? isOpen : undefined"
-        :tabindex="isCollapsible ? 0 : undefined"
-        @click="toggle"
-        @keydown.enter.prevent="toggle"
-        @keydown.space.prevent="toggle"
-      >
+      <div class="flex items-center justify-between gap-2">
         <h2 class="font-semibold">
-          <UIcon
-            v-if="isCollapsible"
-            name="i-lucide-chevron-right"
-            class="mr-1 inline-block size-4 align-text-bottom transition-transform"
-            :class="{ 'rotate-90': isOpen }"
-          />{{ title
+          {{ title
           }}<span v-if="count && count > 0" class="font-normal text-muted"> · {{ count }}</span>
         </h2>
-        <div v-if="!isCollapsible || isOpen" class="flex items-center gap-1" @click.stop>
+        <div v-if="!readOnly" class="flex items-center gap-2">
           <slot name="actions">
             <UButton
               v-if="!empty && !full"
@@ -87,7 +65,7 @@ const menu = computed<DropdownMenuItem[]>(() => [
               >Add</UButton
             >
           </slot>
-          <UDropdownMenu v-if="clearable && !empty" :items="menu" :content="{ align: 'end' }">
+          <UDropdownMenu v-if="menu.length" :items="menu" :content="{ align: 'end' }">
             <UButton
               icon="i-lucide-ellipsis-vertical"
               color="neutral"
@@ -101,41 +79,20 @@ const menu = computed<DropdownMenuItem[]>(() => [
       </div>
     </template>
 
-    <template v-if="!isCollapsible || isOpen">
-      <div
-        v-if="empty && compactEmpty"
-        class="flex items-center gap-3"
-        :data-testid="`${testid}-empty`"
+    <div v-if="empty" class="flex items-center gap-3" :data-testid="`${testid}-empty`">
+      <UIcon :name="icon" class="size-5 shrink-0 text-muted" />
+      <p class="min-w-0 flex-1 text-sm text-muted">{{ emptyMessage }}</p>
+      <UButton
+        v-if="!readOnly"
+        color="neutral"
+        variant="subtle"
+        icon="i-lucide-plus"
+        size="sm"
+        :data-testid="`${testid}-add`"
+        @click="emit('add')"
+        >{{ addLabel }}</UButton
       >
-        <UIcon :name="icon" class="size-5 shrink-0 text-muted" />
-        <p class="min-w-0 flex-1 text-sm text-muted">{{ emptyMessage }}</p>
-        <UButton
-          color="neutral"
-          variant="subtle"
-          icon="i-lucide-plus"
-          size="sm"
-          :data-testid="`${testid}-add`"
-          @click="emit('add')"
-          >{{ addLabel }}</UButton
-        >
-      </div>
-      <div
-        v-else-if="empty"
-        class="flex flex-col items-center justify-center gap-3 py-6 text-center"
-        :data-testid="`${testid}-empty`"
-      >
-        <UIcon :name="icon" class="size-10 text-muted" />
-        <p>{{ emptyMessage }}</p>
-        <UButton
-          color="neutral"
-          variant="subtle"
-          icon="i-lucide-plus"
-          :data-testid="`${testid}-add`"
-          @click="emit('add')"
-          >{{ addLabel }}</UButton
-        >
-      </div>
-      <slot v-else />
-    </template>
+    </div>
+    <slot v-else />
   </AppCard>
 </template>
