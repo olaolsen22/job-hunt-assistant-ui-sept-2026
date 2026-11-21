@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { useResizeObserver } from '@vueuse/core'
 
-// A listing summary paragraph. With `clamp` it shows 12 lines and a "Show full description" toggle,
+// A listing description: the summary renders as markdown, the original posting as plain text. With `clamp` it shows 12 lines and a "Show full description" toggle,
 // which only appears when the clamp actually hides text.
 const {
   text,
   lang = undefined,
-  clamp = false
-} = defineProps<{ text: string; lang?: string; clamp?: boolean }>()
+  clamp = false,
+  markdown = false
+} = defineProps<{ text: string; lang?: string; clamp?: boolean; markdown?: boolean }>()
 
 const el = ref<HTMLElement>()
 const open = ref(false)
@@ -30,15 +31,16 @@ watch([el, () => text, open], async () => {
 
 <template>
   <div>
-    <p
+    <div
       ref="el"
       :lang="lang"
-      class="max-w-prose text-sm wrap-break-word whitespace-pre-line"
-      :class="{ 'line-clamp-12': clamp && !open }"
+      class="max-w-prose text-sm wrap-break-word"
+      :class="{ 'line-clamp-12': clamp && !open, 'whitespace-pre-line': !markdown }"
       data-testid="listing-description-text"
     >
-      {{ text }}
-    </p>
+      <LazyAppMarkdownContent v-if="markdown" :source="text" />
+      <template v-else>{{ text }}</template>
+    </div>
     <UButton
       v-if="clamp && clamped"
       variant="link"

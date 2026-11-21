@@ -23,7 +23,8 @@ const {
   view: descriptionView,
   hasOriginal: hasOriginalDescription,
   text: descriptionText,
-  lang: descriptionLang
+  lang: descriptionLang,
+  markdown: descriptionMarkdown
 } = useDescriptionView(listing)
 
 useListingTitle(listing)
@@ -365,6 +366,7 @@ const openSkillModal = (skill: ListingDetail['skills'][number]) => {
                 <ListingsDescriptionText
                   :text="descriptionText"
                   :lang="descriptionLang"
+                  :markdown="descriptionMarkdown"
                   :class="{ 'mt-4': !hasOriginalDescription }"
                 />
               </template>

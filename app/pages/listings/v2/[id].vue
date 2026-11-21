@@ -25,7 +25,8 @@ const {
   view: descriptionView,
   hasOriginal: hasOriginalDescription,
   text: descriptionText,
-  lang: descriptionLang
+  lang: descriptionLang,
+  markdown: descriptionMarkdown
 } = useDescriptionView(listing)
 
 const progressCount = computed(() =>
@@ -112,6 +113,7 @@ const progressCount = computed(() =>
                 v-if="listing.description"
                 :text="descriptionText"
                 :lang="descriptionLang"
+                :markdown="descriptionMarkdown"
                 clamp
               />
               <p v-else class="text-sm text-muted" data-testid="overview-no-description">
