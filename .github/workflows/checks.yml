@@ -3,7 +3,14 @@ name: Checks
 on:
   push:
     branches: [master, development]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
+
+# A newer push to the same branch/PR makes the older run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   checks:
@@ -23,6 +30,9 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    # Chromium + its system libs are preinstalled, so no per-run browser download/apt install.
+    # Keep the tag equal to the @playwright/test version when upgrading it.
+    container: mcr.microsoft.com/playwright:v1.63.0-noble
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -31,7 +41,6 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
       # Playwright's webServer runs the production build, so this also checks `pnpm build`.
       - run: pnpm test:e2e
       - uses: actions/upload-artifact@v7
