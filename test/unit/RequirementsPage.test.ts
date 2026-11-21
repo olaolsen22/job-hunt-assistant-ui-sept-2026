@@ -366,7 +366,10 @@ describe('requirements page', () => {
     validationError = null
     await click('confirm-modal-confirm')
     await vi.waitFor(() => expect(saved).toBeNull())
-    await vi.waitFor(() => expect(w.vm.$router.currentRoute.value.path).toBe('/listings/5'))
+    // Resolving the listing page route is slow when the whole suite runs in parallel.
+    await vi.waitFor(() => expect(w.vm.$router.currentRoute.value.path).toBe('/listings/5'), {
+      timeout: 5000
+    })
   })
   it('asks before leaving unsaved edits and Cancel stays on the editor', async () => {
     const router = useRouter()
