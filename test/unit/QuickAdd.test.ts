@@ -976,8 +976,11 @@ describe('Quick add from a job import', () => {
     await vi.waitFor(() => expect(requests.reviewed).toEqual([{ id: 7, isReviewed: true }]))
     expect(requests.saves).toBe(1)
     // A lone listing doesn't open: the done state leads on to the next import instead.
+    // The request is logged before its response lands, so wait for the card to catch up.
+    await vi.waitFor(() =>
+      expect(w.get('[data-testid="quick-add-import-done"]').text()).toContain('Import done')
+    )
     const done = w.get('[data-testid="quick-add-import-done"]')
-    expect(done.text()).toContain('Import done')
     expect(done.text()).toContain('2 saved · Marked as reviewed')
     // Both jobs show as cards: the one saved just now and the one that already was.
     const cards = w.findAll('[data-testid="import-job"]')
