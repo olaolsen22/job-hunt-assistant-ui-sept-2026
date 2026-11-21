@@ -98,8 +98,10 @@ test('researches companies picked on the list: names reach the paste modal and s
                 sizeBand: null,
                 listingCount: 0,
                 applicationCount: 0,
+                kind: null,
                 industry: null,
-                locations: []
+                locations: [],
+                contacts: []
               })),
               pageInfo: { hasNextPage: false, endCursor: null },
               totalCount: 2
