@@ -58,7 +58,12 @@ export default defineNuxtConfig({
 
   // Other icons load from the server on first use, which fails offline; error.vue's offline
   // screen needs its icons in the bundle.
-  icon: { clientBundle: { icons: ['lucide:wifi-off', 'lucide:rotate-cw'] } },
+  // The language flags are bundled too, so they show offline and don't fetch per row.
+  icon: {
+    clientBundle: {
+      icons: ['lucide:wifi-off', 'lucide:rotate-cw', 'circle-flags:gb', 'circle-flags:no']
+    }
+  },
 
   // Tailwind/Nuxt UI first, then custom SCSS so it can override.
   css: ['~/assets/css/main.css', '~/assets/scss/main.scss'],
