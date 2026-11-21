@@ -29,7 +29,8 @@ const columns: TableColumn<ListingListItem>[] = [
 
 // Measure the table itself: both navigation and filters can reduce its available width.
 const table = useTemplateRef('table')
-const { width } = useElementSize(table)
+// UTable's exposed type isn't a full VueInstance, so hand VueUse its root element directly.
+const { width } = useElementSize(() => table.value?.$el)
 const wide = computed(() => width.value >= 1216)
 const detailed = computed(() => width.value >= 1056)
 const columnVisibility = computed(() => ({
