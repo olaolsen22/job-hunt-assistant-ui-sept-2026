@@ -28,10 +28,15 @@ const item = (id: number, title: string) => ({
 // an alias.
 const mainArgs = (query: string) => query.match(/\n\s*listings\(([^)]*)\)/)![1]
 
+// The layout asks for the pending-imports count on every page; it isn't the list query under test.
+const isPendingCount = (query: string) => query.includes('pendingListingImportCount')
+const pendingCount = { json: { data: { pendingListingImportCount: 0 } } }
+
 test('searches listings and filters by closing soon', async ({ page }) => {
   const searches: unknown[] = []
   await page.route('**/graphql', (route) => {
     const { query, variables } = route.request().postDataJSON()
+    if (isPendingCount(query)) return route.fulfill(pendingCount)
     searches.push(variables.search)
     const items = variables.search
       ? [item(1, 'Frontend Developer')]
@@ -67,7 +72,8 @@ test('searches listings and filters by closing soon', async ({ page }) => {
 
 test('filters by status', async ({ page }) => {
   await page.route('**/graphql', (route) => {
-    const { variables } = route.request().postDataJSON()
+    const { query, variables } = route.request().postDataJSON()
+    if (isPendingCount(query)) return route.fulfill(pendingCount)
     const items = variables.statuses
       ? [{ ...item(1, 'Frontend Developer'), status: 'APPLIED' }]
       : [item(1, 'Frontend Developer'), item(2, 'Backend Developer')]

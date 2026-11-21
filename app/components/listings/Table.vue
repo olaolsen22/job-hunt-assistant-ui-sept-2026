@@ -28,8 +28,9 @@ const columns: TableColumn<ListingListItem>[] = [
 ]
 
 // Measure the table itself: both navigation and filters can reduce its available width.
+// The ref is UTable's instance, so measure its root element.
 const table = useTemplateRef('table')
-const { width } = useElementSize(table)
+const { width } = useElementSize(() => table.value?.$el)
 const wide = computed(() => width.value >= 1216)
 const detailed = computed(() => width.value >= 1056)
 const columnVisibility = computed(() => ({
