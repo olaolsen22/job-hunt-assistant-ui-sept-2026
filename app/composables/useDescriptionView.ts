@@ -25,5 +25,7 @@ export const useDescriptionView = (
     const language = toValue(listing)?.postingLanguage
     return showOriginal.value && language ? LANGUAGE_TAGS[language] : 'en'
   })
-  return { view, hasOriginal, text, lang }
+  // The summary (description) is markdown; the original posting is pasted plain text.
+  const markdown = computed(() => !showOriginal.value)
+  return { view, hasOriginal, text, lang, markdown }
 }
