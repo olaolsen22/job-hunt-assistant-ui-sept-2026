@@ -93,6 +93,7 @@ test('researches companies picked on the list: names reach the paste modal and s
               nodes: [1, 2].map((id) => ({
                 id,
                 name: id === 1 ? 'Bekk' : 'Vipps',
+                kind: null,
                 avoidedAt: null,
                 favoritedAt: null,
                 sizeBand: null,
