@@ -81,6 +81,11 @@ export type ListingKind = (typeof LISTING_KIND_OPTIONS)[number]['value']
 export type Language = (typeof LANGUAGE_OPTIONS)[number]['value']
 export const languageLabel = (value: Language) =>
   LANGUAGE_OPTIONS.find((o) => o.value === value)!.label
+// Flag icons, not emoji: Windows renders flag emoji as plain letters. Bundled in nuxt.config.
+export const LANGUAGE_FLAGS: Record<Language, string> = {
+  ENGLISH: 'i-circle-flags-gb',
+  NORWEGIAN: 'i-circle-flags-no'
+}
 // BCP 47 tags for `lang` on text written in a language, so screen readers and spellcheck follow it.
 export const LANGUAGE_TAGS: Record<Language, string> = { ENGLISH: 'en', NORWEGIAN: 'nb' }
 export type CefrLevel = (typeof CEFR_LEVELS)[number]

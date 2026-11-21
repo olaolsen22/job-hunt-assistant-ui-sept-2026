@@ -25,7 +25,13 @@ const listing: ListingListItem = {
   analyzedAt: null,
   status: 'APPLIED',
   jobRole: { name: 'Developer' },
-  seniority: 'SENIOR'
+  seniority: 'SENIOR',
+  postingLanguage: 'NORWEGIAN',
+  languages: [
+    { language: 'NORWEGIAN', level: 'B2', isRequired: true },
+    { language: 'ENGLISH', level: null, isRequired: true },
+    { language: 'ENGLISH', level: 'C1', isRequired: false }
+  ]
 }
 
 const mount = (sort: ListingsSort) =>
@@ -49,7 +55,8 @@ describe('ListingsTable', () => {
       'false'
     )
     expect(wrapper.get('[data-testid="listing-title"]').attributes('href')).toBe('/listings/7')
-    expect(wrapper.get('table').classes()).toContain('max-w-[83rem]')
+    // Fills the card at any width; fixed-width columns keep the rest compact.
+    expect(wrapper.get('table').classes()).not.toContain('max-w-[83rem]')
     expect(wrapper.get('table').classes()).toContain('min-w-[48rem]')
     expect(wrapper.text()).toContain('Acme · Developer')
     expect(wrapper.text()).toContain('Senior')
@@ -92,9 +99,13 @@ describe('ListingsTable', () => {
     expect(
       compact.get('[data-testid="listing-title"]').element.closest('td')?.textContent
     ).toContain('Senior')
+    // Company and role truncate first; seniority sits outside the truncating text so it stays.
+    const seniority = compact.get('[data-testid="company-line-seniority"]')
+    expect(seniority.text()).toBe('· Senior')
+    expect(seniority.classes()).toContain('shrink-0')
     compact.unmount()
 
-    tableWidth.value = 1216
+    tableWidth.value = 1328
     const wide = await mount('due')
     expect(wide.find('[data-testid="listings-sort-seniority"]').exists()).toBe(true)
     expect(
@@ -122,6 +133,61 @@ describe('ListingsTable', () => {
     expect(wrapper.emitted('update:sort')?.[0]).toEqual(['posted'])
     expect(wrapper.get('[data-testid="listing-title"]').text()).toBe(listing.title)
     expect(wrapper.find('[data-testid="listing-view-ad"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('shows required languages and the ad language once the table has room', async () => {
+    tableWidth.value = 1160
+    const compact = await mount('due')
+    expect(compact.find('[data-testid="listing-languages"]').exists()).toBe(false)
+    compact.unmount()
+
+    // Before Seniority gets its column: language has no fallback in the company line.
+    tableWidth.value = 1168
+    const wrapper = await mount('due')
+    expect(wrapper.find('[data-testid="listings-sort-seniority"]').exists()).toBe(false)
+    const cell = wrapper.get('[data-testid="listing-languages"]')
+    const lines = () =>
+      wrapper.findAll('[data-testid="listing-language-line"]').map((l) => ({
+        text: l.text(),
+        flag: l.find('[data-testid="listing-language-flag"]').attributes('class') ?? ''
+      }))
+    // Spelled out with a flag; optional languages are left out; the ad language is marked on its
+    // requirement line rather than repeated.
+    expect(lines()).toEqual([
+      { text: 'Norwegian B2 · ad', flag: expect.stringContaining('circle-flags') },
+      { text: 'English', flag: expect.stringContaining('circle-flags') }
+    ])
+    // The visible lines are hidden from screen readers, which get one full sentence instead.
+    expect(wrapper.get('[data-testid="listing-languages-lines"]').attributes('aria-hidden')).toBe(
+      'true'
+    )
+    const label = 'Requires Norwegian (B2), English. Ad written in Norwegian.'
+    expect(cell.attributes('title')).toBe(label)
+    expect(cell.get('.sr-only').text()).toBe(label)
+    expect(wrapper.find('[data-testid="listings-sort-languages"]').exists()).toBe(false)
+
+    // An ad language that isn't required gets its own "Ad in" line after the requirements.
+    await wrapper.setProps({
+      listings: [
+        {
+          ...listing,
+          languages: [{ language: 'ENGLISH', level: 'C1', isRequired: true }],
+          postingLanguage: 'NORWEGIAN'
+        }
+      ]
+    })
+    expect(lines().map((l) => l.text)).toEqual(['English C1', 'Ad in Norwegian'])
+
+    await wrapper.setProps({
+      listings: [{ ...listing, languages: [], postingLanguage: 'ENGLISH' }]
+    })
+    expect(lines().map((l) => l.text)).toEqual(['Ad in English'])
+    expect(wrapper.get('[data-testid="listing-languages"]').attributes('title')).toBe(
+      'Ad written in English.'
+    )
+    await wrapper.setProps({ listings: [{ ...listing, languages: [], postingLanguage: null }] })
+    expect(wrapper.get('[data-testid="listing-languages"]').text()).toBe('—')
     wrapper.unmount()
   })
 

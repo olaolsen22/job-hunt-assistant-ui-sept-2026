@@ -39,6 +39,12 @@ const LISTING_ITEM = graphql(`
       name
     }
     seniority
+    postingLanguage
+    languages {
+      language
+      level
+      isRequired
+    }
   }
 `)
 

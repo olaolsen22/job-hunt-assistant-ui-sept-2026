@@ -27,6 +27,8 @@ const listing = (overrides: Partial<ListingListItem> = {}): ListingListItem => (
   status: 'SAVED',
   jobRole: { name: 'Developer' },
   seniority: 'SENIOR',
+  postingLanguage: null,
+  languages: [],
   ...overrides
 })
 
