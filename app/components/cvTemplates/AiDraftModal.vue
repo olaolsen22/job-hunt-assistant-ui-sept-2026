@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import type { VariablesOf } from 'gql.tada'
 import type { BaseCvEditor } from '~/composables/useBaseCvs'
 import type { CvContentStyle } from '~/utils/tailoredCv'
 import {
   CONTENT_STYLE_DESCRIPTION,
   CONTENT_STYLE_OPTIONS,
+  PURPOSE_HINTS,
+  PURPOSE_OPTIONS,
   TEMPLATE_HINTS,
   TEMPLATE_OPTIONS
 } from '~/constants/cv'
@@ -25,6 +28,12 @@ const NOTES_MAX = 2000
 const DETAILED_VERBATIM_HINT =
   'Detailed without rewriting keeps each bullet word for word. Copy the prompt and run it again (an older prompt can cause this), or choose Concise or “Rewrite in plain words”, then update the prompt.'
 
+// Typed from the query, so the purpose stays in step with the API's enum.
+type Purpose = VariablesOf<typeof BASE_CV_EXTERNAL_PROMPT>['purpose']
+
+// The role field holds a market or field for an open application; the typed text stays on a switch.
+const purpose = ref<Purpose>('ROLE')
+const openApplication = computed(() => purpose.value === 'OPEN_APPLICATION')
 const role = ref('')
 const notes = ref('')
 const style = computed({
@@ -46,7 +55,8 @@ const ai = useAiPrompt(
         targetRole: role.value.trim(),
         notes: notes.value.trim() || null,
         template: style.value,
-        rewrite: rewrite.value
+        rewrite: rewrite.value,
+        purpose: purpose.value
       })
     ).baseCvExternalPrompt.instructions
 )
@@ -58,7 +68,7 @@ const created = ref(false)
 watch(instructions, (value) => {
   if (value) created.value = true
 })
-watch([() => role.value.trim(), () => notes.value.trim(), style, rewrite, language], () =>
+watch([() => role.value.trim(), () => notes.value.trim(), style, rewrite, purpose, language], () =>
   ai.reset()
 )
 
@@ -76,6 +86,23 @@ watch(json, () => (error.value = ''))
 // Fields and closing wait for a request, so a prompt can't arrive for details that have since changed.
 const locked = computed(() => promptLoading.value || previewing.value)
 const notify = useAppToast()
+
+// Notes outrank the prompt's own selection, so they say what to show; the limit sits below the box.
+const notesHelp = computed(
+  () =>
+    'Name areas to show, e.g. backend.' +
+    (rewrite.value ? ' Say how to word it, e.g. explain IT work for non-IT readers.' : '')
+)
+const NOTES_LIMIT =
+  'A career direction fits as one line in the summary. Other motivation belongs in the application message.'
+// Without rewriting, the API keeps IT jobs to title and dates, which is too little outside IT.
+const rewriteHelp = computed(
+  () =>
+    'Bullets may be reworded. Numbers and skills are checked; review the meaning.' +
+    (openApplication.value && !rewrite.value
+      ? ' For markets outside IT, turn this on, or IT jobs show only title and dates.'
+      : '')
+)
 
 const load = async () => {
   previewing.value = true
@@ -143,24 +170,36 @@ const load = async () => {
     >
       <template #before>
         <div class="space-y-4">
-          <p class="text-sm font-medium text-highlighted">1. Describe the role</p>
-          <UFormField label="Target role" required :hint="`${role.length} / ${TARGET_ROLE_MAX}`">
+          <p class="text-sm font-medium text-highlighted">1. Describe the target</p>
+          <UFormField label="Purpose" :description="PURPOSE_HINTS[purpose]">
+            <URadioGroup
+              v-model="purpose"
+              :items="PURPOSE_OPTIONS"
+              :disabled="locked"
+              orientation="horizontal"
+              data-testid="cv-ai-draft-purpose"
+            />
+          </UFormField>
+          <UFormField
+            :label="openApplication ? 'Market / field' : 'Target role'"
+            required
+            :hint="`${role.length} / ${TARGET_ROLE_MAX}`"
+          >
             <UInput
               v-model="role"
               :maxlength="TARGET_ROLE_MAX"
               :disabled="locked"
-              placeholder="Senior frontend developer"
+              :placeholder="
+                openApplication ? 'Frontend-leaning developer' : 'Senior frontend developer'
+              "
               class="w-full"
               data-testid="cv-ai-draft-role"
             />
           </UFormField>
           <UFormField
             label="Notes"
-            :help="
-              rewrite
-                ? 'Anything to emphasize or leave out, and how to word it, e.g. explain IT work for non-IT readers.'
-                : 'Anything the AI should emphasize or leave out.'
-            "
+            :description="notesHelp"
+            :help="NOTES_LIMIT"
             :hint="`${notes.length} / ${NOTES_MAX}`"
           >
             <UTextarea
@@ -204,7 +243,7 @@ const load = async () => {
           <UCheckbox
             v-model="rewrite"
             label="Rewrite in plain words"
-            description="Bullets may be reworded. Numbers and skills are checked; review the meaning."
+            :description="rewriteHelp"
             :disabled="locked"
             data-testid="cv-ai-draft-rewrite"
           />

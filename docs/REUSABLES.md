@@ -161,7 +161,7 @@ body)` (copies subject, greeting, paragraphs, closing), `hasCoverLetterBody`.
 - `<CvTemplatesDetailsModal v-model:open base-cv? @saved>` creates a CV template (prefilled from
   `baseCvFromProfile(language)`, then opens its editor; started as an AI draft, it goes to `/cv-templates/new` and creates nothing) or renames one; `<CvTemplatesDeleteModal v-model:open base-cv
 @deleted @archived>` offers Archive instead once the API says the template is in use.
-- `<CvTemplatesAiDraftModal v-model:open editor>` — the own-AI draft of a template's current language: target role, notes and CV style build the prompt ("Create prompt"; a changed detail needs "Update prompt", the pasted reply stays), the reply goes through `previewBaseCv` and into `editor.replaceContent`, unsaved. Test ids `cv-ai-draft-*`.
+- `<CvTemplatesAiDraftModal v-model:open editor>` — the own-AI draft of a template's current language: purpose (one role or an open application's market / field), target role, notes and CV style build the prompt ("Create prompt"; a changed detail needs "Update prompt", the pasted reply stays), the reply goes through `previewBaseCv` and into `editor.replaceContent`, unsaved. Test ids `cv-ai-draft-*`.
 - `/profile` (`pages/profile.vue`, data from `useProfile()`) is built from `<Profile…>` components, which own their
   mutations and emit `changed` (page refetches) or `saved` (Basics/Preferences return the whole profile):
   `<ProfileSection title icon testid empty empty-message add-label full? clearable? count? menu-items? @add @clear>` (always-open card

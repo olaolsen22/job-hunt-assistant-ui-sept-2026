@@ -217,7 +217,8 @@ describe('Draft with AI', () => {
       targetRole: 'Frontend developer',
       notes: 'Focus on Vue',
       template: 'DETAILED',
-      rewrite: false
+      rewrite: false,
+      purpose: 'ROLE'
     })
     expect(isDisabled('cv-ai-draft-copy-prompt')).toBe(false)
 
@@ -410,6 +411,83 @@ describe('Draft with AI', () => {
     await vi.waitFor(() => expect(isDisabled('cv-ai-draft-copy-prompt')).toBe(false))
     const prompts = calls.filter((c) => c.query.includes('query BaseCvExternalPrompt'))
     expect(prompts.at(-1)!.variables).toMatchObject({ template: 'CONCISE' })
+    wrapper.unmount()
+  })
+
+  it('drafts for a market or field, sending the purpose to the prompt but not the preview', async () => {
+    const wrapper = await mountPage()
+    await openDraftModal(wrapper)
+    await createPrompt()
+    inBody('cv-ai-draft-purpose')!.querySelector<HTMLElement>('[value="OPEN_APPLICATION"]')!.click()
+    await flushPromises()
+    expect(inBody('cv-ai-draft-outdated')).not.toBeNull()
+    expect(document.body.textContent).toContain('Market / field')
+    expect(document.body.textContent).toContain('For markets outside IT, turn this on')
+
+    await createPrompt('Customer-facing roles')
+    const prompts = calls.filter((c) => c.query.includes('query BaseCvExternalPrompt'))
+    expect(prompts.at(-1)!.variables).toMatchObject({
+      targetRole: 'Customer-facing roles',
+      purpose: 'OPEN_APPLICATION'
+    })
+
+    await loadReply()
+    await vi.waitFor(() => expect(inBody('cv-template-suggestions')).not.toBeNull())
+    const preview = calls.find((c) => c.query.includes('mutation PreviewBaseCv'))!
+    expect(preview.variables.input).not.toHaveProperty('purpose')
+    expect(preview.variables).not.toHaveProperty('purpose')
+    wrapper.unmount()
+  })
+
+  it('words the fields for the purpose, back to a role on One role, keeping the typed text', async () => {
+    const wrapper = await mountPage()
+    await openDraftModal(wrapper)
+    const pick = async (value: string) => {
+      inBody('cv-ai-draft-purpose')!.querySelector<HTMLElement>(`[value="${value}"]`)!.click()
+      await flushPromises()
+    }
+    const text = () => document.body.textContent ?? ''
+    const placeholder = () => (inBody('cv-ai-draft-role') as HTMLInputElement).placeholder
+    const rewriteOn = async () => {
+      inBody('cv-ai-draft-rewrite')!.click()
+      await flushPromises()
+    }
+    await type('cv-ai-draft-role', 'Developer')
+
+    expect(text()).toContain('Tailored to one job title.')
+    expect(text()).toContain('Target role')
+    expect(placeholder()).toBe('Senior frontend developer')
+    expect(text()).toContain('Name areas to show, e.g. backend.')
+    expect(text()).toContain('Other motivation belongs in the application message.')
+    expect(text()).not.toContain('Say how to word it')
+    expect(text()).not.toContain('For markets outside IT')
+
+    await pick('OPEN_APPLICATION')
+    expect(text()).toContain('A broader CV for a market or field, e.g. unsolicited applications.')
+    expect(text()).toContain('Market / field')
+    expect(text()).not.toContain('Target role')
+    expect(placeholder()).toBe('Frontend-leaning developer')
+    // The notes hint is the same for both purposes.
+    expect(text()).toContain('Name areas to show, e.g. backend.')
+    expect(text()).not.toContain('Say how to word it')
+    expect(text()).toContain(
+      'For markets outside IT, turn this on, or IT jobs show only title and dates.'
+    )
+
+    // Once rewriting is on, the nudge to turn it on is gone and the notes ask how to word it.
+    await rewriteOn()
+    expect(text()).not.toContain('For markets outside IT')
+    expect(text()).toContain(
+      'Name areas to show, e.g. backend. Say how to word it, e.g. explain IT work for non-IT readers.'
+    )
+
+    await pick('ROLE')
+    expect(text()).toContain('Tailored to one job title.')
+    expect(text()).toContain('Target role')
+    expect(text()).not.toContain('Market / field')
+    expect(placeholder()).toBe('Senior frontend developer')
+    expect(text()).toContain('Say how to word it, e.g. explain IT work for non-IT readers.')
+    expect((inBody('cv-ai-draft-role') as HTMLInputElement).value).toBe('Developer')
     wrapper.unmount()
   })
 

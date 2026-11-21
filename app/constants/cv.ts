@@ -9,6 +9,16 @@ export const TEMPLATE_HINTS = {
   CONCISE: 'Shorter bullets or paragraphs, aiming for a tighter, shorter CV.'
 } as const
 
+// What the own-AI base CV draft aims at: one role, or a market or field for open applications.
+export const PURPOSE_OPTIONS = [
+  { label: 'One role', value: 'ROLE' },
+  { label: 'Open application', value: 'OPEN_APPLICATION' }
+]
+export const PURPOSE_HINTS = {
+  ROLE: 'Tailored to one job title.',
+  OPEN_APPLICATION: 'A broader CV for a market or field, e.g. unsolicited applications.'
+} as const
+
 export const CONTENT_STYLE_OPTIONS = [
   { label: 'Bullets', value: 'BULLETS' },
   { label: 'Paragraphs', value: 'PARAGRAPH' }

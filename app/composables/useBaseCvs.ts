@@ -104,8 +104,9 @@ const TRANSLATION = graphql(
   [CV_CONTENT_FIELDS]
 )
 
-// The own-AI draft: a prompt written for a target role, and the AI's reply as unsaved content.
-// Only the prompt takes the role and notes; a bad one is a top-level GraphQL error, not `errors`.
+// The own-AI draft: a prompt written for a target role (or a market, for an open application), and
+// the AI's reply as unsaved content. Only the prompt takes the role, notes and purpose; a bad one is
+// a top-level GraphQL error, not `errors`.
 export const BASE_CV_EXTERNAL_PROMPT = graphql(`
   query BaseCvExternalPrompt(
     $language: Language!
@@ -113,6 +114,7 @@ export const BASE_CV_EXTERNAL_PROMPT = graphql(`
     $notes: String
     $template: TailoredCvTemplate
     $rewrite: Boolean!
+    $purpose: BaseCvPurpose!
   ) {
     baseCvExternalPrompt(
       language: $language
@@ -120,6 +122,7 @@ export const BASE_CV_EXTERNAL_PROMPT = graphql(`
       notes: $notes
       template: $template
       rewrite: $rewrite
+      purpose: $purpose
     ) {
       instructions
     }
