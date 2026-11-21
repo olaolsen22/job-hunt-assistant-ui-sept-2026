@@ -60,3 +60,44 @@ Docs: `docs/STATUS.md` (per-page behaviour + decisions; search it), `docs/BACKLO
 5. `senior-reviewer` on the diff; fix what it finds.
 
 Pass agents a short brief (files changed, intent) so they don't re-explore the repo.
+
+## Commits and branches
+
+The history is public (hiring portfolio): keep it clean.
+
+- Before the first edit of any change (feature, fix, docs, tests), without asking:
+  1. `git branch --show-current`. On `development` or `master`, or on another change's branch:
+     `git switch -c <type>/<slug> development`. Never edit files on `development` or `master`.
+     If the working tree holds uncommitted work from another change, flag it before switching.
+  2. Add its entry to `.local/changelog.md` (private, gitignored, never pushed), newest first:
+     ```md
+     ## YYYY-MM-DD · <area>: <what>
+
+     - Goal: <the request's goal, neutral and concise; never quote the owner>
+     - Why: <problem it solves>
+     - Files: <main files; keep updated as you go>
+     - Branch: <type>/<slug>
+     - Status: uncommitted
+     ```
+- Commit boundary: when the change is done and its checks pass, stop and propose the commit
+  subject. Commit only when the owner says yes; never auto-commit. After committing, set
+  `Status` to the short hash.
+- On "commit": every uncommitted file must belong to a changelog entry (write missing entries
+  first; ask about files that fit none, e.g. stray screenshots). Commit each entry on its own
+  branch: `git switch -c <branch> development` (or `git switch <branch>`), add only that
+  entry's files, commit, then `git switch development` for the next; the other changes carry
+  over in the working tree. Never commit feature work directly on `development`. Don't stash or
+  verify each intermediate commit.
+- Subject: Conventional Commits `<type>(<scope>): <imperative>`, ≤50 chars (`feat`, `fix`,
+  `refactor`, `test`, `docs`, `chore`, `style`). Body: the why as product reasoning in 1–3 lines,
+  wrapped at 72. No prompts, "owner requested" or AI wording. Keep the `Co-Authored-By: Claude`
+  trailer.
+- Branches: `development` is the integration branch; `master` is for publishing and only gets
+  `development` merged in when the owner asks. Each feature or fix gets a short-lived branch off
+  `development` named `<type>/<slug>` (e.g. `feat/listing-shortlist`, `fix/login-redirect`), one
+  feature in one or more small commits (created as above, before the first edit).
+- After a commit round: push the new branches, then end with the commits' log
+  (`git log --no-walk`) and one link per branch for the owner to open its PR manually:
+  `https://github.com/olaolsen22/job-hunt-assistant-ui-sept-2026/compare/development...<branch>?expand=1`.
+  Never create PRs yourself. PRs merge into `development` with a merge commit (not squash), and
+  the branch is deleted afterwards.

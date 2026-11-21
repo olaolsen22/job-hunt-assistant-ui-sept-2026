@@ -28,3 +28,6 @@ coverage
 test-results
 playwright-report
 blob-report
+
+# Private notes (changelog)
+.local/
